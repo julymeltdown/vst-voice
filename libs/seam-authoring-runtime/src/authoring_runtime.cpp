@@ -763,7 +763,8 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact,
       anyNoteToSing = anyNoteToSing || trackHasNotes(*track);
       const auto& savedPath = document_->identity().projectPath;
       sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
-          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt,
+          proceduralAdmissionOptions_});
       continue;
     }
     if (state.resolution.resolved()) {

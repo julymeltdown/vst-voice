@@ -679,7 +679,7 @@ add_library(seam_rendering
 )
 target_include_directories(seam_rendering PUBLIC libs/seam-rendering/include)
 target_link_libraries(seam_rendering PUBLIC
-  seam_voice_design
+  seam_distribution seam_voice_design
   seam_synthesis seam_neural_synthesis seam_voicebank seam_phonemizer seam_formats seam_domain seam_core
   Threads::Threads)
 seam_apply_compiler_options(seam_rendering)

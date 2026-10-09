@@ -7,6 +7,7 @@
 #include "test_support.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/authoring/generation_job.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/formats/project_json.hpp"
@@ -23,6 +24,8 @@
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -90,7 +93,8 @@ voice_design::VoiceRecipe authoredRecipe() {
 
 // Writes the package the way a producer would: manifest, recipe, then sign.
 std::filesystem::path createProceduralPackage(const std::filesystem::path& root,
-                                             const distribution::SigningKeyPair& key, bool multipleStyles = false) {
+                                             const distribution::SigningKeyPair& key, bool multipleStyles = false,
+                                             std::uint32_t engineRevision = voice_design::kSourceFilterEngineRevision) {
   const auto source = root / "producer-source";
   std::filesystem::create_directories(source);
   auto recipe = authoredRecipe();
@@ -109,7 +113,7 @@ std::filesystem::path createProceduralPackage(const std::filesystem::path& root,
   manifest.language = "ja";
   manifest.styles = multipleStyles ? std::vector<std::string>{"neutral", "soft"} : std::vector<std::string>{"neutral"};
   manifest.engineId = recipe.engineId;
-  manifest.engineRevision = 14U;
+  manifest.engineRevision = engineRevision;
   manifest.recipeEntry = "recipe.json";
   // The declared digest is over the recipe's canonical encoding, the identity the renderer checks.
   manifest.recipeSha256 = core::sha256Hex(encoded.value());
@@ -147,7 +151,7 @@ std::filesystem::path createProceduralPackageVariant(const std::filesystem::path
   manifest.language = "ja";
   manifest.styles = {"neutral"};
   manifest.engineId = recipe.engineId;
-  manifest.engineRevision = 14U;
+  manifest.engineRevision = voice_design::kSourceFilterEngineRevision;
   manifest.recipeEntry = "recipe.json";
   manifest.recipeSha256 = core::sha256Hex(encoded.value());
   manifest.phones = {"a"};
@@ -197,7 +201,7 @@ TEST_CASE("An installed procedural singer records an identity the renderer can l
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
   CHECK(controller.hasValue());
@@ -235,7 +239,7 @@ TEST_CASE("An installed procedural singer records an identity the renderer can l
   CHECK(recorded.installation->packageDigest == installed.value().packageDigest);
   CHECK(recorded.installation->signerKeyId == installed.value().signerKeyId);
   CHECK(recorded.installation->recipeEntry == "recipe.json");
-  CHECK(recorded.installation->engineRevision == 14U);
+  CHECK(recorded.installation->engineRevision == voice_design::kSourceFilterEngineRevision);
   CHECK(recorded.validate());
   const auto callsBeforeRelink = picker->requests.size();
   CHECK(!controller.value()->dispatch(platform::ApplicationCommand::RelinkProceduralRecipe));
@@ -284,7 +288,7 @@ TEST_CASE("An installed procedural singer sings a tuned phrase after the produce
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
   CHECK(controller.hasValue());
@@ -405,7 +409,7 @@ TEST_CASE("An untrusted or incompatible procedural package cannot be selected") 
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.other";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
   CHECK(controller.hasValue());
@@ -761,7 +765,7 @@ TEST_CASE("The application copies the selected installed singer to an editable d
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
   CHECK(controller.hasValue());
@@ -860,7 +864,7 @@ TEST_CASE("An unusable installed singer is reported with its reason instead of h
   foreignConfig.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   foreignConfig.renderableProceduralEngineId = "seam.source-filter.other";
-  foreignConfig.renderableProceduralEngineRevision = 14U;
+  foreignConfig.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto foreign = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(foreignDialog), std::make_unique<FakePrompt>(), foreignConfig);
   CHECK(foreign.hasValue());
@@ -935,11 +939,11 @@ TEST_CASE("A reviewed recipe keeps its approval into the installed journey and l
           .language = "ja",
           .styles = {"neutral"},
           .engineId = "seam.source-filter.v1",
-          .engineRevision = 14U,
+          .engineRevision = voice_design::kSourceFilterEngineRevision,
           .recipeEntry = "recipe.json",
           .recipeSha256 = installed.value().renderIdentity.contentHash,
           .phones = {"a"}},
-      installed.value().contentHash, "seam-render-abi-3", 14U, 48000U, evidence / "phrase.json",
+      installed.value().contentHash, "seam-render-abi-3", voice_design::kSourceFilterEngineRevision, 48000U, evidence / "phrase.json",
       evidence / "phrase.wav", "settings-default");
   CHECK(basis.hasValue());
   if (!basis) return;
@@ -1054,7 +1058,7 @@ TEST_CASE("The application records and reads a review of the installed singer it
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   config.proceduralReviewStorePath = root / "reviews" / "decisions.json";
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
@@ -1143,7 +1147,7 @@ TEST_CASE("The copy and select commands are reachable through the menu dispatch 
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
   CHECK(controller.hasValue());
@@ -1211,7 +1215,7 @@ TEST_CASE("A recorded review is visible where the installed singer is offered") 
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   config.proceduralReviewStorePath = root / "reviews" / "decisions.json";
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
@@ -1297,7 +1301,7 @@ TEST_CASE("The review action records through the dialog and writes nothing on ca
   config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = "seam.source-filter.v1";
-  config.renderableProceduralEngineRevision = 14U;
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
   config.proceduralReviewStorePath = root / "singers" / "reviews.json";
   auto controller = standalone::StandaloneApplicationController::create(
       *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
@@ -1374,7 +1378,7 @@ void staleInstalledChoice(std::string_view mutation) {
         .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
     config.proceduralSingerRoots = {{root / "singers", distribution::ProceduralRootKind::Installed}};
     config.renderableProceduralEngineId = "seam.source-filter.v1";
-    config.renderableProceduralEngineRevision = 14U;
+    config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
     auto controller = standalone::StandaloneApplicationController::create(
         *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
     CHECK(controller);
@@ -1494,4 +1498,233 @@ TEST_CASE("Installed singer choice refuses a replacement resource") {
 }
 TEST_CASE("Installed singer choice refuses removal of an offered style") {
   staleInstalledChoice("remove-style");
+}
+
+namespace {
+struct RuntimeAdmissionFixture final {
+  std::filesystem::path root{test::support::temporaryDirectory("procedural-runtime-admission")};
+  distribution::ProceduralCandidate candidate;
+  domain::ProceduralRecipeReference reference;
+  RuntimeAdmissionFixture(bool nested = false,
+      std::uint32_t revision = voice_design::kSourceFilterEngineRevision) {
+    const auto key = distribution::generateSigningKeyPair(); CHECK(key);
+    auto package = createProceduralPackage(root, key.value(), false, revision);
+    if (nested) {
+      const auto source = root / "producer-source";
+      std::filesystem::create_directory(source / "nested");
+      std::filesystem::rename(source / "recipe.json", source / "nested/recipe.json");
+      auto manifest = distribution::ProceduralSingerManifestJsonCodec{}.decode(
+          core::readTextFileLimited(source / "manifest.json", 1024U * 1024U).value()).value();
+      manifest.recipeEntry = "nested/recipe.json";
+      CHECK(core::durableAtomicWriteText(source / "manifest.json",
+          distribution::ProceduralSingerManifestJsonCodec{}.encode(manifest).value()));
+      package = root / "nested.seamsinger";
+      CHECK(distribution::packProceduralPackage(source, package, key.value()));
+    }
+    distribution::InstallProceduralOptions options;
+    options.verification.trustedPublicKeys = {key.value().publicKey};
+    options.verification.requireTrustedSigner = true;
+    CHECK(distribution::installProceduralPackage(package, root / "singers", options));
+    const auto scan = distribution::ProceduralCatalogue{}.scan({{root / "singers", distribution::ProceduralRootKind::Installed}});
+    CHECK(scan); CHECK(scan.value().size() == 1U);
+    candidate = scan.value().front();
+    reference = {candidate.renderIdentity, (candidate.resourceRoot / candidate.manifest.recipeEntry).string(), "neutral",
+        distribution::proceduralInstallationReference(candidate)};
+  }
+  domain::Project project() const {
+    application::ProjectFactory factory{81000U};
+    auto score = factory.createProject("Admission regression");
+    const auto track = factory.addVocalTrack(score, "Singer");
+    const auto region = factory.addRegion(score, track, "Vowel", time::Tick{0}, time::Tick{960});
+    auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{960}, 60U, U"あ", domain::Language::Japanese);
+    score.findRegion(region)->lyrics.push_back(lyric); score.findRegion(region)->notes.push_back(note);
+    score.findVocalTrack(track)->proceduralRecipe = reference;
+    return score;
+  }
+};
+}
+
+TEST_CASE("Procedural runtime admission captures installations and distinguishes portable and authored copies") {
+  for (const bool nested : {false, true}) {
+    RuntimeAdmissionFixture f{nested};
+    const auto admitted = distribution::admitProceduralRecipe(f.reference); CHECK(admitted);
+    CHECK(admitted.value().origin() == distribution::ProceduralAdmissionOrigin::Installed);
+    CHECK(admitted.value().resource().identity == f.reference.resource);
+    CHECK(admitted.value().matches(f.reference, admitted.value().resource()));
+    const auto draft = f.root / "draft.json";
+    std::filesystem::copy_file(f.reference.path, draft);
+    auto authored = f.reference; authored.path = draft.string(); authored.installation.reset();
+    const auto authoredResult = distribution::admitProceduralRecipe(authored); CHECK(authoredResult);
+    CHECK(authoredResult.value().origin() == distribution::ProceduralAdmissionOrigin::Authored);
+    CHECK(core::durableAtomicWriteText(f.root / "manifest.json", R"({"formatId":"unrelated.authored.project"})"));
+    CHECK(distribution::admitProceduralRecipe(authored));
+    std::filesystem::remove_all(f.candidate.resourceRoot);
+    CHECK(!distribution::admitProceduralRecipe(f.reference));
+    auto portable = f.reference; portable.path = "draft.json";
+    const auto copy = distribution::admitProceduralRecipe(portable, f.root); CHECK(copy);
+    CHECK(copy.value().origin() == distribution::ProceduralAdmissionOrigin::ProjectCopy);
+    CHECK(copy.value().resource().identity == admitted.value().resource().identity);
+    portable.installation.reset(); CHECK(distribution::admitProceduralRecipe(portable, f.root));
+    CHECK(!distribution::admitProceduralRecipe(portable));
+    std::stop_source cancelled; cancelled.request_stop();
+    CHECK(!distribution::admitProceduralRecipe(portable, f.root, {}, cancelled.get_token()));
+  }
+}
+
+TEST_CASE("Procedural runtime admission refuses manifest drift missing metadata and incompatible engines") {
+  for (const std::string mutation : {"manifest", "receipt", "missing-manifest", "missing-receipt", "engine", "style"}) {
+    RuntimeAdmissionFixture f;
+    if (mutation == "manifest") {
+      auto manifest = f.candidate.manifest; manifest.displayName += " changed";
+      CHECK(core::durableAtomicWriteText(f.candidate.resourceRoot / "manifest.json",
+          distribution::ProceduralSingerManifestJsonCodec{}.encode(manifest).value()));
+    } else if (mutation == "receipt") {
+      auto receipt = formats::parseJson(core::readTextFileLimited(f.candidate.resourceRoot / "install-receipt.json", 1024U * 1024U).value()).value();
+      receipt.asObject()["signerTrusted"] = false;
+      CHECK(core::durableAtomicWriteText(f.candidate.resourceRoot / "install-receipt.json", formats::stringifyJson(receipt)));
+      distribution::ProceduralAdmissionOptions permissive; permissive.requireTrustedInstalled = false;
+      CHECK(distribution::admitProceduralRecipe(f.reference, {}, permissive));
+    } else if (mutation == "missing-manifest") std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
+    else if (mutation == "missing-receipt") std::filesystem::remove(f.candidate.resourceRoot / "install-receipt.json");
+    else if (mutation == "engine") ++f.reference.installation->engineRevision;
+    else f.reference.style = "undeclared";
+    CHECK(!distribution::admitProceduralRecipe(f.reference));
+  }
+  RuntimeAdmissionFixture future{false, voice_design::kSourceFilterEngineRevision + 1U};
+  CHECK(!distribution::admitProceduralRecipe(future.reference));
+  future.reference.installation.reset(); // Legacy manifest declaration is also enforced.
+  CHECK(!distribution::admitProceduralRecipe(future.reference));
+}
+
+TEST_CASE("Procedural runtime legacy root and development policies cannot become authored fallback") {
+  RuntimeAdmissionFixture f{true};
+  auto legacy = f.reference; legacy.installation.reset();
+  CHECK(distribution::admitProceduralRecipe(legacy)); // Nested typed ancestor metadata.
+  distribution::ProceduralAdmissionOptions development{{{f.root / "singers", distribution::ProceduralRootKind::Development}}, true, true};
+  const auto fixture = distribution::admitProceduralRecipe(legacy, {}, development); CHECK(fixture);
+  CHECK(fixture.value().origin() == distribution::ProceduralAdmissionOrigin::Development);
+  development.allowDevelopmentFixtures = false;
+  CHECK(!distribution::admitProceduralRecipe(legacy, {}, development));
+  std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
+  CHECK(!distribution::admitProceduralRecipe(legacy)); // Receipt still identifies nested installation.
+  std::filesystem::remove(f.candidate.resourceRoot / "install-receipt.json");
+  const distribution::ProceduralAdmissionOptions known{{{f.root / "singers", distribution::ProceduralRootKind::Installed}}};
+  CHECK(!distribution::admitProceduralRecipe(legacy, {}, known));
+  // Unbound legacy references outside known roots remain intrinsically ambiguous.
+  const auto ambiguous = distribution::admitProceduralRecipe(legacy); CHECK(ambiguous);
+  CHECK(ambiguous.value().origin() == distribution::ProceduralAdmissionOrigin::Authored);
+}
+
+TEST_CASE("Procedural runtime installed recipe rejects a symlinked nested entry") {
+  RuntimeAdmissionFixture f{true};
+  std::filesystem::rename(f.candidate.resourceRoot / "nested", f.root / "moved-nested");
+  std::filesystem::create_directory_symlink(f.root / "moved-nested", f.candidate.resourceRoot / "nested");
+  CHECK(!distribution::admitProceduralRecipe(f.reference));
+  auto legacy = f.reference; legacy.installation.reset();
+  std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
+  std::filesystem::remove(f.candidate.resourceRoot / "install-receipt.json");
+  const distribution::ProceduralAdmissionOptions known{{{f.root / "singers", distribution::ProceduralRootKind::Installed}}};
+  CHECK(!distribution::admitProceduralRecipe(legacy, {}, known));
+}
+
+TEST_CASE("Procedural runtime captured sources cannot bypass bindings and retain request-local bytes") {
+  RuntimeAdmissionFixture f;
+  const auto score = f.project(); const auto& track = score.vocalTracks().front();
+  rendering::TrackSingerSource file = rendering::TrackRecipeFileSource{track.id, f.reference, {}};
+  const auto captured = rendering::captureProceduralSource(track, file); CHECK(captured);
+  std::filesystem::remove_all(f.candidate.resourceRoot);
+  const std::vector<rendering::TrackSingerSource> held{captured.value()};
+  const auto render = rendering::ProductionProjectRenderer{}.renderWithSources(score, held, track.id,
+      track.regions.front().id, 0U, 48000U); CHECK(render);
+  CHECK(render.value().diagnostics.empty());
+  const std::vector<rendering::TrackSingerSource> raw{rendering::TrackProceduralSource{track.id,
+      captured.value().resource, f.reference.style}};
+  CHECK(!rendering::ProductionProjectRenderer{}.renderWithSources(score, raw, track.id, track.regions.front().id, 0U, 48000U));
+  auto mismatched = file; std::get<rendering::TrackRecipeFileSource>(mismatched).reference.installation.reset();
+  CHECK(!rendering::captureProceduralSource(track, mismatched));
+  // Admission must not discard duplicate-source validation when muted sources
+  // are skipped. Both tracks are silent, so no later missing-source error masks it.
+  auto silent = score;
+  application::ProjectFactory silentFactory{91000U};
+  const auto second = silentFactory.addVocalTrack(silent, "Muted spare");
+  silent.findVocalTrack(second)->muted = true;
+  silent.findVocalTrack(track.id)->muted = true;
+  const std::vector<rendering::TrackSingerSource> duplicates{captured.value(), captured.value()};
+  const auto duplicate = rendering::ProductionProjectRenderer{}.renderWithSources(silent, duplicates,
+      track.id, track.regions.front().id, 0U, 48000U);
+  CHECK(!duplicate);
+  CHECK(duplicate.error().message == "Singer sources contain an unknown or duplicate track");
+  auto changed = track; ++changed.proceduralRecipe->installation->engineRevision;
+  CHECK(!rendering::captureProceduralSource(changed, held.front()));
+  auto incompatible = score;
+  ++incompatible.findVocalTrack(track.id)->proceduralRecipe->installation->engineRevision;
+  CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(incompatible, captured.value().resource,
+      track.id, track.regions.front().id, 0U, rendering::RenderQuality::Final, 48000U));
+}
+
+TEST_CASE("Procedural runtime refuses stale installation consistently in preview and both export paths") {
+  RuntimeAdmissionFixture f;
+  auto score = f.project(); const auto trackId = score.vocalTracks().front().id;
+  const auto regionId = score.vocalTracks().front().regions.front().id;
+  auto document = std::unique_ptr<authoring::ProjectDocument>{new authoring::ProjectDocument{score, application::ProjectFactory{90000U}}};
+  authoring::AuthoringRuntime runtime{std::move(document), {.cacheRoot = f.root / "cache", .voicebankRoots = {}, .enableTransport = false}};
+  CHECK(runtime.initialize()); runtime.requestPreview(true);
+  const auto readyDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (runtime.renderer().progress().state != authoring::RenderState::Ready && std::chrono::steady_clock::now() < readyDeadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  CHECK(runtime.renderer().progress().state == authoring::RenderState::Ready);
+  std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
+  const std::vector<rendering::TrackSingerSource> sources{rendering::TrackRecipeFileSource{trackId, f.reference, {}}};
+  CHECK(!rendering::ProductionProjectRenderer{}.renderWithSources(score, sources, trackId, regionId, 0U, 48000U));
+  authoring::ExportService exporter;
+  CHECK(!exporter.exportProjectWithSources(score, sources, trackId, regionId, 0U, f.root / "single.wav"));
+  authoring::ExportSettings settings; settings.includeProjectAndRecipes = true;
+  CHECK(!exporter.exportSetWithSources(score, sources, trackId, regionId, 0U, f.root / "set", settings));
+  CHECK(!std::filesystem::exists(f.root / "single.wav"));
+  CHECK(!std::filesystem::exists(f.root / "set/receipt.json"));
+  runtime.requestPreview(true);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (runtime.renderer().progress().state != authoring::RenderState::Failed && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  CHECK(runtime.renderer().progress().state == authoring::RenderState::Failed);
+  runtime.shutdown();
+}
+
+TEST_CASE("Procedural runtime generation admission freezes a portable bound job before installation removal") {
+  RuntimeAdmissionFixture f;
+  const auto score = f.project();
+  const auto trackId = score.vocalTracks().front().id;
+  const auto regionId = score.vocalTracks().front().regions.front().id;
+  const auto scorePath = f.root / "score.seam";
+  CHECK(formats::ProjectJsonCodec{}.save(score, scorePath));
+  const auto scoreHash = core::sha256File(scorePath).value();
+  namespace production = voicebank_production;
+  const auto license = f.root / "synthetic-license.txt";
+  CHECK(core::durableAtomicWriteText(license, "SYNTHETIC TEST ONLY - NO HUMAN ACCEPTANCE"));
+  const auto licenseHash = core::sha256File(license).value();
+  production::VoicebankProductionProject producer{.projectId = "admission-job", .inventoryId = "vowel-fixture",
+      .inventorySha256 = std::string(64U, 'a'), .selectedSourceStrategyId = "procedural-fixture",
+      .licenseLocator = license.string(), .licenseSha256 = licenseHash, .immutableAssetRoot = "assets"};
+  producer.sourceStrategies = {{.id = "procedural-fixture", .kind = production::SourceStrategyKind::ProceduralSynthesis,
+      .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass, .listening = production::Feasibility::Pass,
+      .permissions = {true, true, true, true}, .licenseLocator = license.string(), .licenseSha256 = licenseHash,
+      .evidenceState = "SYNTHETIC_TEST_ONLY"}};
+  producer.operators = {{"producer", "PRODUCER"}};
+  producer.unitAssignments = {{.coverageKey = "vowel:a", .pitchLayer = 60, .promptId = "prompt-a", .plannedTakeId = "take-a"}};
+  production::ProductionProjectRepository repository{f.root / "producer"};
+  CHECK(repository.initialize(producer, {.action = "create", .subjectId = producer.projectId,
+      .operatorId = "producer", .occurredAtUtc = "2026-10-10T00:00:00Z"}));
+  const auto prepared = authoring::prepareGenerationJobFromScore(f.root / "job", "admission-job", scorePath,
+      trackId, regionId, producer, "take-a");
+  if (!prepared) throw test::Failure{prepared.error().message};
+  const auto frozen = formats::ProjectJsonCodec{}.load(f.root / "job/project.json"); CHECK(frozen);
+  const auto& ref = *frozen.value().findVocalTrack(trackId)->proceduralRecipe;
+  CHECK(ref.path == "recipe.json"); CHECK(ref.installation == f.reference.installation);
+  CHECK(core::sha256File(scorePath).value() == scoreHash);
+  std::filesystem::remove_all(f.candidate.resourceRoot);
+  CHECK(authoring::loadGenerationJob(f.root / "job", prepared.value().manifestSha256));
+  CHECK(authoring::runGenerationJob(f.root / "job", prepared.value().manifestSha256));
+  CHECK(!authoring::prepareGenerationJobFromScore(f.root / "missing-job", "missing-job", scorePath,
+      trackId, regionId, producer, "take-a"));
+  CHECK(!std::filesystem::exists(f.root / "missing-job/job.json"));
 }

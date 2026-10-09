@@ -501,6 +501,10 @@ TEST_CASE("procedural installation paths distinguish installed roots from portab
   CHECK(!reference.validate());
   reference.path = "/installed/singer/nested/recipe.json.more";
   CHECK(!reference.validate());
+  reference.path = "/installed/singer/./nested/recipe.json";
+  CHECK(!reference.validate());
+  reference.path = "/installed/singer/other/../nested/recipe.json";
+  CHECK(!reference.validate());
   reference.path = "recipes/copied.json";
   CHECK(reference.validate()); // Project copy, not the installation it came from.
 }

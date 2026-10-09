@@ -205,6 +205,8 @@ StandaloneApplicationController::StandaloneApplicationController(
       voicebankBrowser_(config_.allowDevelopmentVoicebanks),
       automaticPerformanceProposalJob_(
           std::make_unique<AutomaticPerformanceProposalJob>()) {
+  session_.runtime().setProceduralAdmissionOptions({config_.proceduralSingerRoots,
+      !config_.allowDevelopmentVoicebanks, config_.allowDevelopmentVoicebanks});
   if (!config_.voicebankInstallRoot.empty()) {
     voicebankInstaller_ = std::make_unique<authoring::VoicebankInstallerService>(
         session_.runtime().voicebanks(), config_.voicebankInstallRoot,
@@ -309,6 +311,10 @@ core::Result<void> StandaloneApplicationController::validateSingerControl(
   const auto* track = project.findVocalTrack(trackId);
   if (track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Singer control has no vocal track");
+  if (track->proceduralRecipe) {
+    const auto engine = distribution::validateProceduralEngineBinding(*track->proceduralRecipe);
+    if (!engine) return engine;
+  }
   if (!track->neuralResource) {
     rendering::SingerRouteEnvironment environment;
     if (!track->proceduralRecipe && control == synthesis::RendererControl::Formant) {
@@ -1652,7 +1658,8 @@ StandaloneApplicationController::makeExportRequest(
     if (const auto* track = project.findVocalTrack(state.trackId); track && track->proceduralRecipe) {
       const auto& savedPath = session_.runtime().document().identity().projectPath;
       sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
-          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt,
+          {config_.proceduralSingerRoots, !config_.allowDevelopmentVoicebanks, config_.allowDevelopmentVoicebanks}});
       continue;
     }
     if (!state.resolution.resolved()) continue;
@@ -2026,7 +2033,8 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
     });
     const auto& savedPath = document.identity().projectPath;
     sources.emplace_back(rendering::TrackRecipeFileSource{track.id, *track.proceduralRecipe,
-        savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+        savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt,
+          {config_.proceduralSingerRoots, !config_.allowDevelopmentVoicebanks, config_.allowDevelopmentVoicebanks}});
   }
   const auto exported = exportService_.exportProjectWithSources(
       project, sources, session_.runtime().selectedTrack(),

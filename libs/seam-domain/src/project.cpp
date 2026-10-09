@@ -98,6 +98,8 @@ core::Result<void> ProceduralRecipeReference::validate() const {
     const auto recipePath = std::filesystem::path{path};
     // A project-relative copy is deliberately independent of the installation.
     if (recipePath.is_absolute()) {
+      if (recipePath.generic_string() != recipePath.lexically_normal().generic_string())
+        return core::failure(core::ErrorCode::InvalidArgument, "Installed recipe path must be normalized");
       auto remaining = recipePath;
       auto entry = std::filesystem::path{installation->recipeEntry};
       while (!entry.empty()) {

@@ -777,20 +777,12 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         frozenSources.push_back(source);
         continue;
       }
-      rendering::TrackProceduralSource frozen;
-      if (const auto* value = std::get_if<rendering::TrackProceduralSource>(&source)) frozen = *value;
-      else {
-        const auto& file = std::get<rendering::TrackRecipeFileSource>(source);
-        auto path = std::filesystem::path{file.reference.path};
-        if (path.is_relative()) {
-          if (!file.projectDirectory || !file.projectDirectory->is_absolute()) return core::failure<ExportResult>(
-              core::ErrorCode::NotFound, "Recipe packaging requires a saved project directory");
-          path = *file.projectDirectory / path;
-        }
-        const auto resource = voice_design::loadVoiceRecipeResource(path.lexically_normal(), file.reference.resource, stopToken);
-        if (!resource) return core::Result<ExportResult>{resource.error()};
-        frozen = {file.trackId, resource.value(), file.reference.style};
-      }
+      const auto trackId = std::visit([](const auto& value) { return value.trackId; }, source);
+      const auto* selectedTrack = project.findVocalTrack(trackId);
+      if (!selectedTrack) return core::failure<ExportResult>(core::ErrorCode::NotFound, "Packaged recipe track is missing");
+      const auto captured = rendering::captureProceduralSource(*selectedTrack, source, stopToken);
+      if (!captured) return core::Result<ExportResult>{captured.error()};
+      auto frozen = captured.value();
       const auto recipe = voice_design::decodeVoiceRecipeResource(frozen.resource, stopToken);
       if (!recipe) return core::Result<ExportResult>{recipe.error()};
       const auto encoded = voice_design::encodeVoiceRecipe(recipe.value());

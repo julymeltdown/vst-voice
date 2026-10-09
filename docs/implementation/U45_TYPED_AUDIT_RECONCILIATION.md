@@ -188,8 +188,8 @@ and signer identity, trust and selectability, then loads and decodes the exact
 recipe. A removed/replaced singer or an intervening document change cannot be
 committed as a fresh choice. Cancellation preserves the document.
 
-This repairs selection-time admission; filesystem observations remain sequential,
-and files can change afterward. It does not solve render-time classification of
+This selection-time increment left filesystem observations sequential,
+with files able to change afterward. At that checkpoint it did not solve render-time classification of
 installed singers versus authored drafts, or bind an engine revision to a saved
 reference. The shared admission boundary must preserve existing absolute authored
 drafts and project-relative recipe workflows while enforcing installed metadata
@@ -207,9 +207,30 @@ origin pins. Stale/missing receipts cannot supply package/signer provenance.
 Old project references stay unbound on load. Binding equality participates in
 performance-job freshness and undo/redo.
 
-This is a persistence checkpoint for the shared admission work. Rendering still
-does not enforce these pins, and the U45 native composite still does not compare
-the new binding to the verified installation. Both remain explicit next work;
+At the persistence checkpoint rendering did not enforce these pins. The runtime
+increment below consumes them; the U45 native composite still does not compare
+the new binding to the verified installation. For existing evidence records,
 resourceAdmission/runtimeAvailability remain NOT_CHECKED, and no installed,
 interactive, hearing or Beta acceptance is added. Old retained records require
 their pinned verifier; fresh records name codec 21.
+
+### Shared procedural runtime admission (2026-10-10)
+
+Product file-backed preview/export/bake/packaging and saved-score generation now
+use the [schema21 admission contract](../formats/PROJECT_JSON_V21.md#runtime-admission).
+Admission checks full bound installation identity, captured recipe bytes, declared
+style, matching-receipt policy and actual compiled engine revision. Relative
+copies retain provenance without claiming installed status. Known-root and typed
+metadata classification covers legacy paths conservatively; fully unbound paths
+outside known roots remain ambiguous when metadata is gone. Fresh preview
+requests admit before cache use. A captured source is valid for its owned request,
+not evidence that the installation remains present afterward.
+
+This closes the identified product-loader bypass; it does not promote the native
+U45 project/composite record's NOT_CHECKED fields. That verifier still needs to
+cross-check schema21 pins against its independently verified installed candidate,
+then connect observed final render/artifacts to the same admitted request. Receipt
+trust is not independent package signature verification, and filesystem checks
+are sequential. The canonical U45_RECONCILIATION_HOLD remains. Independent review
+of this runtime increment is PENDING because the authorized reviewer chat returned
+HTTP429; engineering checks and their limits are recorded in the root ledger.

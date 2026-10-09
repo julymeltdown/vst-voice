@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/core/result.hpp"
+#include "seam/distribution/procedural_package.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/rendering/multichannel_routing.hpp"
 #include "seam/rendering/pcm_cache.hpp"
@@ -34,11 +35,13 @@ struct TrackProceduralSource final {
   domain::TrackId trackId;
   synthesis::ProceduralSingerResource resource;
   std::string style{"neutral"};
+  std::optional<distribution::AdmittedProceduralRecipe> admission{};
 };
 struct TrackRecipeFileSource final {
   domain::TrackId trackId;
   domain::ProceduralRecipeReference reference;
   std::optional<std::filesystem::path> projectDirectory;
+  distribution::ProceduralAdmissionOptions admissionOptions{};
 };
 // A prepared neural bundle chosen by the application, with the runner that can
 // execute it. The source never carries a helper path or command: the runner
@@ -51,6 +54,11 @@ struct TrackNeuralSource final {
 };
 using TrackSingerSource = std::variant<TrackVoicebankSource, TrackProceduralSource, TrackRecipeFileSource,
                                        TrackNeuralSource>;
+
+// Shared by project rendering and export packaging. Disk-backed selections are
+// captured once; opaque admission travels with the immutable bytes for this request.
+[[nodiscard]] core::Result<TrackProceduralSource> captureProceduralSource(
+    const domain::VocalTrack& track, const TrackSingerSource& source, std::stop_token stop = {});
 
 struct ProjectRenderDiagnostic final {
   domain::TrackId trackId;

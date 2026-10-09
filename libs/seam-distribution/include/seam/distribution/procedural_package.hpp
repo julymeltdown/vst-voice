@@ -4,6 +4,7 @@
 #include "seam/distribution/installer.hpp"
 #include "seam/domain/performance_intent.hpp"
 #include "seam/domain/project.hpp"
+#include "seam/synthesis/singer_resource.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -263,6 +264,46 @@ struct ProceduralResolution final {
     const domain::SingerResourceIdentity& reference,
     const std::vector<ProceduralCandidate>& candidates,
     const ProceduralResolveOptions& options = {});
+
+struct ProceduralAdmissionOptions final {
+  std::vector<ProceduralSearchRoot> roots{}; // Empty uses the platform's installed roots.
+  bool requireTrustedInstalled{true};
+  bool allowDevelopmentFixtures{false};
+};
+
+enum class ProceduralAdmissionOrigin { Authored, ProjectCopy, Installed, Development };
+
+// A captured request-local admission, not an independent signature or human review.
+// Private construction prevents raw frozen sources from inventing installed admission.
+class AdmittedProceduralRecipe final {
+public:
+  [[nodiscard]] const synthesis::ProceduralSingerResource& resource() const noexcept { return resource_; }
+  [[nodiscard]] const domain::ProceduralRecipeReference& reference() const noexcept { return reference_; }
+  [[nodiscard]] ProceduralAdmissionOrigin origin() const noexcept { return origin_; }
+  [[nodiscard]] bool matches(const domain::ProceduralRecipeReference& reference,
+      const synthesis::ProceduralSingerResource& resource) const noexcept {
+    return reference_ == reference && resource_.identity == resource.identity &&
+        resource_.patch && resource.patch && resource_.patch->sha256() == resource.patch->sha256();
+  }
+private:
+  AdmittedProceduralRecipe(domain::ProceduralRecipeReference reference,
+      synthesis::ProceduralSingerResource resource, ProceduralAdmissionOrigin origin)
+      : reference_(std::move(reference)), resource_(std::move(resource)), origin_(origin) {}
+  domain::ProceduralRecipeReference reference_;
+  synthesis::ProceduralSingerResource resource_;
+  ProceduralAdmissionOrigin origin_;
+  friend core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
+      const domain::ProceduralRecipeReference&, const std::optional<std::filesystem::path>&,
+      const ProceduralAdmissionOptions&, std::stop_token);
+};
+
+// Always checks the actual compiled engine, never a caller-supplied revision.
+[[nodiscard]] core::Result<void> validateProceduralEngineBinding(
+    const domain::ProceduralRecipeReference& reference);
+[[nodiscard]] core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
+    const domain::ProceduralRecipeReference& reference,
+    const std::optional<std::filesystem::path>& projectDirectory = {},
+    const ProceduralAdmissionOptions& options = {}, std::stop_token stop = {});
 
 [[nodiscard]] std::vector<ProceduralSearchRoot> defaultProceduralSearchRoots();
 [[nodiscard]] std::string_view proceduralTrustName(ProceduralTrust trust) noexcept;

@@ -111,5 +111,7 @@ The codec accepts the strict optional installation binding described in
 older source schemas remain readable and are named in `sourceSchemaVersion`.
 At this checkpoint the native project/composite verifiers validate the binding's
 shape through the codec but do **not** compare it with the verified installation
-or enforce it at runtime. Their existing NOT_CHECKED scope is unchanged.
+or execute runtime admission. Product rendering now consumes the shared admission
+boundary described in the schema document, but these records do not observe it.
+Their existing NOT_CHECKED scope is unchanged.
 Historical byte-exact replay requires the historical pinned verifier.

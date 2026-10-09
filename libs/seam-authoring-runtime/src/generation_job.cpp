@@ -117,8 +117,14 @@ core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
   const auto rate = project.value().settings().sampleRate;
   if (!std::isfinite(rate) || rate != std::floor(rate) || rate < 8000.0 || rate > 384000.0)
     return core::failure<Output>(core::ErrorCode::InvalidArgument, "Job sample rate must be an integer from 8000 to 384000");
-  const auto recipe = selectedRecipe ? core::Result<synthesis::ProceduralSingerResource>{selectedRecipe->resource}
-                                    : voice_design::loadVoiceRecipeResource(path.parent_path() / reference.path, reference.resource);
+  const auto recipe = [&]() -> core::Result<synthesis::ProceduralSingerResource> {
+    if (selectedRecipe) return selectedRecipe->resource;
+    const auto admitted = distribution::admitProceduralRecipe(reference, path.parent_path(), {}, stopToken);
+    if (!admitted) return core::Result<synthesis::ProceduralSingerResource>{admitted.error()};
+    // The prepared job owns recipe.json; preserve origin pins as a portable copy.
+    if (track->proceduralRecipe->installation) track->proceduralRecipe->path = "recipe.json";
+    return admitted.value().resource();
+  }();
   if (!recipe) return core::Result<Output>{recipe.error()};
   if (stopToken.stop_requested()) return cancelled();
   const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(project.value(), recipe.value(), trackId, regionId,

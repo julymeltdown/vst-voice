@@ -6,6 +6,7 @@
 #include "seam/build/version.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
 #include "seam/core/stable_hash.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/phonemizer/language_resolver.hpp"
@@ -718,6 +719,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
   if (!valid) return core::Result<RenderSnapshot>{valid.error()};
   const auto* track = project.findVocalTrack(trackId);
   const auto* region = track ? track->findRegion(regionId) : nullptr;
+  if (track && track->proceduralRecipe) {
+    const auto engine = distribution::validateProceduralEngineBinding(*track->proceduralRecipe);
+    if (!engine) return core::Result<RenderSnapshot>{engine.error()};
+  }
   if (track && track->proceduralRecipe &&
       (track->proceduralRecipe->resource != resource.identity || track->proceduralRecipe->style != style)) {
     return core::failure<RenderSnapshot>(core::ErrorCode::Conflict, "Procedural snapshot differs from the saved recipe selection");

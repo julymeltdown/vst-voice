@@ -666,30 +666,12 @@ ProceduralReceipt loadProceduralReceipt(const std::filesystem::path& resourceRoo
   return result;
 }
 
-}  // namespace
-
-std::optional<domain::ProceduralInstallationReference> proceduralInstallationReference(
-    const ProceduralCandidate& candidate) {
-  if (candidate.trust == ProceduralTrust::DevelopmentFixture) return std::nullopt;
-  return domain::ProceduralInstallationReference{
-      candidate.manifest.id, candidate.manifest.version, candidate.contentHash,
-      candidate.manifest.engineId, candidate.manifest.engineRevision, candidate.manifest.recipeEntry,
-      candidate.packageDigest, candidate.signerKeyId};
-}
-
-core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
-    const std::vector<ProceduralSearchRoot>& roots) const {
-  auto detailed = scanDetailed(roots);
-  if (!detailed) return core::Result<std::vector<ProceduralCandidate>>{detailed.error()};
-  return std::move(detailed).value().candidates;
-}
-
-core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
-    const std::vector<ProceduralSearchRoot>& roots) const {
-  ProceduralCatalogueScan result;
-  const auto loadCandidate = [](const std::filesystem::path& resourceRoot,
-                                ProceduralRootKind rootKind)
-      -> core::Result<ProceduralCandidate> {
+core::Result<ProceduralCandidate> loadProceduralCandidate(const std::filesystem::path& resourceRoot,
+    ProceduralRootKind rootKind, synthesis::ProceduralSingerResource* frozen = nullptr, std::stop_token stop = {}) {
+    if (stop.stop_requested()) return core::failure<ProceduralCandidate>(
+        core::ErrorCode::Conflict, "Procedural admission cancelled");
+    if (!isRealDirectory(resourceRoot)) return core::failure<ProceduralCandidate>(
+        core::ErrorCode::NotFound, "Procedural installation root is missing or unsafe");
     const auto manifestPath = resourceRoot / "manifest.json";
     if (!isRealRegularFile(manifestPath))
       return core::failure<ProceduralCandidate>(
@@ -706,6 +688,12 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
           manifest.error().code, "Invalid manifest.json: " + manifest.error().message,
           manifest.error().context);
     const auto recipePath = resourceRoot / manifest.value().recipeEntry;
+    auto directory = resourceRoot;
+    for (const auto& part : std::filesystem::path{manifest.value().recipeEntry}.parent_path()) {
+      directory /= part;
+      if (!isRealDirectory(directory)) return core::failure<ProceduralCandidate>(
+          core::ErrorCode::Conflict, "Package recipe has an unsafe parent directory");
+    }
     if (!isRealRegularFile(recipePath))
       return core::failure<ProceduralCandidate>(
           core::ErrorCode::NotFound,
@@ -727,6 +715,15 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
           renderIdentity.error().code,
           "Invalid package recipe: " + renderIdentity.error().message,
           renderIdentity.error().context);
+    if (frozen) {
+      const auto& bytes = recipeBytes.value();
+      const auto decoded = voice_design::decodeVoiceRecipe(
+          std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+      if (!decoded) return core::Result<ProceduralCandidate>{decoded.error()};
+      const auto captured = voice_design::freezeVoiceRecipeResource(decoded.value(), stop);
+      if (!captured) return core::Result<ProceduralCandidate>{captured.error()};
+      *frozen = captured.value();
+    }
     const auto contentHash = proceduralInstalledContentHash(text.value(), recipeBytes.value());
     const auto receipt = loadProceduralReceipt(resourceRoot);
     const auto matches = receipt.present && receipt.id == manifest.value().id &&
@@ -748,7 +745,29 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
         .packageDigest = matches ? receipt.packageDigest : std::string{},
         .signerKeyId = matches ? receipt.signerKeyId : std::string{},
     };
-  };
+}
+
+}  // namespace
+
+std::optional<domain::ProceduralInstallationReference> proceduralInstallationReference(
+    const ProceduralCandidate& candidate) {
+  if (candidate.trust == ProceduralTrust::DevelopmentFixture) return std::nullopt;
+  return domain::ProceduralInstallationReference{
+      candidate.manifest.id, candidate.manifest.version, candidate.contentHash,
+      candidate.manifest.engineId, candidate.manifest.engineRevision, candidate.manifest.recipeEntry,
+      candidate.packageDigest, candidate.signerKeyId};
+}
+
+core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
+    const std::vector<ProceduralSearchRoot>& roots) const {
+  auto detailed = scanDetailed(roots);
+  if (!detailed) return core::Result<std::vector<ProceduralCandidate>>{detailed.error()};
+  return std::move(detailed).value().candidates;
+}
+
+core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
+    const std::vector<ProceduralSearchRoot>& roots) const {
+  ProceduralCatalogueScan result;
   std::size_t visitedPackageFolders = 0U;
   bool scanStoppedAtLimit = false;
   for (const auto& root : roots) {
@@ -812,7 +831,7 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
               const bool isInstallWorkingDirectory =
                   folderName.starts_with(".staging-") || folderName.starts_with(".backup-");
               if (!isInstallWorkingDirectory) {
-                auto candidate = loadCandidate(resourceRoot, root.kind);
+                auto candidate = loadProceduralCandidate(resourceRoot, root.kind);
                 if (!candidate) {
                   auto detail = candidate.error().message;
                   if (!candidate.error().context.empty())
@@ -998,6 +1017,155 @@ std::vector<ProceduralSearchRoot> defaultProceduralSearchRoots() {
   }
 #endif
   return result;
+}
+
+core::Result<void> validateProceduralEngineBinding(const domain::ProceduralRecipeReference& reference) {
+  const auto valid = reference.validate();
+  if (!valid) return valid;
+  if (reference.installation &&
+      (reference.installation->engineId != voice_design::kSourceFilterEngineId ||
+       reference.installation->engineRevision != voice_design::kSourceFilterEngineRevision))
+    return core::failure(core::ErrorCode::Unsupported,
+        "Procedural singer requires a different engine revision; no implicit migration is available");
+  return core::success();
+}
+
+core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
+    const domain::ProceduralRecipeReference& reference,
+    const std::optional<std::filesystem::path>& projectDirectory,
+    const ProceduralAdmissionOptions& options, std::stop_token stop) {
+  using Output = AdmittedProceduralRecipe;
+  const auto fail = [](std::string message) {
+    return core::failure<Output>(core::ErrorCode::Conflict, std::move(message));
+  };
+  const auto valid = validateProceduralEngineBinding(reference);
+  if (!valid) return core::Result<Output>{valid.error()};
+  if (stop.stop_requested()) return fail("Procedural admission cancelled");
+  auto path = std::filesystem::path{reference.path};
+  const bool projectCopy = path.is_relative();
+  if (projectCopy) {
+    if (!projectDirectory || !projectDirectory->is_absolute())
+      return fail("Relative recipe reference requires a saved project directory");
+    path = *projectDirectory / path;
+  }
+  path = path.lexically_normal();
+  std::optional<std::filesystem::path> installationRoot;
+  auto rootKind = ProceduralRootKind::Installed;
+  if (!projectCopy && reference.installation) {
+    auto root = path;
+    for ([[maybe_unused]] const auto& component : std::filesystem::path{reference.installation->recipeEntry})
+      root = root.parent_path();
+    installationRoot = std::move(root);
+  } else if (!projectCopy) {
+    // Known catalogues have the fixed root/id/version/recipe-entry shape. A
+    // deleted manifest there must not turn an installation into an authored file.
+    const auto roots = options.roots.empty() ? defaultProceduralSearchRoots() : options.roots;
+    std::error_code error;
+    const auto resolvedPath = std::filesystem::weakly_canonical(path, error);
+    if (error) return fail("Cannot resolve procedural recipe location");
+    std::size_t selectedLength = 0U;
+    for (const auto& root : roots) {
+      const auto canonicalRoot = std::filesystem::weakly_canonical(root.path, error);
+      if (error) return fail("Cannot resolve procedural catalogue root");
+      const auto absoluteRoot = std::filesystem::absolute(root.path, error).lexically_normal();
+      if (error) return fail("Cannot resolve procedural catalogue root");
+      // Retain the lexical location as well as the resolved location: a symlink
+      // escaping a known installation must not reclassify it as an authored file.
+      for (const auto& pair : {std::pair{path, absoluteRoot}, std::pair{path, canonicalRoot}, std::pair{resolvedPath, canonicalRoot}}) {
+        const auto relative = pair.first.lexically_relative(pair.second);
+        if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") continue;
+        if (pair.second.native().size() < selectedLength) continue;
+        auto part = relative.begin();
+        if (part == relative.end() || *part == ".") return fail("Recipe is not inside a singer version directory");
+        auto candidateRoot = pair.second / *part++;
+        if (!isRealDirectory(candidateRoot)) return fail("Singer directory is missing or unsafe");
+        if (part == relative.end()) return fail("Recipe is not inside a singer version directory");
+        candidateRoot /= *part++;
+        if (part == relative.end()) return fail("Recipe is not inside a singer version directory");
+        if (!isRealDirectory(candidateRoot)) return fail("Singer version directory is missing or unsafe");
+        installationRoot = std::move(candidateRoot);
+        rootKind = root.kind;
+        selectedLength = pair.second.native().size();
+        break;
+      }
+    }
+    // Legacy absolute selections have no origin pin. Inspect bounded ancestors
+    // for typed metadata naming this recipe. Direct adjacent metadata is kept
+    // conservative even if damaged, rather than silently becoming a draft.
+    if (!installationRoot) {
+      auto parent = path.parent_path();
+      for (std::size_t depth = 0U; depth < 32U && !parent.empty(); ++depth) {
+        if (stop.stop_requested()) return fail("Procedural admission cancelled");
+        bool identified = false;
+        for (const auto* name : {"manifest.json", "install-receipt.json"}) {
+          const auto metadataPath = parent / name;
+          const auto status = std::filesystem::symlink_status(metadataPath, error);
+          if (error == std::errc::no_such_file_or_directory) { error.clear(); continue; }
+          if (error) return fail("Cannot inspect adjacent procedural metadata");
+          if (status.type() == std::filesystem::file_type::not_found) continue;
+          if (depth == 0U && std::string_view{name} == "install-receipt.json") { identified = true; break; }
+          if (!isRealRegularFile(metadataPath)) {
+            if (depth == 0U) return fail("Adjacent procedural metadata is unsafe");
+            continue;
+          }
+          const auto text = core::readTextFileLimited(metadataPath, 1024U * 1024U);
+          if (!text) {
+            if (depth == 0U) return fail("Adjacent procedural metadata cannot be read within its size limit");
+            continue;
+          }
+          const auto json = formats::parseJson(text.value());
+          if (!json || !json.value().isObject()) {
+            if (depth == 0U) return fail("Adjacent procedural metadata is malformed");
+            continue;
+          }
+          const auto* format = json.value().find(std::string_view{name} == "manifest.json" ? "formatId" : "resourceFamily");
+          const auto* entry = json.value().find("recipeEntry");
+          const bool typed = format && format->isString() &&
+              (format->asString() == ProceduralSingerManifest::kFormatId || format->asString() == "procedural-singer");
+          if (typed && (depth == 0U || (entry && entry->isString() && isSafeSeambankPath(entry->asString()) &&
+              (parent / entry->asString()).lexically_normal() == path))) { identified = true; break; }
+        }
+        if (identified) { installationRoot = parent; break; }
+        const auto next = parent.parent_path();
+        if (next == parent) break;
+        parent = next;
+      }
+    }
+  }
+  synthesis::ProceduralSingerResource resource;
+  auto origin = projectCopy ? ProceduralAdmissionOrigin::ProjectCopy : ProceduralAdmissionOrigin::Authored;
+  if (installationRoot) {
+    const auto captured = loadProceduralCandidate(*installationRoot, rootKind, &resource, stop);
+    if (!captured) return core::Result<Output>{captured.error()};
+    const auto& candidate = captured.value();
+    std::error_code error;
+    const auto expectedPath = std::filesystem::weakly_canonical(candidate.resourceRoot / candidate.manifest.recipeEntry, error);
+    if (error) return fail("Cannot resolve captured installed recipe path");
+    const auto actualPath = std::filesystem::weakly_canonical(path, error);
+    if (error || actualPath != expectedPath) return fail("Installed manifest names a different recipe file");
+    if (candidate.renderIdentity != reference.resource) return fail("Installed recipe identity differs from the saved selection");
+    if (reference.installation && proceduralInstallationReference(candidate) != reference.installation)
+      return fail("Installed singer provenance changed since selection; reselect the singer");
+    if (candidate.manifest.engineId != voice_design::kSourceFilterEngineId ||
+        candidate.manifest.engineRevision != voice_design::kSourceFilterEngineRevision)
+      return fail("Installed singer requires a different compiled engine revision");
+    if (std::find(candidate.manifest.styles.begin(), candidate.manifest.styles.end(), reference.style) == candidate.manifest.styles.end())
+      return fail("Selected style is not declared by the installed singer");
+    if (rootKind == ProceduralRootKind::Development) {
+      if (!options.allowDevelopmentFixtures) return fail("Development procedural singer is not allowed by this runtime");
+      origin = ProceduralAdmissionOrigin::Development;
+    } else {
+      if (options.requireTrustedInstalled && candidate.trust != ProceduralTrust::TrustedInstalled)
+        return fail("Installed procedural singer is not trusted by this runtime");
+      origin = ProceduralAdmissionOrigin::Installed;
+    }
+  } else {
+    const auto loaded = voice_design::loadVoiceRecipeResource(path, reference.resource, stop);
+    if (!loaded) return core::Result<Output>{loaded.error()};
+    resource = loaded.value();
+  }
+  if (stop.stop_requested()) return fail("Procedural admission cancelled");
+  return Output{reference, std::move(resource), origin};
 }
 
 std::string_view proceduralTrustName(ProceduralTrust trust) noexcept {

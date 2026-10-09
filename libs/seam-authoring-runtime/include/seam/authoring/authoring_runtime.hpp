@@ -79,6 +79,11 @@ public:
   // retain the conservative metadata check; no selection is rerun on the UI thread.
   [[nodiscard]] core::Result<rendering::SingerRouteEnvironment> sampleSingerRouteEnvironment(
       domain::TrackId trackId) const;
+  // UI-thread configuration; each worker request owns a copy. No file I/O here.
+  void setProceduralAdmissionOptions(distribution::ProceduralAdmissionOptions options) {
+    proceduralAdmissionOptions_ = std::move(options);
+    invalidatePreview();
+  }
   [[nodiscard]] AuthoringRenderCoordinator& renderer() noexcept {
     return renderer_;
   }
@@ -280,6 +285,7 @@ private:
 
   std::unique_ptr<ProjectDocument> document_;
   AuthoringRuntimeConfig config_;
+  distribution::ProceduralAdmissionOptions proceduralAdmissionOptions_{};
   VoicebankSession voicebanks_;
   AuthoringRenderCoordinator renderer_;
   AuthoringRenderCoordinator seamPreviewRenderer_;

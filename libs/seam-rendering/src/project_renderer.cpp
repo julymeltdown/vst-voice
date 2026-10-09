@@ -51,6 +51,37 @@ std::optional<RenderedPitchRange> scorePitchRange(const domain::VocalRegion& reg
 
 }  // namespace
 
+core::Result<TrackProceduralSource> captureProceduralSource(
+    const domain::VocalTrack& track, const TrackSingerSource& source, std::stop_token stop) {
+  using Output = TrackProceduralSource;
+  if (const auto* file = std::get_if<TrackRecipeFileSource>(&source)) {
+    if (file->trackId != track.id || !track.proceduralRecipe || *track.proceduralRecipe != file->reference)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Recipe source differs from saved selection or installation pins");
+    const auto admitted = distribution::admitProceduralRecipe(
+        file->reference, file->projectDirectory, file->admissionOptions, stop);
+    if (!admitted) return core::Result<Output>{admitted.error()};
+    return Output{track.id, admitted.value().resource(), file->reference.style, admitted.value()};
+  }
+  const auto* frozen = std::get_if<TrackProceduralSource>(&source);
+  if (!frozen || frozen->trackId != track.id) return core::failure<Output>(
+      core::ErrorCode::Conflict, "Procedural source has the wrong track or family");
+  if (track.proceduralRecipe) {
+    const auto& reference = *track.proceduralRecipe;
+    const auto engine = distribution::validateProceduralEngineBinding(reference);
+    if (!engine) return core::Result<Output>{engine.error()};
+    if (reference.resource != frozen->resource.identity || reference.style != frozen->style)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Frozen recipe differs from saved selection");
+    if (frozen->admission && !frozen->admission->matches(reference, frozen->resource))
+      return core::failure<Output>(core::ErrorCode::Conflict, "Captured admission differs from frozen recipe selection");
+    if (reference.installation && std::filesystem::path{reference.path}.is_absolute() && !frozen->admission) {
+      const auto admitted = distribution::admitProceduralRecipe(reference, {}, {}, stop);
+      if (!admitted) return core::Result<Output>{admitted.error()};
+      return Output{track.id, admitted.value().resource(), reference.style, admitted.value()};
+    }
+  }
+  return *frozen;
+}
+
 core::Result<void> validateCompleteProjectRender(const ProjectRenderResult& rendered) {
   if (rendered.diagnostics.empty()) return core::success();
   const auto& first = rendered.diagnostics.front();
@@ -87,36 +118,6 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
     const synthesis::PhraseRenderOptions& options, PcmCache* cache, std::stop_token stopToken) const {
   if (sources.size() > project.vocalTracks().size()) return core::failure<ProjectRenderResult>(
       core::ErrorCode::Conflict, "Singer source count exceeds project vocal tracks");
-  if (std::any_of(sources.begin(), sources.end(), [](const auto& source) {
-        return std::holds_alternative<TrackRecipeFileSource>(source);
-      })) {
-    std::vector<TrackSingerSource> resolved;
-    resolved.reserve(sources.size());
-    for (const auto& source : sources) {
-      if (stopToken.stop_requested()) return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict, "Recipe resolution cancelled");
-      const auto* file = std::get_if<TrackRecipeFileSource>(&source);
-      if (!file) { resolved.push_back(source); continue; }
-      const auto* track = project.findVocalTrack(file->trackId);
-      if (!track) return core::failure<ProjectRenderResult>(core::ErrorCode::NotFound, "Recipe source track is missing");
-      const auto solo = std::any_of(project.vocalTracks().begin(), project.vocalTracks().end(),
-          [](const auto& value) { return value.solo && !value.muted; }) ||
-          std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
-          [](const auto& value) { return value.solo && !value.muted; });
-      if (track->muted || (solo && !track->solo)) continue;
-      const auto valid = file->reference.validate();
-      if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
-      auto path = std::filesystem::path{file->reference.path};
-      if (path.is_relative()) {
-        if (!file->projectDirectory || !file->projectDirectory->is_absolute()) return core::failure<ProjectRenderResult>(
-            core::ErrorCode::NotFound, "Relative recipe reference requires a saved project directory");
-        path = *file->projectDirectory / path;
-      }
-      const auto resource = voice_design::loadVoiceRecipeResource(path.lexically_normal(), file->reference.resource, stopToken);
-      if (!resource) return core::Result<ProjectRenderResult>{resource.error()};
-      resolved.emplace_back(TrackProceduralSource{file->trackId, resource.value(), file->reference.style});
-    }
-    return renderWithSources(project, resolved, activeTrack, activeRegion, revision, sampleRate, quality, options, cache, stopToken);
-  }
   std::vector<domain::TrackId> sourceTracks;
   for (const auto& source : sources) {
     const auto id = std::visit([](const auto& value) { return value.trackId; }, source);
@@ -125,6 +126,26 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
     }
     sourceTracks.push_back(id);
   }
+  std::vector<TrackSingerSource> resolved;
+  resolved.reserve(sources.size());
+  const auto solo = std::any_of(project.vocalTracks().begin(), project.vocalTracks().end(),
+      [](const auto& value) { return value.solo && !value.muted; }) ||
+      std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+      [](const auto& value) { return value.solo && !value.muted; });
+  for (const auto& source : sources) {
+    if (stopToken.stop_requested()) return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict, "Recipe resolution cancelled");
+    if (!std::holds_alternative<TrackRecipeFileSource>(source) && !std::holds_alternative<TrackProceduralSource>(source)) {
+      resolved.push_back(source); continue;
+    }
+    const auto trackId = std::visit([](const auto& value) { return value.trackId; }, source);
+    const auto* track = project.findVocalTrack(trackId);
+    if (!track) return core::failure<ProjectRenderResult>(core::ErrorCode::NotFound, "Recipe source track is missing");
+    if (track->muted || (solo && !track->solo)) continue;
+    const auto captured = captureProceduralSource(*track, source, stopToken);
+    if (!captured) return core::Result<ProjectRenderResult>{captured.error()};
+    resolved.emplace_back(captured.value());
+  }
+  sources = resolved;
   if (sampleRate < 8000U || sampleRate > 192000U) {
     return core::failure<ProjectRenderResult>(
         core::ErrorCode::InvalidArgument,
