@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import hashlib
 import json
 import os
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -225,18 +227,57 @@ class ProductSoakCollectorTests(unittest.TestCase):
             self.assertIn(SESSION_REQUIRED, result.errors)
 
     def test_rss_is_read_from_the_live_process_not_a_constant(self) -> None:
-        # A constant placeholder satisfies 'rssBytes > 0', so the value is compared against
-        # what the operating system reports for this very process instead.
-        measured = _process_rss_bytes(os.getpid())
-        self.assertGreater(measured, 1_000_000)
-        samples = collect_soak_samples(os.getpid(), self.LIVE_DURATION_SECONDS, self.LIVE_INTERVAL_SECONDS)
-        observed = {sample['rssBytes'] for sample in samples}
-        self.assertTrue(observed)
-        for value in observed:
-            # Within an order of magnitude of the live reading: the sampler and this
-            # assertion observe the same process moments apart.
-            self.assertGreater(value, measured // 4)
-            self.assertLess(value, measured * 4)
+        # The shared unittest process can release prior tests' allocator pages
+        # between readings. Use a fresh target whose touched allocations remain
+        # live, and demand an observed change after a known additional allocation.
+        # A constant sampler cannot satisfy this cross-state comparison.
+        program = '''
+import os, sys, threading, time
+held = []
+def keep_resident():
+    while True:
+        for block in tuple(held):
+            for offset in range(0, len(block), 4096):
+                block[offset] ^= 1
+        time.sleep(0.05)
+threading.Thread(target=keep_resident, daemon=True).start()
+for line in sys.stdin:
+    # Incompressible bytes plus periodic page writes keep this a working set,
+    # rather than an idle, zero-filled allocation the OS can compress away.
+    block = bytearray(os.urandom(int(line)))
+    held.append(block)
+    print("ready", flush=True)
+'''
+        child = subprocess.Popen([sys.executable, '-u', '-c', program],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            with selectors.DefaultSelector() as ready:
+                ready.register(child.stdout, selectors.EVENT_READ)
+
+                def allocate(size):
+                    child.stdin.write(str(size) + '\n')
+                    child.stdin.flush()
+                    self.assertTrue(ready.select(timeout=30), 'RSS target did not acknowledge allocation')
+                    self.assertEqual(child.stdout.readline(), 'ready\n')
+
+                allocate(8 * 1024 * 1024)
+                before = collect_soak_samples(child.pid, self.LIVE_DURATION_SECONDS,
+                                              self.LIVE_INTERVAL_SECONDS)
+                allocate(64 * 1024 * 1024)
+                after = collect_soak_samples(child.pid, self.LIVE_DURATION_SECONDS,
+                                             self.LIVE_INTERVAL_SECONDS)
+                self.assertTrue(before and after)
+                # Observe at least half of the added, retained 64 MiB. This is
+                # a fixture sanity bound, not a product memory-growth criterion.
+                self.assertGreater(min(s['rssBytes'] for s in after),
+                                   max(s['rssBytes'] for s in before) + 32 * 1024 * 1024)
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=10)
+            with contextlib.suppress(BrokenPipeError):
+                child.stdin.close()
+            child.stdout.close()
 
     def test_a_growing_process_shows_growth(self) -> None:
         # Holding real bytes across a reading must move the measured RSS, which a constant

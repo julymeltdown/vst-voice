@@ -396,7 +396,7 @@ populate a clean venv with:
 ```sh
 uv venv --python 3.11 build/neural-runtime/diffsinger-repro
 uv pip sync --python build/neural-runtime/diffsinger-repro/bin/python \
-  --require-hashes --strict \
+  --require-hashes --strict --compile-bytecode \
   tools/voice_model_training/requirements-training-macos-arm64.lock.txt
 build/neural-runtime/diffsinger-repro/bin/python -m pip check
 ```
