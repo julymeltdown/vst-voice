@@ -56,6 +56,51 @@ pair for installation in the same Studio session. A previously signed package ca
 be installed through `install-candidate` with its captured digest. Packaging and installation warnings remain visible in Studio
 status; cancellation after commit does not claim nothing was written.
 
+## Installed resource verification and retained engineering records
+
+`verify-installed-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 INSTALL_DIRECTORY PUBLIC_KEY`
+checks a caller-selected normalized absolute directory against the captured signed
+package and candidate. It captures the package from a held regular-file descriptor
+into a private 0700 staging directory, hashes during the bounded copy, and uses
+that snapshot for all container and descriptor reads. It reconfirms the original
+file identity and the snapshot digest/stamp before completing. Capture can require
+up to 3 GiB additional temporary space, beyond sample payload verification storage;
+read/write or disk-full failures refuse verification without falling back to the
+original package. This does not protect against a hostile process owner or loader.
+
+Installed files are read through anchored directory handles, with no links, special
+files, extra files or extra directories accepted. Every signed entry must be present
+with its signed size/hash. The actual family receipt has a closed schema and must
+agree with independently verified package identity, trust key and native installed
+content identity. File/directory stamps are reconfirmed at completion. This is
+observed consistency checking, not an atomic filesystem snapshot or proof of an
+installation event, catalog placement, durability, runtime resolution or playback.
+A byte-identical directory copy can pass.
+
+The closed `seam.u14.installed-candidate-verification.v1` record distinguishes
+`candidateContentSha256`, `installedContentHash`, and `installedResourceTreeSha256`.
+The last binds all observed resource files including the receipt; it is not a product
+installation-tree digest. Sample candidate and installed content identities agree.
+A recipe's candidate identity and installed identity differ: the latter preserves
+`hex(SHA256(SHA256(manifest bytes || recipe bytes)))`, the existing receipt/catalog
+algorithm. Native code supplies these identities; Python does not reimplement them.
+
+`scripts/verify_installed_candidate_record.py` requires caller-supplied paths and
+SHA-256 pins for the retained record, native CLI and public key. It reruns the native
+verifier with fixed arguments, a minimal environment and bounded time/output, then
+compares the entire fresh record. Rehashing a forged retained record does not make
+it match installed bytes. Success is `ENGINEERING_PASS`; `authorizesRelease` and
+`releaseEligible` remain false, qualification is `NOT_QUALIFIED`, and human
+acceptance is `NOT_RUN`. Human/reviewer/release claims and unknown fields refuse.
+The script executes the explicitly selected trusted CLI; its hash pin is not an
+external execution attestation or source/build provenance certificate.
+
+Sample and recipe positive records are supported. Opaque model packages can verify,
+but installation and installed-resource verification refuse. A separate closed model
+package/refusal outcome record is still required, as are external dependency
+reporting, catalog placement and native execution provenance before full U45 linkage.
+The canonical U45 reconciliation hold remains unchanged.
+
 ## Publication and recovery boundaries
 
 The macOS/Linux packaging implementation uses a random private 0700 staging directory,

@@ -20,6 +20,11 @@ struct ProceduralSingerResource;
 
 namespace seam::distribution {
 
+// Persisted receipt identity: hex(SHA256(SHA256(manifest bytes || recipe bytes))).
+// Preserve this historical double hash for compatibility with installed resources.
+[[nodiscard]] std::string proceduralInstalledContentHash(
+    std::string_view manifestBytes, const std::vector<std::byte>& recipeBytes);
+
 // A distributable original procedural singer: one immutable recipe plus the declared facts a
 // selector needs. It is a different family from a sample bank, so the container carries a typed
 // manifest and the sample-bank `manifest.json` contract is untouched.

@@ -465,17 +465,17 @@ bool safeComponent(std::string_view value) noexcept {
   });
 }
 
-// The installed resource identity binds the manifest and the recipe, so a song that resolves an
-// installed procedural singer can tell that the resource it used has not changed.
-std::string proceduralContentHash(std::string_view manifestBytes,
+}  // namespace
+
+// Persisted identity is hex(SHA256(SHA256(manifest || recipe))). sha256Hex hashes
+// the finished digest again; changing that would invalidate existing receipts.
+std::string proceduralInstalledContentHash(std::string_view manifestBytes,
                                   const std::vector<std::byte>& recipeBytes) {
   core::Sha256 hash;
   hash.update(std::as_bytes(std::span{manifestBytes.data(), manifestBytes.size()}));
   hash.update(recipeBytes);
   return core::sha256Hex(hash.digest());
 }
-
-}  // namespace
 
 core::Result<InstalledProceduralSinger> installProceduralPackage(
     const std::filesystem::path& packagePath,
@@ -530,7 +530,7 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
     auto installedManifest = ProceduralSingerManifestJsonCodec{}.decode(installedText.value());
     if (!installedManifest || installedManifest.value() != manifest)
       return core::failure(core::ErrorCode::Conflict, "Installed procedural manifest differs from the signed manifest");
-    contentHash = proceduralContentHash(installedText.value(), recipeBytes.value());
+    contentHash = proceduralInstalledContentHash(installedText.value(), recipeBytes.value());
     if (options.expectedContentHash && contentHash != *options.expectedContentHash)
       return core::failure(core::ErrorCode::Conflict,
                            "Staged procedural singer differs from the expected content identity");
@@ -695,7 +695,7 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
           renderIdentity.error().code,
           "Invalid package recipe: " + renderIdentity.error().message,
           renderIdentity.error().context);
-    const auto contentHash = proceduralContentHash(text.value(), recipeBytes.value());
+    const auto contentHash = proceduralInstalledContentHash(text.value(), recipeBytes.value());
     const auto receipt = loadProceduralReceipt(resourceRoot);
     const auto matches = receipt.present && receipt.id == manifest.value().id &&
                          receipt.version == manifest.value().version &&

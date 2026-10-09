@@ -119,4 +119,28 @@ struct InstalledResourceCandidate final {
     const std::filesystem::path& packagePath, const std::filesystem::path& installRoot,
     const InstallCandidateOptions& options, std::stop_token stop = {});
 
+// Read-only engineering verification of an already installed sample or recipe.
+// Trust is established from the signed package and caller's key, never from receipt
+// booleans. Every installed file must match the signed entries, plus one typed
+// family receipt. This is neither runtime/render qualification nor human evidence.
+struct VerifiedInstalledCandidate final {
+  voicebank_production::ResourceCandidateKind kind{voicebank_production::ResourceCandidateKind::Sample};
+  std::string resourceKind;
+  std::string resourceId;
+  std::string resourceVersion;
+  std::string candidateSha256;
+  std::string packageDigest;
+  std::string candidateContentSha256;
+  std::string installedContentHash;
+  std::string signerKeyId;
+  std::string receiptSha256;
+  std::string installedResourceTreeSha256;
+  std::size_t installedFiles{0U};
+};
+
+[[nodiscard]] core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
+    const std::filesystem::path& packagePath, std::string_view expectedPackageDigest,
+    std::string_view expectedCandidateSha256, const std::filesystem::path& installedDirectory,
+    const distribution::VerifySeambankOptions& options, std::stop_token stop = {});
+
 }  // namespace seam::candidate_packaging

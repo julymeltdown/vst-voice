@@ -151,6 +151,32 @@ int verifyCandidatePackage(int argc, char** argv) {
   return 0;
 }
 
+int verifyInstalledCandidate(int argc, char** argv) {
+  if (argc != 7) { printCandidatePackageUsage(); return 1; }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError, "Cannot install verification cancellation handlers", {}});
+  const auto options = trustedKey(argv[6]);
+  if (!options) return fail(options.error());
+  const auto package = absolute(argv[2]);
+  const auto installed = absolute(argv[5]);
+  if (!package) return fail(package.error());
+  if (!installed) return fail(installed.error());
+  const auto verified = packaging::verifyInstalledResourceCandidate(package.value(), argv[3], argv[4], installed.value(), options.value(), cancellation.token());
+  if (!verified) return fail(verified.error(), &cancellation);
+  const auto& value = verified.value();
+  print({{"schemaVersion", std::int64_t{1}}, {"recordType", "seam.u14.installed-candidate-verification.v1"},
+      {"result", "InstalledCandidateVerified"}, {"evidenceScope", "ENGINEERING_ONLY"},
+      {"resourceKind", value.resourceKind}, {"payloadFamily", std::string{production::toString(value.kind)}},
+      {"resourceId", value.resourceId}, {"resourceVersion", value.resourceVersion},
+      {"resourceCandidateSha256", value.candidateSha256}, {"packageDigest", value.packageDigest},
+      {"candidateContentSha256", value.candidateContentSha256}, {"installedContentHash", value.installedContentHash},
+      {"signerKeyId", value.signerKeyId}, {"receiptSha256", value.receiptSha256},
+      {"installedResourceTreeSha256", value.installedResourceTreeSha256}, {"installedFiles", static_cast<std::int64_t>(value.installedFiles)},
+      {"qualification", std::string{production::kCandidateQualification}}, {"humanAcceptance", "NOT_RUN"},
+      {"authorizesRelease", false}, {"releaseEligible", false}});
+  return 0;
+}
+
 int installCandidate(int argc, char** argv) {
   const bool replace = argc == 7 && std::string_view{argv[6]} == "--replace";
   if (argc != 6 && !replace) { printCandidatePackageUsage(); return 1; }
@@ -218,6 +244,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
   if (command == "inspect-candidate") return inspectCandidate(argc, argv);
   if (command == "package-candidate") return packageCandidate(argc, argv);
   if (command == "verify-candidate-package") return verifyCandidatePackage(argc, argv);
+  if (command == "verify-installed-candidate") return verifyInstalledCandidate(argc, argv);
   if (command == "install-candidate") return installCandidate(argc, argv);
   if (command == "publish-recipe-candidate") return publishRecipeCandidate(argc, argv);
   if (command == "publish-model-candidate") return publishModelCandidate(argc, argv);
@@ -230,6 +257,8 @@ void printCandidatePackageUsage() {
     << "  seam_voicebank_cli package-candidate CANDIDATE_DIRECTORY CANDIDATE_SHA256 OUTPUT_PACKAGE PRIVATE_KEY\n"
     << "    Signs exactly that schema-3 candidate into a new package; never replaces a package.\n"
     << "  seam_voicebank_cli verify-candidate-package PACKAGE PUBLIC_KEY\n"
+    << "  seam_voicebank_cli verify-installed-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 INSTALL_DIRECTORY PUBLIC_KEY\n"
+    << "    Read-only exact signed-entry and family-receipt verification; engineering only.\n"
     << "  seam_voicebank_cli install-candidate PACKAGE PACKAGE_SHA256 INSTALL_ROOT PUBLIC_KEY [--replace]\n"
     << "    Installs only the package with that digest; a failure leaves the installed version intact.\n"
     << "  seam_voicebank_cli publish-recipe-candidate RECIPE_JSON VERSION LANGUAGE OUTPUT_DIRECTORY [DISPLAY_NAME]\n"

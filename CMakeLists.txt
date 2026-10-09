@@ -599,7 +599,9 @@ target_link_libraries(seam_distribution PUBLIC
 seam_apply_compiler_options(seam_distribution)
 
 # Producer candidate -> signed package -> installed resource; neither lower layer depends on the other.
-add_library(seam_candidate_packaging libs/seam-candidate-packaging/src/candidate_package.cpp)
+add_library(seam_candidate_packaging
+  libs/seam-candidate-packaging/src/candidate_package.cpp
+  libs/seam-candidate-packaging/src/installed_candidate.cpp)
 target_include_directories(seam_candidate_packaging PUBLIC libs/seam-candidate-packaging/include)
 target_link_libraries(seam_candidate_packaging PUBLIC
   seam_voicebank_production seam_distribution seam_voicebank seam_formats seam_core)
@@ -3028,6 +3030,9 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp)
   target_include_directories(seam_sample_review_cli_tests PRIVATE tests)
   target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>" SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  if(Python3_Interpreter_FOUND)
+    target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_PYTHON="${Python3_EXECUTABLE}")
+  endif()
   target_link_libraries(seam_sample_review_cli_tests PRIVATE
     seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application seam_candidate_packaging)
   if(SEAM_ENABLE_THREAD_SANITIZER)

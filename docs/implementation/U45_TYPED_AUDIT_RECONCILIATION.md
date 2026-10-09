@@ -96,3 +96,23 @@ learned singing and language/creator evidence, Windows and nine host tuples,
 signed installed workloads and authorized immutable-archive release decisions.
 None is inferred from the synthetic checks. `.github` and Windows TODO remain
 unchanged.
+
+## Installed-resource bridge increment (2026-10-09)
+
+The separate `seam.u14.installed-candidate-verification.v1` record now derives
+sample/recipe identity from a pinned signed package, actual receipt and installed
+bytes through the native CLI. A bounded private package snapshot prevents ordinary
+source replacement from mixing package reads. Retained-record replay requires
+caller-pinned CLI/key/record bytes and fresh native output; it never authorizes
+release. This addresses installed-content verification within item 1, not its full
+execution-record obligation. It does not prove who installed it, actual catalog
+placement, resource use in an observation, source/build/platform lineage, dependency
+availability, model runtime admission or human qualification.
+
+Real native regression paths cover sample/recipe positives and opaque model
+package verification followed by install/audit refusal. The Python closed record
+supports sample/recipe success only. A separate model refusal outcome record and
+declared dependency report remain open. Per-observation provenance, native project/
+operation/measurement replay, qualified resources, frozen profiles and external
+authority still block canonical integration. `release_gate.py` and
+`U45_RECONCILIATION_HOLD` remain unchanged.

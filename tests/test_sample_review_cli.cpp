@@ -496,6 +496,33 @@ formats::JsonValue cliSuccess(std::vector<std::string> arguments) {
   return json.value();
 }
 std::string field(const formats::JsonValue& object, std::string_view key) { return object.find(key)->asString(); }
+#if defined(SEAM_TEST_PYTHON)
+void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesystem::path& root,
+    const std::filesystem::path& package, const std::filesystem::path& installed, const std::string& key) {
+  const auto path = root / "native-install-record.json";
+  CHECK(core::durableAtomicWriteTextNew(path, formats::stringifyJson(record, true)));
+  const auto recordSha = core::sha256File(path).value();
+  const auto cliSha = core::sha256File(SEAM_TEST_VOICEBANK_CLI).value();
+  const std::vector<std::string> args{(std::filesystem::path{SEAM_TEST_SOURCE_DIR} / "scripts/verify_installed_candidate_record.py").string(),
+      "--record", path.string(), "--record-sha256", recordSha, "--package", package.string(),
+      "--installed-directory", installed.string(), "--public-key", key, "--public-key-sha256", core::sha256File(key).value(),
+      "--voicebank-cli", SEAM_TEST_VOICEBANK_CLI, "--cli-sha256", cliSha};
+  const auto run = authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = args});
+  CHECK(run);
+  const auto result = formats::parseJson(run.value().standardOutput); CHECK(result);
+  CHECK(result.value().find("status")->asString() == "ENGINEERING_PASS");
+  CHECK(result.value().find("passed")->asBool()); CHECK(!result.value().find("authorizesRelease")->asBool());
+  CHECK(result.value().find("verifierSha256")->asString() == cliSha);
+  // A forged digest in an otherwise valid record must fail even after rehashing
+  // the record itself: fresh native verification independently derives the value.
+  auto forged = record; forged.asObject()["installedResourceTreeSha256"] = std::string(64, 'a');
+  CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(forged, true)));
+  auto changed = args; changed[4] = core::sha256File(path).value();
+  CHECK(!authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = changed}));
+  CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(record, true)));
+}
+#endif
+
 }  // namespace
 
 TEST_CASE("CLI publishes a typed schema-3 candidate that lists every embedded file and refuses anything else") {
@@ -866,6 +893,22 @@ TEST_CASE("CLI packages and installs exactly the published candidate as distinct
   const std::filesystem::path installDirectory{field(installed, "installDirectory")};
   CHECK(core::sha256File(installDirectory / "candidate.json").value() == candidateSha);
   const auto installedTree = treeDigest(installDirectory);
+  const auto audit = fixture.success({"verify-installed-candidate", package.string(), packageDigest, candidateSha,
+      installDirectory.string(), keys.publicKey});
+  CHECK(field(audit, "result") == "InstalledCandidateVerified");
+  CHECK(field(audit, "resourceCandidateSha256") == candidateSha);
+  CHECK(field(audit, "candidateContentSha256") == field(audit, "installedContentHash"));
+  CHECK(field(audit, "receiptSha256") == core::sha256File(installDirectory / "install-receipt.json").value());
+  CHECK(field(audit, "evidenceScope") == "ENGINEERING_ONLY");
+  CHECK(field(audit, "humanAcceptance") == "NOT_RUN");
+#if defined(SEAM_TEST_PYTHON)
+  checkNativeRecordReplay(audit, fixture.root, package, installDirectory, keys.publicKey);
+#endif
+  CHECK(!audit.find("authorizesRelease")->asBool());
+  CHECK(treeDigest(installDirectory) == installedTree);
+  CHECK(!fixture.run({"verify-installed-candidate", package.string(), packageDigest, candidateSha, installDirectory.string(), other.publicKey}));
+  CHECK(!fixture.run({"verify-installed-candidate", package.string(), std::string(64, 'e'), candidateSha, installDirectory.string(), keys.publicKey}));
+  CHECK(!fixture.run({"verify-installed-candidate", package.string(), packageDigest, std::string(64, 'e'), installDirectory.string(), keys.publicKey}));
   CHECK(!fixture.run({"install-candidate", package.string(), packageDigest, (fixture.root / "installed").string(), keys.publicKey}));
   CHECK(treeDigest(installDirectory) == installedTree);
   // A new song resolves and renders the installed bank with the producer and candidate unavailable.
@@ -1083,6 +1126,20 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   const std::filesystem::path singerDirectory{field(recipeInstalled, "installDirectory")};
   CHECK(readText(singerDirectory / "install-receipt.json").find("procedural-singer") != std::string::npos);
   CHECK(core::sha256File(singerDirectory / "candidate.json").value() == field(recipe, "candidateSha256"));
+  const auto singerAudit = cliSuccess({"verify-installed-candidate", (root / "recipe.seamsinger").string(),
+      field(recipePackage, "packageDigest"), field(recipe, "candidateSha256"), singerDirectory.string(), keys.publicKey});
+  CHECK(field(singerAudit, "candidateContentSha256") == field(recipe, "contentSha256"));
+  CHECK(field(singerAudit, "installedContentHash") == field(recipeInstalled, "contentHash"));
+  CHECK(field(singerAudit, "installedContentHash") != field(singerAudit, "candidateContentSha256"));
+#if defined(SEAM_TEST_PYTHON)
+  checkNativeRecordReplay(singerAudit, root, root / "recipe.seamsinger", singerDirectory, keys.publicKey);
+#endif
+  const auto wrongRecipeReceipt = copyTree(singerDirectory, root / "wrong-recipe-receipt");
+  auto recipeReceipt = formats::parseJson(readText(wrongRecipeReceipt / "install-receipt.json")).value();
+  recipeReceipt.asObject()["contentHash"] = field(recipe, "contentSha256");
+  CHECK(core::durableAtomicWriteText(wrongRecipeReceipt / "install-receipt.json", formats::stringifyJson(recipeReceipt, true)));
+  CHECK(!runCli({"verify-installed-candidate", (root / "recipe.seamsinger").string(), field(recipePackage, "packageDigest"),
+      field(recipe, "candidateSha256"), wrongRecipeReceipt.string(), keys.publicKey}));
   const auto recipeWithGraph = copyTree(root / "recipe-candidate", root / "recipe-with-graph");
   CHECK(core::durableAtomicWriteTextNew(recipeWithGraph / "opaque.ONNX", "opaque graph"));
   CHECK(distribution::packSignedContainer(recipeWithGraph, root / "recipe-graph.seamsinger", keys.pair));
@@ -1133,6 +1190,9 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(!runCli({"install-candidate", (root / "model.seampkg.bin").string(), field(modelPackage, "packageDigest"),
       (root / "models").string(), keys.publicKey}));
   CHECK(!std::filesystem::exists(root / "models/fixture.model"));
+  CHECK(!runCli({"verify-installed-candidate", (root / "model.seampkg.bin").string(), field(modelPackage, "packageDigest"),
+      field(model, "candidateSha256"), (root / "models/fixture.model").string(), keys.publicKey}));
+  CHECK(!std::filesystem::exists(root / "models"));
   // A declaration can never produce a sample candidate: those come only from a reviewed producer generation.
   production::DeclaredResourceCandidateRequest declaredSample;
   declaredSample.kind = production::ResourceCandidateKind::Sample;
@@ -1217,5 +1277,81 @@ TEST_CASE("Candidate packaging preserves foreign parents, checks final cancellat
   CHECK(changed); CHECK(changed.value().durabilityConfirmed); CHECK(!changed.value().descriptorReconfirmed);
   CHECK(changed.value().diagnostic.find("after commit") != std::string::npos);
 
+#endif
+}
+
+TEST_CASE("Installed candidate verification binds real receipts and refuses substituted files or links") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto candidate = fixture.root / "candidate";
+  const auto published = fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), candidate));
+  const auto keys = makeKeys(fixture.root, "audit");
+  const auto package = fixture.root / "candidate.seambank";
+  const auto packaged = fixture.success({"package-candidate", candidate.string(), field(published, "candidateSha256"), package.string(), keys.privateKey});
+  const auto installed = fixture.success({"install-candidate", package.string(), field(packaged, "packageDigest"),
+      (fixture.root / "installed").string(), keys.publicKey});
+  const std::filesystem::path original{field(installed, "installDirectory")};
+  const auto args = [&](const std::filesystem::path& root) {
+    return std::vector<std::string>{"verify-installed-candidate", package.string(), field(packaged, "packageDigest"),
+        field(published, "candidateSha256"), root.string(), keys.publicKey};
+  };
+  CHECK(fixture.success(args(original)).find("installedFiles")->asInt64() > 1);
+  for (const auto& key : {"packageDigest", "contentHash", "signerKeyId", "voicebankId", "voicebankVersion"}) {
+    const auto modified = copyTree(original, fixture.root / (std::string{"receipt-"} + key));
+    auto receipt = formats::parseJson(readText(modified / "install-receipt.json")).value();
+    receipt.asObject()[key] = std::string(64, 'f');
+    CHECK(core::durableAtomicWriteText(modified / "install-receipt.json", formats::stringifyJson(receipt, true)));
+    const auto before = treeDigest(modified);
+    CHECK(!fixture.run(args(modified)));
+    CHECK(treeDigest(modified) == before);
+  }
+  for (const auto& key : {"signatureValid", "signerTrusted", "schemaVersion"}) {
+    const auto modified = copyTree(original, fixture.root / (std::string{"type-"} + key));
+    auto receipt = formats::parseJson(readText(modified / "install-receipt.json")).value();
+    receipt.asObject()[key] = false;
+    CHECK(core::durableAtomicWriteText(modified / "install-receipt.json", formats::stringifyJson(receipt, true)));
+    CHECK(!fixture.run(args(modified)));
+  }
+  const auto missing = copyTree(original, fixture.root / "missing-receipt");
+  CHECK(std::filesystem::remove(missing / "install-receipt.json")); CHECK(!fixture.run(args(missing)));
+  const auto extra = copyTree(original, fixture.root / "unlisted");
+  CHECK(core::durableAtomicWriteTextNew(extra / "foreign.txt", "not signed")); CHECK(!fixture.run(args(extra)));
+  const auto emptyDirectory = copyTree(original, fixture.root / "unlisted-directory");
+  CHECK(std::filesystem::create_directory(emptyDirectory / "foreign")); CHECK(!fixture.run(args(emptyDirectory)));
+  const auto changed = copyTree(original, fixture.root / "changed-candidate");
+  CHECK(core::durableAtomicWriteText(changed / "candidate.json", readText(changed / "candidate.json") + " "));
+  CHECK(!fixture.run(args(changed)));
+  const auto descriptor = production::verifyResourceCandidateDirectory(candidate).value().descriptor;
+  const auto payload = descriptor.payload.front().path;
+  const auto altered = copyTree(original, fixture.root / "changed-payload");
+  auto bytes = core::readFileBytesLimited(altered / payload, 1024U * 1024U).value(); CHECK(!bytes.empty());
+  bytes.front() ^= std::byte{1}; CHECK(core::durableAtomicWrite(altered / payload, bytes)); CHECK(!fixture.run(args(altered)));
+  const auto linked = copyTree(original, fixture.root / "linked-payload");
+  CHECK(std::filesystem::remove(linked / payload)); std::filesystem::create_symlink(original / payload, linked / payload);
+  CHECK(!fixture.run(args(linked)));
+  std::filesystem::create_directory_symlink(original, fixture.root / "linked-root");
+  CHECK(!fixture.run(args(fixture.root / "linked-root")));
+  CHECK(!fixture.run(args((fixture.root / "linked-root").string() + "/")));
+  distribution::VerifySeambankOptions trust{.trustedPublicKeys = {keys.pair.publicKey}, .requireTrustedSigner = true};
+  const auto linkedPackage = fixture.root / "linked-package.seambank";
+  std::filesystem::create_symlink(package, linkedPackage);
+  CHECK(!candidate_packaging::verifyInstalledResourceCandidate(linkedPackage, field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), original, trust));
+  auto bounded = trust;
+  bounded.limits.maximumArchiveBytes = std::filesystem::file_size(package) - 1U;
+  CHECK(!candidate_packaging::verifyInstalledResourceCandidate(package, field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), original, bounded));
+  const auto changedPackage = fixture.root / "changed-package.seambank";
+  std::filesystem::copy_file(package, changedPackage);
+  auto packageBytes = core::readFileBytesLimited(changedPackage, 16U * 1024U * 1024U).value();
+  packageBytes.back() ^= std::byte{1}; CHECK(core::durableAtomicWrite(changedPackage, packageBytes));
+  CHECK(!candidate_packaging::verifyInstalledResourceCandidate(changedPackage, field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), original, trust));
+  std::stop_source stopped; stopped.request_stop();
+  CHECK(!candidate_packaging::verifyInstalledResourceCandidate(package, field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), original, trust, stopped.get_token()));
+  CHECK(fixture.success(args(original)).find("result")->asString() == "InstalledCandidateVerified");
 #endif
 }
