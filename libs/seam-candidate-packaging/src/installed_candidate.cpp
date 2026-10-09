@@ -339,6 +339,8 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     return core::failure<Output>(core::ErrorCode::ParseError, "Installed receipt is not a JSON object");
   const auto& record = receipt.value();
   std::string contentHash = descriptor.contentSha256;
+  domain::SingerResourceIdentity projectResource{domain::SingerResourceKind::Sample,
+      descriptor.resourceId, descriptor.resourceVersion, descriptor.contentSha256};
   const bool recipe = descriptor.kind == production::ResourceCandidateKind::Recipe;
   if (recipe) {
     const auto manifest = distribution::verifyProceduralPackage(snapshot.path, options);
@@ -347,6 +349,10 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     const auto manifestBytes = distribution::readSignedContainerEntry(value.container, snapshot.path, "manifest.json", 32U * 1024U * 1024U);
     const auto recipeBytes = distribution::readSignedContainerEntry(value.container, snapshot.path, manifest.value().manifest.recipeEntry, 16U * 1024U * 1024U);
     if (!manifestBytes || !recipeBytes) return core::failure<Output>(core::ErrorCode::Conflict, "Cannot read signed recipe identity");
+    const auto identity = distribution::proceduralRenderIdentity(recipeBytes.value());
+    if (!identity || identity.value().contentHash != descriptor.contentSha256)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Canonical recipe render identity differs from the signed candidate");
+    projectResource = identity.value();
     contentHash = distribution::proceduralInstalledContentHash(
         std::string_view{reinterpret_cast<const char*>(manifestBytes.value().data()), manifestBytes.value().size()}, recipeBytes.value());
     const auto& declared = manifest.value().manifest;
@@ -391,7 +397,7 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
   return Output{descriptor.kind, descriptor.resourceKind, descriptor.resourceId, descriptor.resourceVersion,
       value.candidateSha256, value.container.packageDigest, descriptor.contentSha256, contentHash,
       value.container.signerKeyId, tree.checked.at(std::string{kReceipt}).sha, treeHash.hexDigest(), tree.checked.size(),
-      descriptor.externalDependencies};
+      std::move(projectResource), descriptor.languages, descriptor.externalDependencies};
 #else
   (void)packagePath; (void)expectedPackageDigest; (void)expectedCandidateSha256; (void)installedDirectory; (void)options; (void)stop;
   return core::failure<Output>(core::ErrorCode::Unsupported, "Installed candidate verification is not implemented on this platform");

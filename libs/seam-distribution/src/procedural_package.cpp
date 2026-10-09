@@ -231,23 +231,6 @@ core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
   return core::success();
 }
 
-// The identity the renderer validates, derived exactly as the voice-design layer derives it: the id
-// comes from the recipe, the version is its schema version, and the digest is over its canonical
-// encoding. Deriving it independently here would be a second definition of the same identity, so
-// this decodes, re-encodes and hashes the same way instead of trusting a stored value.
-core::Result<domain::SingerResourceIdentity> proceduralRenderIdentity(
-    const std::vector<std::byte>& bytes) {
-  using Output = domain::SingerResourceIdentity;
-  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-  auto recipe = voice_design::decodeVoiceRecipe(text);
-  if (!recipe) return core::Result<Output>{recipe.error()};
-  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
-  if (!canonical) return core::Result<Output>{canonical.error()};
-  return Output{domain::SingerResourceKind::Procedural, recipe.value().id,
-                std::to_string(voice_design::voiceRecipeSchemaVersion(recipe.value())),
-                core::sha256Hex(canonical.value())};
-}
-
 // Every style the recipe declares, across all its articulation families. A singer that offers a
 // style the recipe does not carry would render that style by falling back to another one, so the
 // offered set is read from the recipe rather than asked for.
@@ -289,6 +272,23 @@ std::vector<std::string> recipePhones(const voice_design::VoiceRecipe& recipe) {
 }
 
 }  // namespace
+
+// The identity the renderer validates, derived exactly as the voice-design layer derives it: the id
+// comes from the recipe, the version is its schema version, and the digest is over its canonical
+// encoding. Deriving it independently here would be a second definition of the same identity, so
+// this decodes, re-encodes and hashes the same way instead of trusting a stored value.
+core::Result<domain::SingerResourceIdentity> proceduralRenderIdentity(
+    const std::vector<std::byte>& bytes) {
+  using Output = domain::SingerResourceIdentity;
+  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  auto recipe = voice_design::decodeVoiceRecipe(text);
+  if (!recipe) return core::Result<Output>{recipe.error()};
+  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
+  if (!canonical) return core::Result<Output>{canonical.error()};
+  return Output{domain::SingerResourceKind::Procedural, recipe.value().id,
+                std::to_string(voice_design::voiceRecipeSchemaVersion(recipe.value())),
+                core::sha256Hex(canonical.value())};
+}
 
 core::Result<ProceduralPackageInfo> packProceduralPackage(
     const std::filesystem::path& sourceDirectory,

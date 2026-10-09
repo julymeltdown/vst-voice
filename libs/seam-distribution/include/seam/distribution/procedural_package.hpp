@@ -20,6 +20,10 @@ struct ProceduralSingerResource;
 
 namespace seam::distribution {
 
+// Project/render identity from decoded canonical recipe bytes; no file I/O or installation claim.
+[[nodiscard]] core::Result<domain::SingerResourceIdentity> proceduralRenderIdentity(
+    const std::vector<std::byte>& recipeBytes);
+
 // Persisted receipt identity: hex(SHA256(SHA256(manifest bytes || recipe bytes))).
 // Preserve this historical double hash for compatibility with installed resources.
 [[nodiscard]] std::string proceduralInstalledContentHash(

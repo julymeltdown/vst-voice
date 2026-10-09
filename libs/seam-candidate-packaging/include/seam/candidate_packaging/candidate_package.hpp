@@ -152,6 +152,9 @@ struct VerifiedInstalledCandidate final {
   std::string receiptSha256;
   std::string installedResourceTreeSha256;
   std::size_t installedFiles{0U};
+  // Derived from the same verified package snapshot whose entries match the installed tree.
+  domain::SingerResourceIdentity projectResource;
+  std::vector<std::string> languages;
   std::vector<voicebank_production::ResourceCandidateExternalDependency> externalDependencies;
 };
 

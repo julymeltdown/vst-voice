@@ -1,4 +1,5 @@
 #include "candidate_package_commands.hpp"
+#include "project_binding_commands.hpp"
 #include "signal_cancellation.hpp"
 
 #include "seam/candidate_packaging/candidate_package.hpp"
@@ -181,6 +182,24 @@ int probeModelCandidate(int argc, char** argv) {
   return 0;
 }
 
+Json::Object installedRecord(const packaging::VerifiedInstalledCandidate& value) {
+  formats::JsonValue::Array dependencies;
+  for (const auto& dependency : value.externalDependencies)
+    dependencies.emplace_back(formats::JsonValue::Object{{"kind", dependency.kind}, {"id", dependency.id}, {"revision", dependency.revision}});
+  return Json::Object{{"schemaVersion", std::int64_t{2}}, {"recordType", "seam.u14.installed-candidate-verification.v2"},
+      {"result", "InstalledCandidateVerified"}, {"evidenceScope", "ENGINEERING_ONLY"},
+      {"resourceKind", value.resourceKind}, {"payloadFamily", std::string{production::toString(value.kind)}},
+      {"resourceId", value.resourceId}, {"resourceVersion", value.resourceVersion},
+      {"resourceCandidateSha256", value.candidateSha256}, {"packageDigest", value.packageDigest},
+      {"candidateContentSha256", value.candidateContentSha256}, {"installedContentHash", value.installedContentHash},
+      {"signerKeyId", value.signerKeyId}, {"receiptSha256", value.receiptSha256},
+      {"installedResourceTreeSha256", value.installedResourceTreeSha256}, {"installedFiles", static_cast<std::int64_t>(value.installedFiles)},
+      {"externalDependencies", std::move(dependencies)}, {"dependencyEvidence", "SIGNED_DECLARATION"},
+      {"runtimeAvailability", "NOT_CHECKED"},
+      {"qualification", std::string{production::kCandidateQualification}}, {"humanAcceptance", "NOT_RUN"},
+      {"authorizesRelease", false}, {"releaseEligible", false}};
+}
+
 int verifyInstalledCandidate(int argc, char** argv) {
   if (argc != 7) { printCandidatePackageUsage(); return 1; }
   SignalCancellation cancellation;
@@ -193,22 +212,37 @@ int verifyInstalledCandidate(int argc, char** argv) {
   if (!installed) return fail(installed.error());
   const auto verified = packaging::verifyInstalledResourceCandidate(package.value(), argv[3], argv[4], installed.value(), options.value(), cancellation.token());
   if (!verified) return fail(verified.error(), &cancellation);
-  const auto& value = verified.value();
-  formats::JsonValue::Array dependencies;
-  for (const auto& dependency : value.externalDependencies)
-    dependencies.emplace_back(formats::JsonValue::Object{{"kind", dependency.kind}, {"id", dependency.id}, {"revision", dependency.revision}});
-  print({{"schemaVersion", std::int64_t{2}}, {"recordType", "seam.u14.installed-candidate-verification.v2"},
-      {"result", "InstalledCandidateVerified"}, {"evidenceScope", "ENGINEERING_ONLY"},
-      {"resourceKind", value.resourceKind}, {"payloadFamily", std::string{production::toString(value.kind)}},
-      {"resourceId", value.resourceId}, {"resourceVersion", value.resourceVersion},
-      {"resourceCandidateSha256", value.candidateSha256}, {"packageDigest", value.packageDigest},
-      {"candidateContentSha256", value.candidateContentSha256}, {"installedContentHash", value.installedContentHash},
-      {"signerKeyId", value.signerKeyId}, {"receiptSha256", value.receiptSha256},
-      {"installedResourceTreeSha256", value.installedResourceTreeSha256}, {"installedFiles", static_cast<std::int64_t>(value.installedFiles)},
-      {"externalDependencies", std::move(dependencies)}, {"dependencyEvidence", "SIGNED_DECLARATION"},
-      {"runtimeAvailability", "NOT_CHECKED"},
-      {"qualification", std::string{production::kCandidateQualification}}, {"humanAcceptance", "NOT_RUN"},
-      {"authorizesRelease", false}, {"releaseEligible", false}});
+  print(installedRecord(verified.value()));
+  return 0;
+}
+
+int verifyInstalledProjectBinding(int argc, char** argv) {
+  if (argc != 12) { printCandidatePackageUsage(); return 1; }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError, "Cannot install verification cancellation handlers", {}});
+  const auto options=trustedKey(argv[11]);
+  if (!options) return fail(options.error());
+  const auto package=absolute(argv[7]), installed=absolute(argv[10]);
+  if (!package) return fail(package.error());
+  if (!installed) return fail(installed.error());
+  const auto verified=packaging::verifyInstalledResourceCandidate(package.value(),argv[8],argv[9],installed.value(),options.value(),cancellation.token());
+  if (!verified) return fail(verified.error(),&cancellation);
+  const auto& value=verified.value();
+  const auto& resource=value.projectResource;
+  const auto binding=verifyProjectBindingRecord({argv[2],argv[3],argv[4],argv[5],production::toString(value.kind),
+      resource.id,resource.version,resource.contentHash,argv[6]});
+  if (!binding) return fail(binding.error(),&cancellation);
+  for (const auto& language : binding.value().find("languages")->asArray())
+    if (std::find(value.languages.begin(),value.languages.end(),language.asString())==value.languages.end())
+      return fail({core::ErrorCode::Conflict,"Project language is absent from the signed resource declaration",{}});
+  if (cancellation.token().stop_requested()) return fail({core::ErrorCode::Conflict,"Installed project binding cancelled",{}},&cancellation);
+  print({{"schemaVersion",std::int64_t{1}},{"recordType","seam.u45.installed-project-binding.v1"},
+      {"result","InstalledProjectBindingVerified"},{"evidenceScope","ENGINEERING_ONLY"},
+      {"bindingEvidence","VERIFIED_INSTALLED_CONTENT_TO_PROJECT_REFERENCE"},
+      {"languageCoverage","SIGNED_DECLARATION"},{"resourceLanguages",strings(value.languages)},
+      {"installed",installedRecord(value)},{"project",binding.value()},
+      {"runtimeAvailability","NOT_CHECKED"},{"playback","NOT_RUN"},{"hostExecution","NOT_RUN"},
+      {"humanAcceptance","NOT_RUN"},{"qualification","NOT_QUALIFIED"},{"authorizesRelease",false},{"releaseEligible",false}});
   return 0;
 }
 
@@ -274,6 +308,7 @@ int publishModelCandidate(int argc, char** argv) {
 }  // namespace
 
 std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
+  if (argc >= 2 && std::string_view{argv[1]} == "verify-installed-project-binding") return verifyInstalledProjectBinding(argc,argv);
   if (argc < 2) return std::nullopt;
   const std::string_view command{argv[1]};
   if (command == "inspect-candidate") return inspectCandidate(argc, argv);
@@ -288,6 +323,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
 }
 
 void printCandidatePackageUsage() {
+  std::cerr << "  verify-installed-project-binding PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALL_DIR KEY\n";
   std::cout << "  seam_voicebank_cli inspect-candidate CANDIDATE_DIRECTORY\n"
     << "    Verifies a published candidate against its descriptor; legacy schemas 1/2 retain their original version.\n"
     << "  seam_voicebank_cli package-candidate CANDIDATE_DIRECTORY CANDIDATE_SHA256 OUTPUT_PACKAGE PRIVATE_KEY\n"

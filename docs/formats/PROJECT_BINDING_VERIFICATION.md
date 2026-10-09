@@ -62,3 +62,44 @@ and interactive evidence. This code neither selects nor promotes the canonical
 must bind the exact project digest, track/region, verified installed resource,
 operation, build/platform/host and resulting artifacts. Native operation,
 continuity, recovery, measurement and external authority remain separate work.
+
+## Linking verified installed contents to a project
+
+```
+seam_voicebank_cli verify-installed-project-binding PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALL_DIR KEY
+```
+
+This command verifies the caller-selected signed package and installed directory
+through the U14 native verifier, then binds the captured project to the resulting
+resource identity. It derives a recipe's id, schema version and canonical content
+hash from recipe bytes read within the same private verified package snapshot.
+It does not reopen a project-supplied recipe path. That canonical hash must equal
+the signed candidate's content identity. Samples use the verified bank identity.
+Opaque models remain explicitly unsupported by installed-resource verification.
+
+The nested installed v2 and project-binding v1 formats remain unchanged. The new
+closed `seam.u45.installed-project-binding.v1` record includes those two records,
+the signed `resourceLanguages`, and a `SIGNED_DECLARATION` coverage result. Every
+note-linked project language must occur in that declaration. Unknown/unspecified
+note languages still refuse. A resource may declare und, but that does not cover
+en, ja or ko and cannot establish pronunciation or singing support.
+
+The native verifier derives the expected project reference from actual verified
+resource bytes, not from retained composite claims. The Python replay pins the
+record, CLI and trusted key, invokes the fixed combined command with caller paths,
+and compares its complete fresh output. It checks family-specific cross-record
+identities and rejects legacy installed v1 nesting. For recipes it does not equate
+package id/version or installedContentHash with the project reference: fresh
+native derivation verifies recipe id/schema version, and candidateContentSha256
+must match the project's canonical recipe hash. Rehashing forged nested identity
+claims is insufficient.
+
+`scripts/verify_installed_project_binding_record.py` returns ENGINEERING_PASS only.
+Verification is sequential and records observed consistency, not one atomic
+filesystem snapshot or a guarantee that files remain unchanged afterward. A
+byte-identical copied installed directory may pass. Catalog placement, installation
+event/durability, runtime resolution, execution of the stored recipe path, actual
+rendering, selected-style coverage, language quality, host provenance, and human acceptance remain unproved.
+The nested project's resourceAdmission therefore stays NOT_CHECKED. Both nested
+records and the composite retain false release-authority flags. The canonical
+U45 hold is unchanged; actual operation/artifact observation remains required.

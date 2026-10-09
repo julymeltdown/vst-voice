@@ -27,25 +27,28 @@ std::string_view languageName(domain::Language language) {
   }
   return "und";
 }
-int verify(int argc, char** argv) {
-  if (argc != 11) { printProjectBindingUsage(); return 1; }
+}  // namespace
+core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& request) {
+  const auto refuse = [](std::string_view message) { return core::failure<Json>(core::ErrorCode::Conflict, std::string{message}); };
 #if defined(_WIN32)
-  return fail("Project binding verification requires the POSIX held-input reader; Windows remains TODO");
+  (void)request;
+  return refuse("Project binding verification requires the POSIX held-input reader; Windows remains TODO");
 #else
-  const std::string_view pin{argv[3]}, trackId{argv[4]}, regionId{argv[5]}, family{argv[6]},
-      resourceId{argv[7]}, version{argv[8]}, contentHash{argv[9]}, requestedLanguages{argv[10]};
+  const auto pin=request.projectSha256, trackId=request.trackId, regionId=request.regionId, family=request.family,
+      resourceId=request.resourceId, version=request.resourceVersion, contentHash=request.resourceContentHash,
+      requestedLanguages=request.languages;
   if (!hex(pin, 64U) || !hex(trackId, 16U) || !hex(regionId, 16U) || !hex(contentHash, 64U) ||
       resourceId.empty() || resourceId.size() > 256U || version.empty() || version.size() > 256U ||
       (family != "sample" && family != "recipe" && family != "model"))
-    return fail("Expected project/resource binding has invalid identity fields");
+    return refuse("Expected project/resource binding has invalid identity fields");
   std::set<std::string> expectedLanguages;
   std::string canonicalLanguages;
-  if (requestedLanguages.size() > 8U) return fail("Language set exceeds its bound");
+  if (requestedLanguages.size() > 8U) return refuse("Language set exceeds its bound");
   std::size_t start = 0;
   while (start < requestedLanguages.size()) {
     const auto end = requestedLanguages.find(',', start);
     const auto language = requestedLanguages.substr(start, end == std::string_view::npos ? end : end - start);
-    if (language != "en" && language != "ja" && language != "ko") return fail("Unsupported declared language");
+    if (language != "en" && language != "ja" && language != "ko") return refuse("Unsupported declared language");
     expectedLanguages.emplace(language);
     if (end == std::string_view::npos) break;
     start = end + 1U;
@@ -55,54 +58,54 @@ int verify(int argc, char** argv) {
     canonicalLanguages += language;
   }
   if (canonicalLanguages.empty() || canonicalLanguages != requestedLanguages)
-    return fail("Languages must be an exact sorted set drawn from en,ja,ko");
-  const auto bytes = core::readFileBytesLimited(argv[2], 64ULL * 1024ULL * 1024ULL);
-  if (!bytes) return fail(bytes.error().message);
-  if (core::sha256Hex(bytes.value()) != pin) return fail("Project bytes differ from the caller's SHA-256 pin");
+    return refuse("Languages must be an exact sorted set drawn from en,ja,ko");
+  const auto bytes = core::readFileBytesLimited(request.projectPath, 64ULL * 1024ULL * 1024ULL);
+  if (!bytes) return refuse(bytes.error().message);
+  if (core::sha256Hex(bytes.value()) != pin) return refuse("Project bytes differ from the caller's SHA-256 pin");
   const std::string_view text{reinterpret_cast<const char*>(bytes.value().data()), bytes.value().size()};
   const auto decoded = formats::ProjectJsonCodec{}.decode(text);
-  if (!decoded) return fail(decoded.error().message);
+  if (!decoded) return refuse(decoded.error().message);
   // The codec maps unknown language strings to und. Reject lossy language
   // normalization anywhere in the captured project, including unused tokens.
   // The same native parser rejects duplicate keys before either interpretation.
   const auto raw = formats::parseJson(text);
-  if (!raw) return fail(raw.error().message);
+  if (!raw) return refuse(raw.error().message);
   for (const auto& rawTrack : raw.value().find("vocalTracks")->asArray())
     for (const auto& rawRegion : rawTrack.find("regions")->asArray())
       for (const auto& lyric : rawRegion.find("lyrics")->asArray()) {
         const auto& language = lyric.find("language")->asString();
         if (language != "en" && language != "ja" && language != "ko" && language != "und")
-          return fail("Unknown raw lyric language would be normalized by the project codec");
+          return refuse("Unknown raw lyric language would be normalized by the project codec");
       }
 
   const domain::VocalTrack* track = nullptr;
   for (const auto& candidate : decoded.value().vocalTracks())
     if (candidate.id.toString() == trackId) track = &candidate;
-  if (!track) return fail("Selected vocal track is absent from the decoded project");
+  if (!track) return refuse("Selected vocal track is absent from the decoded project");
   const domain::VocalRegion* region = nullptr;
   for (const auto& candidate : track->regions)
     if (candidate.id.toString() == regionId) region = &candidate;
-  if (!region || region->notes.empty()) return fail("Selected region is absent from the track or has no notes");
+  if (!region || region->notes.empty()) return refuse("Selected region is absent from the track or has no notes");
   const auto selected = rendering::selectedSingerResource(*track);
-  if (!selected) return fail(selected.error().message);
+  if (!selected) return refuse(selected.error().message);
   const auto& resource = selected.value();
   const std::string_view actualFamily = resource.kind == domain::SingerResourceKind::Neural ? "model" :
       resource.kind == domain::SingerResourceKind::Procedural ? "recipe" : "sample";
   if (actualFamily != family || resource.id != resourceId || resource.version != version || resource.contentHash != contentHash)
-    return fail("Decoded selected singer reference differs from the expected binding");
+    return refuse("Decoded selected singer reference differs from the expected binding");
   std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
   for (const auto& lyric : region->lyrics) lyrics.emplace(lyric.id, &lyric);
   std::set<domain::LyricTokenId> linked;
   std::set<std::string> observedLanguages;
   for (const auto& note : region->notes) {
     const auto lyric = lyrics.find(note.lyricTokenId);
-    if (lyric == lyrics.end()) return fail("Every selected-region note must reference a lyric token");
+    if (lyric == lyrics.end()) return refuse("Every selected-region note must reference a lyric token");
     const std::string language{languageName(lyric->second->language)};
-    if (language == "und") return fail("Selected note language is unspecified or unknown to the codec");
+    if (language == "und") return refuse("Selected note language is unspecified or unknown to the codec");
     observedLanguages.insert(language);
     linked.insert(note.lyricTokenId);
   }
-  if (observedLanguages != expectedLanguages) return fail("Note-linked language set differs from the expected binding");
+  if (observedLanguages != expectedLanguages) return refuse("Note-linked language set differs from the expected binding");
   Json::Array languages;
   for (const auto& language : observedLanguages) languages.emplace_back(language);
   // Only reference semantics are verified. Never open a recipe/media path from
@@ -125,13 +128,17 @@ int verify(int argc, char** argv) {
       {"hostExecution", "NOT_RUN"},
       {"qualification", "NOT_QUALIFIED"}, {"humanAcceptance", "NOT_RUN"},
       {"authorizesRelease", false}, {"releaseEligible", false}}};
-  std::cout << formats::stringifyJson(record, true) << '\n';
-  return 0;
+  return record;
 #endif
 }
-}
 std::optional<int> runProjectBindingCommand(int argc, char** argv) {
-  if (argc >= 2 && std::string_view{argv[1]} == "verify-project-binding") return verify(argc, argv);
+  if (argc >= 2 && std::string_view{argv[1]} == "verify-project-binding") {
+    if (argc != 11) { printProjectBindingUsage(); return 1; }
+    const auto result = verifyProjectBindingRecord({argv[2],argv[3],argv[4],argv[5],argv[6],argv[7],argv[8],argv[9],argv[10]});
+    if (!result) return fail(result.error().message);
+    std::cout << formats::stringifyJson(result.value(), true) << '\n';
+    return 0;
+  }
   return std::nullopt;
 }
 void printProjectBindingUsage() {

@@ -10,6 +10,7 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
@@ -497,13 +498,88 @@ formats::JsonValue cliSuccess(std::vector<std::string> arguments) {
 }
 std::string field(const formats::JsonValue& object, std::string_view key) { return object.find(key)->asString(); }
 #if defined(SEAM_TEST_PYTHON)
+const std::string& nativeVerifierSha() {
+  // One immutable test executable selection for this suite; replay re-pins it
+  // before/after every subprocess. Avoid repeated instrumented large-file hashing.
+  static const auto digest=core::sha256File(SEAM_TEST_VOICEBANK_CLI).value();
+  return digest;
+}
+#endif
+void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain::SingerResourceIdentity& resource,
+    const std::filesystem::path& root, const std::filesystem::path& package,
+    const std::filesystem::path& installed, const std::string& key) {
+  application::ProjectFactory factory{100U};
+  auto project=factory.createProject("Installed binding fixture");
+  const auto trackId=factory.addVocalTrack(project,"Voice");
+  const auto regionId=factory.addRegion(project,trackId,"Verse",time::Tick{0},time::Tick{960});
+  auto [lyric,note]=factory.makeNote(time::Tick{0},time::Tick{960},60,U"a",domain::Language::Japanese);
+  project.findRegion(regionId)->lyrics.push_back(lyric);project.findRegion(regionId)->notes.push_back(note);
+  auto* track=project.findVocalTrack(trackId);
+  const bool recipe=resource.kind==domain::SingerResourceKind::Procedural;
+  if (recipe) track->proceduralRecipe=domain::ProceduralRecipeReference{resource,"unopened/not-the-installed-recipe.json","neutral"};
+  else track->voicebank={resource.id,resource.version,resource.contentHash};
+  const auto path=root/"installed-binding.seam";
+  CHECK(formats::ProjectJsonCodec{}.save(project,path));
+  std::vector<std::string> args{"verify-installed-project-binding",path.string(),core::sha256File(path).value(),
+      trackId.toString(),regionId.toString(),"ja",package.string(),field(audit,"packageDigest"),
+      field(audit,"resourceCandidateSha256"),installed.string(),key};
+  const auto record=cliSuccess(args);
+  CHECK(*record.find("installed")==audit);
+  CHECK(field(*record.find("project"),"resourceId")==resource.id);
+  CHECK(field(*record.find("project"),"resourceVersion")==resource.version);
+  CHECK(field(*record.find("project"),"resourceContentHash")==resource.contentHash);
+  CHECK(!record.find("authorizesRelease")->asBool());
+  CHECK(record.find("resourceLanguages")->asArray().front().asString()=="ja");
+  if (recipe) {
+    CHECK(resource.version!=field(audit,"resourceVersion"));
+    CHECK(resource.contentHash!=field(audit,"installedContentHash"));
+  }
+#if defined(SEAM_TEST_PYTHON)
+  const auto recordPath=root/"installed-project-record.json";
+  CHECK(core::durableAtomicWriteText(recordPath,formats::stringifyJson(record)));
+  std::vector<std::string> replay{(std::filesystem::path{SEAM_TEST_SOURCE_DIR}/"scripts/verify_installed_project_binding_record.py").string(),
+      "--record",recordPath.string(),"--record-sha256",core::sha256File(recordPath).value(),"--project",path.string(),
+      "--package",package.string(),"--installed-directory",installed.string(),"--public-key",key,
+      "--public-key-sha256",core::sha256File(key).value(),"--voicebank-cli",SEAM_TEST_VOICEBANK_CLI,
+      "--cli-sha256",nativeVerifierSha()};
+  CHECK(authoring::runBoundedHelperProcess({.executable=SEAM_TEST_PYTHON,.arguments=replay}));
+  auto forged=record;forged.asObject()["project"].asObject()["resourceId"]="forged-reference";
+  if (!recipe) forged.asObject()["installed"].asObject()["resourceId"]="forged-reference";
+  CHECK(core::durableAtomicWriteText(recordPath,formats::stringifyJson(forged)));
+  auto changed=replay;changed[4]=core::sha256File(recordPath).value();
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_PYTHON,.arguments=changed}));
+  CHECK(core::durableAtomicWriteText(recordPath,formats::stringifyJson(record)));
+#endif
+  const auto restore=[&] { CHECK(formats::ProjectJsonCodec{}.save(project,path));args[2]=core::sha256File(path).value(); };
+  if (recipe) {
+    track->proceduralRecipe->resource.version=field(audit,"resourceVersion");restore();CHECK(!runCli(args));
+    track->proceduralRecipe->resource=resource;
+    track->proceduralRecipe->resource.contentHash=field(audit,"installedContentHash");restore();CHECK(!runCli(args));
+    track->proceduralRecipe->resource=resource;
+  } else {
+    track->voicebank.version="wrong-version";restore();CHECK(!runCli(args));track->voicebank.version=resource.version;
+  }
+  // Project binding itself succeeds for en; the signed ja resource declaration must reject linkage.
+  project.findRegion(regionId)->lyrics.front().language=domain::Language::English;restore();args[5]="en";
+  CHECK(runCli({"verify-project-binding",path.string(),args[2],trackId.toString(),regionId.toString(),
+      recipe?"recipe":"sample",resource.id,resource.version,resource.contentHash,"en"}));
+  CHECK(!runCli(args));
+  project.findRegion(regionId)->lyrics.front().language=domain::Language::Japanese;restore();args[5]="ja";
+  auto wrong=args;wrong[7]=std::string(64,'f');CHECK(!runCli(wrong));
+  const auto other=makeKeys(root,"wrong-binding-key");wrong=args;wrong[10]=other.publicKey;CHECK(!runCli(wrong));
+  const auto altered=copyTree(installed,root/"altered-binding-install");
+  CHECK(core::durableAtomicWriteText(altered/"install-receipt.json","{}"));wrong=args;wrong[9]=altered.string();CHECK(!runCli(wrong));
+  CHECK(!std::filesystem::exists(root/"unopened"));
+}
+
+#if defined(SEAM_TEST_PYTHON)
 void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesystem::path& root,
     const std::filesystem::path& package, const std::filesystem::path& installed, const std::string& key) {
   const bool model = field(record, "recordType") == "seam.u14.model-installation-refusal.v1";
   const auto path = root / (model ? "native-model-record.json" : "native-install-record.json");
   CHECK(core::durableAtomicWriteTextNew(path, formats::stringifyJson(record, true)));
   const auto recordSha = core::sha256File(path).value();
-  const auto cliSha = core::sha256File(SEAM_TEST_VOICEBANK_CLI).value();
+  const auto& cliSha = nativeVerifierSha();
   std::vector<std::string> args{(std::filesystem::path{SEAM_TEST_SOURCE_DIR} /
       (model ? "scripts/verify_model_candidate_record.py" : "scripts/verify_installed_candidate_record.py")).string(),
       "--record", path.string(), "--record-sha256", recordSha, "--package", package.string(),
@@ -919,6 +995,8 @@ TEST_CASE("CLI packages and installs exactly the published candidate as distinct
   checkNativeRecordReplay(audit, fixture.root, package, installDirectory, keys.publicKey);
 #endif
   CHECK(!audit.find("authorizesRelease")->asBool());
+  checkInstalledProjectBinding(audit,{domain::SingerResourceKind::Sample,field(audit,"resourceId"),field(audit,"resourceVersion"),field(audit,"installedContentHash")},
+      fixture.root,package,installDirectory,keys.publicKey);
   CHECK(treeDigest(installDirectory) == installedTree);
   CHECK(!fixture.run({"verify-installed-candidate", package.string(), packageDigest, candidateSha, installDirectory.string(), other.publicKey}));
   CHECK(!fixture.run({"verify-installed-candidate", package.string(), std::string(64, 'e'), candidateSha, installDirectory.string(), keys.publicKey}));
@@ -1151,6 +1229,8 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
 #if defined(SEAM_TEST_PYTHON)
   checkNativeRecordReplay(singerAudit, root, root / "recipe.seamsinger", singerDirectory, keys.publicKey);
 #endif
+  const auto expectedRecipe=voice_design::loadVoiceRecipeResource(std::filesystem::path{SEAM_TEST_SOURCE_DIR}/"assets/pilots/seam-song-01/recipe.json");CHECK(expectedRecipe);
+  checkInstalledProjectBinding(singerAudit,expectedRecipe.value().identity,root,root/"recipe.seamsinger",singerDirectory,keys.publicKey);
   const auto wrongRecipeReceipt = copyTree(singerDirectory, root / "wrong-recipe-receipt");
   auto recipeReceipt = formats::parseJson(readText(wrongRecipeReceipt / "install-receipt.json")).value();
   recipeReceipt.asObject()["contentHash"] = field(recipe, "contentSha256");
@@ -1278,6 +1358,9 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(!modelProbe.find("installedResourceTreeSha256"));
 #if defined(SEAM_TEST_PYTHON)
   checkNativeRecordReplay(modelProbe, root, root / "model.seampkg.bin", {}, keys.publicKey);
+  CHECK(!runCli({"verify-installed-project-binding",(root/"installed-binding.seam").string(),
+      core::sha256File(root/"installed-binding.seam").value(),"0000000000000065","0000000000000066","ja",
+      (root/"model.seampkg.bin").string(),field(modelProbe,"packageDigest"),field(modelProbe,"resourceCandidateSha256"),singerDirectory.string(),keys.publicKey}));
 #endif
   CHECK(!runCli({"probe-model-candidate", (root / "recipe.seamsinger").string(),
       field(recipePackage, "packageDigest"), field(recipe, "candidateSha256"), keys.publicKey}));

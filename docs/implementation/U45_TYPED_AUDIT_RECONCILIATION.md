@@ -144,3 +144,16 @@ it does not establish actual resource admission, operation/continuity/measuremen
 execution, pronunciation, host/build lineage or human acceptance. Recipe render
 identity remains distinct from installed package identity. The canonical report
 and U45_RECONCILIATION_HOLD remain unchanged.
+
+### Installed/project identity linkage (2026-10-10)
+
+The combined native installed-project-binding record derives a sample or recipe
+project identity from the verified package snapshot whose entries were checked
+against the installed tree, then runs the native project binding against that
+identity. It preserves the family-specific content hashes, verifies selected
+note-language inclusion in the signed declaration, and supports pinned fresh
+composite replay. No project-supplied resource path is opened. This advances items
+1–3 and the project-reference part of item 4; it is not runtime admission, catalog
+placement, an installation event, an
+atomic cross-file snapshot or an observed render/operation. Models remain without
+installed admission. The 83-case report integration and canonical hold are unchanged.
