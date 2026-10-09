@@ -24,6 +24,19 @@
       "distribution": "vendored-consolidated-header-subset",
       "modified": true,
       "purpose": "CLAP 1.2.10 entry, factory, processing, state, audio, note-port/event, GUI, timer, parameter, latency, tail, and render ABI declarations"
+    },
+    {
+      "name": "OpenSSL 3 Crypto",
+      "source": "https://github.com/openssl/openssl",
+      "revision": "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
+      "tag": "openssl-3.5.7",
+      "sourceSha256": "e9f1ed1dc2a10b6e54f3394c1ca526c505c889b48c57b61a92f5f72489898dd6",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/third-party/OpenSSL-3.5.7-LICENSE.txt",
+      "usage": "static-library",
+      "distribution": "statically-linked-into-shipping-binaries",
+      "modified": false,
+      "purpose": "Ed25519 signing and verification for .seambank packages and release manifests"
     }
   ],
   "plannedOrReferenceOnly": [
@@ -68,13 +81,6 @@
       "status": "runtime-loaded-system-library-not-distributed",
       "purpose": "Linux physical audio output",
       "verifiedBehavior": "explicit open error when no server is available"
-    },
-    {
-      "name": "OpenSSL 3 Crypto",
-      "status": "system-library-linked-not-redistributed",
-      "license": "Apache-2.0",
-      "purpose": "Ed25519 signing and verification for .seambank packages",
-      "verifiedOn": "OpenSSL library 3.5.5 / pkg-config 3.5.6"
     },
     {
       "name": "Win32 / Text Services Framework / WASAPI",

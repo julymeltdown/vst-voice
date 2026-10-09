@@ -1,0 +1,551 @@
+{
+  "repo": "seam",
+  "label": "u55",
+  "source": "project-seam-usable-alpha-u3-master",
+  "source_ref": "codex/u55-verification",
+  "head": "627a37f8ede1dcd184c1ad01a9b62294372c46bc",
+  "base": "31e3a4e36fcb403fb29b06f4d0e9696c52161e1f",
+  "latest": "b961e7547259ebb6c0553def9381910a52e9f19a",
+  "branch": "archive/incomplete-u55-20261009",
+  "files": [
+    {
+      "path": ".github/workflows/phase13a-distribution.yml",
+      "include": false,
+      "reason": "CI excluded",
+      "sha256": "771c6e593dc7062394e4199b5115fcc29774760067067fbc600fa24116248bb9",
+      "deleted": false
+    },
+    {
+      "path": ".github/workflows/phase13a-plugin-formats.yml",
+      "include": false,
+      "reason": "CI excluded",
+      "sha256": "5ef5d136cedbbc6943bcff4aa123d932714a38c7b9cbe288a7d5917872f57838",
+      "deleted": false
+    },
+    {
+      "path": "CMakeLists.txt",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "f99382d87cc949c0add7e08704f81b0ad5da6115c249490ca88e546de22d1ebf",
+      "deleted": false
+    },
+    {
+      "path": "SBOM.spdx.json",
+      "include": false,
+      "reason": "generated manifest/golden excluded",
+      "sha256": "18edb2555f55a8da57e3ca6fb723821cfb63a69f9fe7efbf256b92e3c80b38cf",
+      "deleted": false
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "include": true,
+      "reason": null,
+      "sha256": "cd014b8e95b7f117860cddeb906e6c14b0e1aa2c1ce99880f0d4439ab37a21b1",
+      "deleted": false
+    },
+    {
+      "path": "apps/seam-installer-verifier/main.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "223599e77854c2d0351b6947f266c2c323de7411c518c38aab917d2fb7bd4784",
+      "deleted": false
+    },
+    {
+      "path": "docs/product/external-beta-sealed-handoff.schema.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "7213152cef2b90991d3c071cf9a8db59654f8ed8fcf318ed5794c8ed5f2b208a",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/include/seam/distribution/update_manifest.hpp",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "6bbac2a1caa34d0368d17263ada9ba2b574d03c658dced5b30f2a677a8776589",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/src/sealed_handoff.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "154c637e8660b30386853de2cfea636a4d2eaeb3d6791812b4640750d65e6fc4",
+      "deleted": false
+    },
+    {
+      "path": "licenses/third-party/OpenSSL-3.5.7-LICENSE.txt",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+      "deleted": false
+    },
+    {
+      "path": "packaging/macos/Distribution.xml.in",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "1f008cf6e9d52c991c7f344c5ce327d9352ec0ca9e161fdec80ee0adda50caaf",
+      "deleted": false
+    },
+    {
+      "path": "packaging/macos/installer-ownership.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "490a4ff8b86d381f4a1fbeca5bc0645907e5c5cc553d4bea7a0ebce22455804e",
+      "deleted": false
+    },
+    {
+      "path": "packaging/macos/scripts/preinstall",
+      "include": true,
+      "reason": null,
+      "sha256": "5d16d1f8fa2b71d72e6ea23476332c9e2f6fa776bca74d57007e27441cd52922",
+      "deleted": false
+    },
+    {
+      "path": "packaging/phase13a/dependencies.lock.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "ba882f23a14a7a4cb3ebe59bd881385460af7fffd5fbfa2c38819da907fde02b",
+      "deleted": false
+    },
+    {
+      "path": "packaging/trust/release-trust-roots.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "7d83a907ac8fbf0a47a590d97603b0781d5f65e11ad86d2875f53e7411ef8524",
+      "deleted": false
+    },
+    {
+      "path": "packaging/trust/update-root-public-key.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "559b4848470616ae7ecf19b61155f8af50f04749e4d7ce4916c61f60c33ee73c",
+      "deleted": false
+    },
+    {
+      "path": "packaging/windows/ProjectSEAM.nsi",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "0c3410a2b9a4a8071d4aae1dc87b0b6c2c08fbf39f6ba28ef74f52463128155b",
+      "deleted": false
+    },
+    {
+      "path": "packaging/windows/installer-ownership.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "fd0184c34da5e9563545d125ece5115fc8bdb888c3e46e066d5b5f21094f93dc",
+      "deleted": false
+    },
+    {
+      "path": "phase13a/dependency-lock.json",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "ba882f23a14a7a4cb3ebe59bd881385460af7fffd5fbfa2c38819da907fde02b",
+      "deleted": false
+    },
+    {
+      "path": "scripts/assemble_release_payload.py",
+      "include": true,
+      "reason": null,
+      "sha256": "aa92b080f61cd673892a3f7ebd3153e305210fc3f790d96530b9fa773f3fad5a",
+      "deleted": false
+    },
+    {
+      "path": "scripts/build_phase13a_formats.py",
+      "include": true,
+      "reason": null,
+      "sha256": "1855acbf8b1b749038f956b6c26222cf7738fb6d631cbdab188a9d3266be7cb7",
+      "deleted": false
+    },
+    {
+      "path": "scripts/build_windows_installer.ps1",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "6ba6a058ffcd0aed128e8889f98b9ff34bd0da570c66586cc8fc353a8c2b284e",
+      "deleted": false
+    },
+    {
+      "path": "scripts/create_development_installer_handoff.py",
+      "include": true,
+      "reason": null,
+      "sha256": "6d9a61a7858d4819107e9d26c4eb798e81e308ee254a06b6fa601034322bcda6",
+      "deleted": false
+    },
+    {
+      "path": "scripts/package_macos_plugins.sh",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "69e579caf72674fa154e24bbf110d3f1a3dce5be4a1b91705581e10d3b06806b",
+      "deleted": false
+    },
+    {
+      "path": "scripts/package_macos_standalone.sh",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "8cb0acea1d258dd6b36aad41cedc591390c6d7b6b1a56bdb2b3eb85d849d4759",
+      "deleted": false
+    },
+    {
+      "path": "scripts/refresh_phase13a_wrapper_manifests.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "b41c1c76e070f684a933b8cc61d7eef80c92c4b6ac013c4f784f600d945cbeae",
+      "deleted": false
+    },
+    {
+      "path": "scripts/sign_macos_plugin_payload.sh",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "f0177cbe14b0ed0e9d2f8dfb72f56aa26b41f99edb23ff2cd1ac7fd2b9ffafa5",
+      "deleted": false
+    },
+    {
+      "path": "scripts/sign_windows_file.ps1",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "79bc9db71250fae10498def5542b918e6ee3efab945fb0f4a6ea17becf442333",
+      "deleted": false
+    },
+    {
+      "path": "scripts/sign_windows_installer.ps1",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "a3d46f8e51133f285d70463c61ec4ef48a927c0a1545e65645636b32225abcd2",
+      "deleted": false
+    },
+    {
+      "path": "scripts/sign_windows_payload.ps1",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "3d6c2218729957120f17e32ffba38e0ca7eb805740e47e273192fde807e40cce",
+      "deleted": false
+    },
+    {
+      "path": "scripts/test_macos_installer.sh",
+      "include": true,
+      "reason": null,
+      "sha256": "977df002eb273436f8cdedf84cd5d153a703c4d8b8fac6dcbe7d7af3121af5eb",
+      "deleted": false
+    },
+    {
+      "path": "scripts/test_windows_installer.ps1",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "b1efb7ba94d721c96f9781212a8d55d68145aca2b2b603142aa4c64f3a3f95dd",
+      "deleted": false
+    },
+    {
+      "path": "scripts/uninstall_macos_plugins.sh",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "c2115a34a0f374fcf85c6009da728b3f0acd5aa80822756189f5347e3eeef07a",
+      "deleted": false
+    },
+    {
+      "path": "scripts/verify_phase13a_contracts.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "43f5161d42e14d4a4ccdc619bcd6f7cbf7804d6d03d1b85cc3b2ec5b5d214eb9",
+      "deleted": false
+    },
+    {
+      "path": "scripts/verify_production_signing_input.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "be6100873087fda920799ea63f87702ddf4bb7dd27bc02ce958834b11352c4bc",
+      "deleted": false
+    },
+    {
+      "path": "scripts/verify_release_dependency_closure.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "4d4bdf2441af5ddb2faf3288fa689b772160ef135eff203c9b224623d905cdc9",
+      "deleted": false
+    },
+    {
+      "path": "scripts/verify_release_payload_manifest.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "d597cf16e3af89c89c913ac168f6e6d11b49a711b665f4dd8a5f7c3cf3b77757",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_development_installer_handoff.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "fabcd9870d7672de98b3f4accbd719db606f2b78c8f9a002f8cdaffa2506a665",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_macos_installer_contract.py",
+      "include": true,
+      "reason": null,
+      "sha256": "b643b7a74cfc42ff2195a7ad91ccef03be7e9aeb9132d209f3c3599a5378f178",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_payload_materializer.py",
+      "include": true,
+      "reason": null,
+      "sha256": "4e73ab040e8994844af8188aa3e8e48613186fd7040c2af05146c43ea404c393",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_phase13a_contract.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "8ca84643c822a6cefb1ed7d3ff1af1aff2371359c6f78014ca4c576e9f4e31d0",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_release_dependency_closure.py",
+      "include": true,
+      "reason": null,
+      "sha256": "58ebbd90a51be64bcd666c07fea73e7dd44ac8e8e5f102c102475c1b19b270cf",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_release_payload_assembly.py",
+      "include": true,
+      "reason": null,
+      "sha256": "8b96e1d4de72e1d140833dd966ae1710bd8ce912d75c4311e0ab48cefc400532",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_signed_wrapper_manifest.py",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "e0be2f2af14e803786088ffa81ef772cab5b250adb2442b2448b041179305211",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_signing_eligibility.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "c5b835c66dc41a38f41c7a238c73fca7678e62f9bdb0b165bc90b2b36fc5371f",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_static_openssl.py",
+      "include": true,
+      "reason": null,
+      "sha256": "c4a4f91b3ee7a94a344177afa8443cba739ecbf88768f2cd712dfedc9934c7be",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_update_contract.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "0ba5a3da1741f4ba0329544596353e8bf95c4be82fec8ecb0b3482943ba43cb1",
+      "deleted": false
+    },
+    {
+      "path": "tests/phase13a/test_windows_installer_contract.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "7acbb5acbb7b6e270685fc4b00f2caaecdbde4fc7081d98bc52f661feefce8e0",
+      "deleted": false
+    },
+    {
+      "path": "tests/test_installer_verifier.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "202ece3f68f1a369d94714b8514024efa1e17679fcee39bafe0ba1fa010420d6",
+      "deleted": false
+    },
+    {
+      "path": "third_party/manifest.yml",
+      "include": true,
+      "reason": null,
+      "sha256": "0f021480e178faddf9451963e2a25c165e68d51a1caa15a177d751c6a71af5a6",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/dependency_closure.py",
+      "include": true,
+      "reason": null,
+      "sha256": "de28bd47fe42c61240380d860590351f30ed7eaa100bb8b64eeef1f24be64647",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/development_handoff.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "3a7606bff210dbeece9fb1c9a462783b17db23cdcf859425cc8b3c444cf6906d",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/distribution_manifest.py",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "66c9830b02b517623f4877beb096e371abe1aaee66e94248d097d5adf1e1d202",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_binaries.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "db5bb4c59461a5c0702fe3e7ef7c43001a7bb14c09caab0609c3b72f7acc38e6",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_identity.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "b6521b48e17c202a0f020cbf41c8f8fbf68185619e263c42faae5bb92a2438f7",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_manifest.py",
+      "include": true,
+      "reason": null,
+      "sha256": "03a877bf19732ab3b011247a757506306975905fb2bab963b72c27fa07827e27",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_materializer.py",
+      "include": true,
+      "reason": null,
+      "sha256": "5f66cd20d7fd3cc8a68307d76a497b824803ccc82d279bde78edd226c0a7f160",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_paths.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "1d81c72089a25ab61ffaf59fc4487585898a41a948438f4451ed0bd6ac54ca55",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_surfaces.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "b540d56e80c4db94f5368dc83dc03e0644971a3471e13db38d7dd01b597e2cf0",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/payload_trust.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "81a8554609b78ebfdd51be13d8bc9eefcc571598ee41196d4277d6c7bb4c4fd1",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/release_inputs.py",
+      "include": true,
+      "reason": null,
+      "sha256": "e14d7b48933d403c0a468a2f8c7a3acb818cf15138f6dea016a9042fa5eeda8d",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/release_payload.py",
+      "include": true,
+      "reason": null,
+      "sha256": "fea8e3e2049b49cb3356243e1bf434cfe9a805227ca1974745205161a50caa11",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/signing_eligibility.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "68a76fa02ffa893aad1d9938089c3bd0bf63826bb6dee6f7c3337fff0fa64cf7",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/static_openssl.py",
+      "include": true,
+      "reason": null,
+      "sha256": "53270eb5ac221d8f5bea74bc2c39ec7f135b289f6ee198398acbb023ce23348e",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/update_contract.py",
+      "include": false,
+      "reason": "three-way merge is identical to latest remote (already incorporated/superseded)",
+      "sha256": "5eec0963927ff21ed6b23d7bf9289c8ed262ebf1e97c2f270af0c874532e9223",
+      "deleted": false
+    },
+    {
+      "path": "tools/phase13a/wrapper_preflight.py",
+      "include": false,
+      "reason": "identical latest remote content",
+      "sha256": "c5fe4602aaf5a32cf96b53e0b06baf37eb32936b37130ea7f641fbcca5fa5a02",
+      "deleted": false
+    }
+  ],
+  "status": "INCOMPLETE ARCHIVE ONLY; NOT MERGED OR ACCEPTED",
+  "authorization": "User approved remote preservation and master-only exception for this archive on 2026-10-09. No CI, secrets, or generated outputs included in archive delta.",
+  "limitations": "Selected original source delta on its historical base. Files already present or superseded on latest remote are omitted. This archival subset may not build standalone. Existing verification failures and review findings remain open. Signatures/keyrings, security checks, deployment settings and acceptance status were not changed.",
+  "verification": {
+    "label": "u55",
+    "checks": [
+      [
+        "scripts/assemble_release_payload.py",
+        "python syntax PASS"
+      ],
+      [
+        "scripts/build_phase13a_formats.py",
+        "python syntax PASS"
+      ],
+      [
+        "scripts/create_development_installer_handoff.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/phase13a/test_macos_installer_contract.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/phase13a/test_payload_materializer.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/phase13a/test_release_dependency_closure.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/phase13a/test_release_payload_assembly.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/phase13a/test_static_openssl.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/dependency_closure.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/payload_manifest.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/payload_materializer.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/release_inputs.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/release_payload.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/phase13a/static_openssl.py",
+        "python syntax PASS"
+      ]
+    ],
+    "secret_candidates": [],
+    "diff_check": {
+      "exit": 0,
+      "output": ""
+    },
+    "shell_and_node_syntax": [
+      {
+        "file": "scripts/test_macos_installer.sh",
+        "exit": 0,
+        "stderr": ""
+      }
+    ]
+  },
+  "known_open_findings": "CI deltas and generated SBOM excluded; 42 paths already incorporated/superseded on current remote omitted. Remaining archival subset is not a qualified release."
+}

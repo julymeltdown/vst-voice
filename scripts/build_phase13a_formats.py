@@ -5,18 +5,40 @@ import argparse
 import json
 import os
 import platform
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
-from compatibility_patches import apply_phase13a_patches  # noqa: E402
-from distribution_manifest import build_release_manifest, build_wrapper_manifest, read_validation_status, tree_sha256, validate_artifact, validate_wrapper_bundle  # noqa: E402
-from release_identity import resolve_release_identity, write_release_identity  # noqa: E402
-from sdk_lock import load_lock, validate_checkout, validate_lock  # noqa: E402
-from wrapper_preflight import validate_preflight  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from tools.phase13a.compatibility_patches import apply_phase13a_patches  # noqa: E402
+from tools.phase13a.distribution_manifest import (  # noqa: E402
+    build_release_manifest,
+    read_validation_status,
+    tree_sha256,
+)
+from tools.phase13a.payload_materializer import (  # noqa: E402
+    materialize_auv2,
+    materialize_clap,
+    materialize_identity_sidecars,
+    materialize_native_surfaces,
+    materialize_release_inputs,
+    materialize_vst3,
+    seal_platform_payload,
+)
+from tools.phase13a.release_payload import resolve_payload_platform  # noqa: E402
+from tools.phase13a.release_identity import (  # noqa: E402
+    resolve_release_identity,
+    write_release_identity,
+)
+from tools.phase13a.release_inputs import materialize_supporting_files  # noqa: E402
+from tools.phase13a.sdk_lock import (  # noqa: E402
+    load_lock,
+    validate_checkout,
+    validate_lock,
+)
+from tools.phase13a.static_openssl import prepare_static_openssl  # noqa: E402
+from tools.phase13a.wrapper_preflight import validate_preflight  # noqa: E402
 
 
 PATCHES = (
@@ -27,37 +49,9 @@ PATCHES = (
 )
 
 
-class Phase13ABuildError(RuntimeError):
-    pass
-
-
 def run(command: list[str | Path], env: dict[str, str] | None = None) -> None:
     print("+", " ".join(map(str, command)))
     subprocess.run(list(map(str, command)), env=env, check=True)
-
-
-def first(root: Path, name: str) -> Path:
-    found = [path for path in Path(root).rglob(name) if path.exists()]
-    if not found:
-        raise FileNotFoundError(f"{name} not found below {root}")
-    return sorted(found, key=lambda path: (len(path.parts), str(path)))[0]
-
-
-def first_from(roots: tuple[Path, ...], name: str) -> Path:
-    for root in roots:
-        try:
-            return first(root, name)
-        except FileNotFoundError:
-            continue
-    joined = ", ".join(str(root) for root in roots)
-    raise FileNotFoundError(f"{name} not found below any of: {joined}")
-
-
-def copy_artifact(source: Path, destination: Path) -> None:
-    if destination.exists():
-        shutil.rmtree(destination) if destination.is_dir() else destination.unlink()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination) if source.is_dir() else shutil.copy2(source, destination)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,11 +81,14 @@ def main(argv: list[str] | None = None) -> int:
             continue
         errors.extend(validate_checkout(dependency, dependencies / dependency["name"]))
     host_system = platform.system()
+    host_machine = platform.machine()
     applied_patches = apply_phase13a_patches(source_root, dependencies, host_system, PATCHES)
-    if args.auv2 and host_system != "Darwin":
-        errors.append("AUv2 target build requires macOS")
+    payload_platform, target_errors = resolve_payload_platform(
+        host_system, host_machine, args.auv2
+    )
+    errors.extend(target_errors)
     target_name = {"Darwin": "macos", "Windows": "windows", "Linux": "linux"}.get(host_system, host_system.lower())
-    architecture = {"AMD64": "x64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+    architecture = {"AMD64": "x64", "aarch64": "arm64"}.get(host_machine, host_machine)
     preflight_errors, _ = validate_preflight(
         lock=lock,
         dependencies=dependencies,
@@ -112,32 +109,47 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project_build = build_root / "project"
         wrapper_build = build_root / "wrapper"
+        openssl_dependency = next(item for item in lock["dependencies"] if item["name"] == "openssl")
+        openssl_prefix = prepare_static_openssl(
+            host_system,
+            host_machine,
+            dependencies / "openssl",
+            build_root,
+            str(openssl_dependency["commit"]),
+        )
         output.mkdir(parents=True, exist_ok=True)
+        write_release_identity(output / "RELEASE_IDENTITY.json", identity)
         run([
             "cmake", "-S", source_root, "-B", project_build,
             f"-DCMAKE_BUILD_TYPE={args.configuration}",
             f"-DSEAM_BUILD_ID={identity.build_id}",
             f"-DSEAM_SOURCE_COMMIT={identity.source_commit}",
             f"-DSEAM_BUILD_EPOCH={identity.build_epoch}",
+            f"-DOPENSSL_ROOT_DIR={openssl_prefix}",
+            "-DOPENSSL_USE_STATIC_LIBS=TRUE",
+            "-DSEAM_REQUIRE_STATIC_OPENSSL=ON",
+            f"-DSEAM_OPENSSL_SOURCE_COMMIT={openssl_dependency['commit']}",
+            *([f"-DCMAKE_MSVC_RUNTIME_LIBRARY={'MultiThreadedDebug' if args.configuration == 'Debug' else 'MultiThreaded'}"] if host_system == "Windows" else []),
             "-DSEAM_BUILD_TESTS=OFF", "-DSEAM_BUILD_BENCHMARKS=OFF",
         ])
+        project_targets = ["seam_clap_editor_plugin"]
+        if payload_platform is not None:
+            project_targets.extend(["seam_editor_native", "seam_installer_verifier"])
         run([
             "cmake", "--build", project_build,
-            "--target", "seam_clap_editor_plugin", "--parallel", "2",
+            "--config", args.configuration,
+            "--target", *project_targets, "--parallel", "2",
         ])
-        clap_source = first(project_build, "ProjectSEAMEditor.clap")
-        clap_output = output / "CLAP" / clap_source.name
-        copy_artifact(clap_source, clap_output)
-        source_sidecar = clap_source.parent / "ProjectSEAMEditor.resources"
-        if clap_source.is_file():
-            resource_directory = clap_output.parent / "ProjectSEAMEditor.resources"
-            if source_sidecar.is_dir():
-                copy_artifact(source_sidecar, resource_directory)
-        else:
-            resource_directory = clap_output / "Contents" / "Resources"
-        clap_errors = validate_artifact("clap", clap_output, host_system)
-        if clap_errors:
-            raise Phase13ABuildError("; ".join(clap_errors))
+        if payload_platform is not None:
+            materialize_native_surfaces(
+                project_build, output, payload_platform, args.configuration
+            )
+        clap_output, resource_directory = materialize_clap(
+            project_build, output, host_system, args.configuration
+        )
+        if payload_platform is not None:
+            materialize_identity_sidecars(output, payload_platform)
+        clap_sha256 = tree_sha256(clap_output)
 
         wrapper_arguments: list[str | Path] = [
             "cmake",
@@ -156,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             "-DCLAP_WRAPPER_COPY_AFTER_BUILD=OFF",
             f"-DCLAP_WRAPPER_BUILD_AUV2={'ON' if args.auv2 else 'OFF'}",
             f"-DSEAM_BUILD_AUV2={'ON' if args.auv2 else 'OFF'}",
+            *([f"-DCMAKE_MSVC_RUNTIME_LIBRARY={'MultiThreadedDebug' if args.configuration == 'Debug' else 'MultiThreaded'}"] if host_system == "Windows" else []),
         ]
         if args.auv2:
             wrapper_arguments.append(f"-DAUDIOUNIT_SDK_ROOT={dependencies / 'AudioUnitSDK'}")
@@ -167,82 +180,66 @@ def main(argv: list[str] | None = None) -> int:
             "--config", args.configuration, "--parallel", "2",
         ], environment)
 
-        vst3_source = first_from((wrapper_build, output), "ProjectSEAMEditor.vst3")
-        vst3_output = output / "VST3" / vst3_source.name
-        copy_artifact(vst3_source, vst3_output)
-        vst3_manifest_location = vst3_output / "wrapper-manifest.json"
-        if vst3_output.is_dir() and host_system.lower() in {"darwin", "macos"}:
-            vst3_manifest_location = vst3_output / "Contents" / "Resources" / "wrapper-manifest.json"
-        vst3_manifest_location.parent.mkdir(parents=True, exist_ok=True)
-        vst3_manifest = build_wrapper_manifest("VST3", host_system.lower(), platform.machine(), version, "com.project-seam.editor.vst3", tree_sha256(clap_output), vst3_output)
-        vst3_manifest_location.write_text(json.dumps(vst3_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        vst3_errors = validate_wrapper_bundle("VST3", vst3_output, host_system.lower(), tree_sha256(clap_output))
-        if vst3_errors:
-            raise Phase13ABuildError("; ".join(vst3_errors))
+        vst3_output = materialize_vst3(
+            wrapper_build,
+            output,
+            clap_sha256,
+            host_system,
+            version,
+            identity.as_dict(),
+            args.configuration,
+        )
+        vst3_sha256 = tree_sha256(vst3_output)
 
         artifacts = [
-            {"format": "CLAP", "path": str(clap_output), "sha256": tree_sha256(clap_output)},
-            {"format": "VST3", "path": str(vst3_output), "sha256": tree_sha256(vst3_output), "canonicalClapSha256": tree_sha256(clap_output)},
+            {"format": "CLAP", "path": str(clap_output), "sha256": clap_sha256},
+            {"format": "VST3", "path": str(vst3_output), "sha256": vst3_sha256, "canonicalClapSha256": clap_sha256},
         ]
+        au_output: Path | None = None
+        au_sha256: str | None = None
         if args.auv2:
-            au_source = first_from(
-                (wrapper_build, output), "ProjectSEAMEditor.component")
-            generated_au_info = (
-                wrapper_build
-                / "ProjectSEAMEditorAUv2-build-helper-output"
-                / "auv2_Info.plist"
+            au_output = materialize_auv2(
+                wrapper_build,
+                output,
+                clap_sha256,
+                version,
+                identity.as_dict(),
+                args.configuration,
             )
-            if generated_au_info.is_file():
-                shutil.copy2(
-                    generated_au_info,
-                    au_source / "Contents" / "Info.plist",
-                )
-            au_output = output / "AU" / au_source.name
-            copy_artifact(au_source, au_output)
-            au_manifest_location = au_output / "Contents" / "Resources" / "wrapper-manifest.json"
-            au_manifest_location.parent.mkdir(parents=True, exist_ok=True)
-            au_manifest = build_wrapper_manifest("AUv2", "macos", platform.machine(), version, "com.project-seam.editor.auv2", tree_sha256(clap_output), au_output)
-            au_manifest_location.write_text(json.dumps(au_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            au_errors = validate_wrapper_bundle("auv2", au_output, "macos", tree_sha256(clap_output))
-            if au_errors:
-                raise Phase13ABuildError("; ".join(au_errors))
-            artifacts.append({"format": "AUv2", "path": str(au_output), "sha256": tree_sha256(au_output)})
+            au_sha256 = tree_sha256(au_output)
+            artifacts.append({"format": "AUv2", "path": str(au_output), "sha256": au_sha256})
 
-        notices = output / "Notices"
-        notices.mkdir(exist_ok=True)
-        for dependency in lock["dependencies"]:
-            if dependency["name"] == "AudioUnitSDK" and not args.auv2:
-                continue
-            dependency_root = dependencies / dependency["name"]
-            for licence in list(dependency_root.glob("LICENSE*")) + list(dependency_root.glob("COPYING*")):
-                if licence.is_file():
-                    shutil.copy2(licence, notices / f"{dependency['name']}-{licence.name}")
-        for notice in ("THIRD_PARTY_NOTICES.md", "SBOM.spdx.json"):
-            shutil.copy2(source_root / notice, output / notice)
-        for documentation_root in (source_root / "docs" / "manual", source_root / "docs" / "support"):
-            destination_root = output / "Documentation" / documentation_root.name
-            destination_root.mkdir(parents=True, exist_ok=True)
-            for document in sorted(documentation_root.glob("*.md")):
-                shutil.copy2(document, destination_root / document.name)
-        documentation_manifest = source_root / "docs" / "product" / "external-beta-documentation.json"
-        shutil.copy2(documentation_manifest, output / "Documentation" / documentation_manifest.name)
-        write_release_identity(output / "RELEASE_IDENTITY.json", identity)
+        materialize_supporting_files(
+            source_root,
+            dependencies,
+            lock["dependencies"],
+            output,
+            args.auv2,
+        )
+        if payload_platform is not None:
+            materialize_release_inputs(source_root, output, payload_platform)
+            seal_platform_payload(
+                source_root,
+                output,
+                payload_platform,
+                str(openssl_dependency["commit"]),
+            )
 
-        validation = {"vst3-validator": "NOT_RUN", "auval": "NOT_RUN"}
+        validation: dict[str, str] = {"vst3-validator": "NOT_RUN", "auval": "NOT_RUN"}
         validation_evidence: dict[str, str] = {}
         if args.vst3_validation_result is not None:
             validation["vst3-validator"] = read_validation_status(
                 args.vst3_validation_result,
-                expected_artifact_sha256=tree_sha256(vst3_output),
+                expected_artifact_sha256=vst3_sha256,
                 artifact_hash_field="pluginSha256",
             )
             validation_evidence["vst3-validator"] = str(args.vst3_validation_result.resolve())
         if args.auval_validation_result is not None:
-            if not args.auv2:
-                raise Phase13ABuildError("AUv2 validation evidence requires --auv2")
+            if not args.auv2 or au_output is None or au_sha256 is None:
+                raise RuntimeError("AUv2 validation evidence requires --auv2")
             validation["auval"] = read_validation_status(
                 args.auval_validation_result,
-                expected_artifact_sha256=tree_sha256(au_output),
+                expected_artifact_sha256=au_sha256,
                 artifact_hash_field="componentSha256",
             )
             validation_evidence["auval"] = str(args.auval_validation_result.resolve())
@@ -259,10 +256,10 @@ def main(argv: list[str] | None = None) -> int:
             "validation": validation,
             "validationEvidence": validation_evidence,
             "releaseEligible": False,
+            "releaseManifest": build_release_manifest(
+                version, artifacts, validation, validation_evidence
+            ),
         }
-        result["releaseManifest"] = build_release_manifest(
-            version, artifacts, result["validation"], validation_evidence
-        )
         (build_root / "phase13a-build-result.json").write_text(
             json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )

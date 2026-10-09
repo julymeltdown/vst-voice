@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+required=(
+  SEAM_INSTALLER_HANDOFF
+  SEAM_UPDATE_MANIFEST
+  SEAM_UPDATE_POLICY
+  SEAM_UPDATE_STAGING_ROOT
+  SEAM_EXPECTED_CANDIDATE
+  SEAM_EXPECTED_HANDOFF_SHA256
+)
+for name in "${required[@]}"; do
+  [[ -n "${!name:-}" ]] || { echo "missing installer trust input: $name" >&2; exit 70; }
+done
+script_root="$(cd "$(dirname "$0")" && pwd)"
+result="$("$script_root/seam_installer_verifier" \
+  --handoff "$SEAM_INSTALLER_HANDOFF" \
+  --manifest "$SEAM_UPDATE_MANIFEST" \
+  --policy "$SEAM_UPDATE_POLICY" \
+  --staging-root "$SEAM_UPDATE_STAGING_ROOT" \
+  --expected-candidate "$SEAM_EXPECTED_CANDIDATE" \
+  --expected-handoff-sha256 "$SEAM_EXPECTED_HANDOFF_SHA256")"
+grep -q '^INSTALLER_HANDOFF=PASS$' <<<"$result" || exit 71
+printf '%s\n' "$result"
