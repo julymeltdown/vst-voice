@@ -67,7 +67,8 @@ def main() -> int:
     print('[phase11-source] noteInput=present')
     print('[phase11-source] asyncRender=present')
     print('[phase11-source] publicDomainDemo=non-official')
-    print('[phase11-source] packagingPipelines=present')
+    print('[phase11-source] packagingScripts=present')
+    print('[phase11-source] packagingExecution=NOT_CHECKED')
     print('[phase11-source] status=PASS')
     return 0
 if __name__=='__main__': raise SystemExit(main())
