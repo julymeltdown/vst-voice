@@ -28,8 +28,8 @@ std::string_view languageName(domain::Language language) {
   return "und";
 }
 }  // namespace
-core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& request) {
-  const auto refuse = [](std::string_view message) { return core::failure<Json>(core::ErrorCode::Conflict, std::string{message}); };
+core::Result<CapturedProjectBinding> captureVerifiedProjectBinding(const ProjectBindingRequest& request) {
+  const auto refuse = [](std::string_view message) { return core::failure<CapturedProjectBinding>(core::ErrorCode::Conflict, std::string{message}); };
 #if defined(_WIN32)
   (void)request;
   return refuse("Project binding verification requires the POSIX held-input reader; Windows remains TODO");
@@ -59,11 +59,14 @@ core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& reque
   }
   if (canonicalLanguages.empty() || canonicalLanguages != requestedLanguages)
     return refuse("Languages must be an exact sorted set drawn from en,ja,ko");
-  const auto bytes = core::readFileBytesLimited(request.projectPath, 64ULL * 1024ULL * 1024ULL);
+  std::error_code pathError;
+  const auto projectPath = std::filesystem::absolute(request.projectPath, pathError);
+  if (pathError) return refuse("Cannot resolve project binding input path");
+  const auto bytes = core::readFileBytesLimited(projectPath, 64ULL * 1024ULL * 1024ULL);
   if (!bytes) return refuse(bytes.error().message);
   if (core::sha256Hex(bytes.value()) != pin) return refuse("Project bytes differ from the caller's SHA-256 pin");
   const std::string_view text{reinterpret_cast<const char*>(bytes.value().data()), bytes.value().size()};
-  const auto decoded = formats::ProjectJsonCodec{}.decode(text);
+  auto decoded = formats::ProjectJsonCodec{}.decode(text);
   if (!decoded) return refuse(decoded.error().message);
   // The codec maps unknown language strings to und. Reject lossy language
   // normalization anywhere in the captured project, including unused tokens.
@@ -115,7 +118,7 @@ core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& reque
   for (const auto& language : observedLanguages) languages.emplace_back(language);
   // Only reference semantics are verified. Never open a recipe/media path from
   // the project, resolve a model helper, render audio or infer installation.
-  const Json record{Json::Object{
+  Json record{Json::Object{
       {"schemaVersion", std::int64_t{1}}, {"recordType", "seam.u45.project-binding-verification.v1"},
       {"result", "ProjectBindingVerified"}, {"evidenceScope", "ENGINEERING_ONLY"},
       {"bindingScope", "SELECTED_REGION_NOTE_REFERENCES"}, {"projectSha256", std::string{pin}},
@@ -133,8 +136,16 @@ core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& reque
       {"hostExecution", "NOT_RUN"},
       {"qualification", "NOT_QUALIFIED"}, {"humanAcceptance", "NOT_RUN"},
       {"authorizesRelease", false}, {"releaseEligible", false}}};
-  return record;
+  const auto selectedTrackId = track->id;
+  const auto selectedRegionId = region->id;
+  return CapturedProjectBinding{std::move(decoded.value()), std::move(record),
+      projectPath.parent_path(), selectedTrackId, selectedRegionId};
 #endif
+}
+core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& request) {
+  const auto captured = captureVerifiedProjectBinding(request);
+  if (!captured) return core::Result<Json>{captured.error()};
+  return captured.value().record();
 }
 std::optional<int> runProjectBindingCommand(int argc, char** argv) {
   if (argc >= 2 && std::string_view{argv[1]} == "verify-project-binding") {

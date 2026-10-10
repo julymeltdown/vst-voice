@@ -5,6 +5,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
+#include "project_binding_commands.hpp"
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #endif
@@ -37,6 +38,50 @@ struct BindingFixture {
     return authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI, .arguments=args});
   }
 };
+}
+
+TEST_CASE("Captured project bindings retain the verified document after replacement and deletion") {
+#if !defined(_WIN32)
+  for (const std::string family : {"sample", "recipe", "model"}) {
+    BindingFixture f;
+    auto* track = f.project.findVocalTrack(f.track);
+    if (family == "recipe") track->proceduralRecipe = domain::ProceduralRecipeReference{
+        {domain::SingerResourceKind::Procedural, "fixture.singer", "1", std::string(64, 'a')},
+        "missing-do-not-open/recipe.json", "neutral"};
+    if (family == "model") track->neuralResource = domain::NeuralResourceReference{
+        {domain::SingerResourceKind::Neural, "fixture.singer", "1", std::string(64, 'a')}};
+    auto args = f.save(family);
+    const auto originalHash = args[2];
+    const voicebank_cli::ProjectBindingRequest request{
+        std::filesystem::relative(f.path), args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9]};
+    auto captured = voicebank_cli::captureVerifiedProjectBinding(request); CHECK(captured);
+    const auto record = voicebank_cli::verifyProjectBindingRecord(request); CHECK(record);
+    CHECK(formats::stringifyJson(record.value()) == formats::stringifyJson(captured.value().record()));
+    CHECK(captured.value().projectDirectory().is_absolute());
+    CHECK(std::filesystem::equivalent(captured.value().projectDirectory(), f.root));
+    f.project.setName("Replacement document");
+    f.add(domain::Language::English);
+    CHECK(formats::ProjectJsonCodec{}.save(f.project, f.path));
+    const auto replaced = voicebank_cli::captureVerifiedProjectBinding(request);
+    CHECK(!replaced);
+    CHECK(replaced.error().message == "Project bytes differ from the caller's SHA-256 pin");
+    CHECK(std::filesystem::remove(f.path));
+    CHECK(!voicebank_cli::captureVerifiedProjectBinding(request));
+    // Neither copies/moves nor destruction of request strings may invalidate
+    // selected IDs, the retained project, its directory or its evidence record.
+    auto copy = captured.value();
+    auto held = std::move(copy);
+    for (auto& arg : args) arg.assign("request storage replaced");
+    CHECK(held.project().name() == "Binding fixture");
+    CHECK(held.trackId() == f.track); CHECK(held.regionId() == f.region);
+    CHECK(held.project().findVocalTrack(held.trackId())->findRegion(held.regionId())->notes.size() == 1U);
+    CHECK(held.record().find("projectSha256")->asString() == originalHash);
+    CHECK(held.record().find("payloadFamily")->asString() == family);
+    CHECK(held.record().find("noteCount")->asInt64() == 1);
+    CHECK(held.record().find("resourceAdmission")->asString() == "NOT_CHECKED");
+    CHECK(!std::filesystem::exists(f.root / "missing-do-not-open"));
+  }
+#endif
 }
 
 TEST_CASE("Native project bindings decode each singer family and note-linked language without resource access") {
