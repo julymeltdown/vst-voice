@@ -1571,6 +1571,88 @@ TEST_CASE("Procedural runtime admission captures installations and distinguishes
   }
 }
 
+TEST_CASE("Procedural project copies reject escaped and symlinked locations") {
+  RuntimeAdmissionFixture f{true};
+  const auto projectRoot = f.root / "song";
+  std::filesystem::create_directories(projectRoot / "recipes");
+  std::filesystem::copy_file(f.reference.path, projectRoot / "recipes/voice.json");
+  std::filesystem::create_directory_symlink(
+      f.candidate.resourceRoot / "nested", projectRoot / "linked");
+  std::filesystem::create_symlink(f.reference.path, projectRoot / "leaf.json");
+  const auto projectAlias = f.root / "song-alias";
+  std::filesystem::create_directory_symlink(projectRoot, projectAlias);
+  const auto escaped = std::filesystem::relative(f.reference.path, projectRoot).generic_string();
+  for (const bool bound : {false, true}) {
+    auto reference = f.reference;
+    if (!bound) reference.installation.reset();
+    reference.path = "recipes/../recipes/voice.json";
+    const auto local = distribution::admitProceduralRecipe(reference, projectRoot); CHECK(local);
+    CHECK(local.value().origin() == distribution::ProceduralAdmissionOrigin::ProjectCopy);
+    CHECK(local.value().resource().identity == f.reference.resource);
+    CHECK(distribution::admitProceduralRecipe(reference, projectAlias));
+    for (const auto& unsafe : {escaped, std::string{"linked/recipe.json"}, std::string{"leaf.json"}}) {
+      reference.path = unsafe;
+      const auto refused = distribution::admitProceduralRecipe(reference, projectRoot);
+      CHECK(!refused);
+      CHECK(refused.error().message == (unsafe == escaped
+          ? "Relative recipe reference leaves the saved project directory"
+          : unsafe == "linked/recipe.json"
+              ? "Project recipe has a missing or unsafe parent directory"
+              : "Project recipe is missing or is not a safe regular file"));
+      // Existing documents must still open for relinking. Their runtime source
+      // capture must refuse the unsafe location before it supplies render bytes.
+      auto score = f.project();
+      score.findVocalTrack(score.vocalTracks().front().id)->proceduralRecipe = reference;
+      const auto encoded = formats::ProjectJsonCodec{}.encode(score); CHECK(encoded);
+      const auto reopened = formats::ProjectJsonCodec{}.decode(encoded.value()); CHECK(reopened);
+      const auto& track = reopened.value().vocalTracks().front();
+      const rendering::TrackSingerSource source = rendering::TrackRecipeFileSource{
+          track.id, *track.proceduralRecipe, projectRoot};
+      const auto captured = rendering::captureProceduralSource(track, source);
+      CHECK(!captured);
+      CHECK(captured.error().message == refused.error().message);
+    }
+  }
+}
+
+TEST_CASE("Relative installed references cannot become project copies inside the project root") {
+  RuntimeAdmissionFixture f{true};
+  const auto relative = std::filesystem::relative(f.reference.path, f.root).generic_string();
+  for (const bool bound : {false, true}) {
+    auto reference = f.reference; reference.path = relative;
+    if (!bound) reference.installation.reset();
+    const auto installed = distribution::admitProceduralRecipe(reference, f.root); CHECK(installed);
+    CHECK(installed.value().origin() == distribution::ProceduralAdmissionOrigin::Installed);
+    reference.path = f.candidate.manifest.recipeEntry;
+    const auto adjacent = distribution::admitProceduralRecipe(reference, f.candidate.resourceRoot);
+    CHECK(adjacent);
+    CHECK(adjacent.value().origin() == distribution::ProceduralAdmissionOrigin::Installed);
+  }
+  auto receipt = formats::parseJson(core::readTextFileLimited(
+      f.candidate.resourceRoot / "install-receipt.json", 1024U * 1024U).value()).value();
+  receipt.asObject()["signerTrusted"] = false;
+  CHECK(core::durableAtomicWriteText(f.candidate.resourceRoot / "install-receipt.json",
+      formats::stringifyJson(receipt)));
+  for (const bool bound : {false, true}) {
+    auto reference = f.reference; reference.path = relative;
+    if (!bound) reference.installation.reset();
+    CHECK(!distribution::admitProceduralRecipe(reference, f.root));
+    distribution::ProceduralAdmissionOptions permissive; permissive.requireTrustedInstalled = false;
+    const auto admitted = distribution::admitProceduralRecipe(reference, f.root, permissive);
+    CHECK(admitted);
+    CHECK(admitted.value().origin() == distribution::ProceduralAdmissionOrigin::Installed);
+  }
+  std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
+  std::filesystem::remove(f.candidate.resourceRoot / "install-receipt.json");
+  const distribution::ProceduralAdmissionOptions known{
+      {{f.root / "singers", distribution::ProceduralRootKind::Installed}}};
+  for (const bool bound : {false, true}) {
+    auto reference = f.reference; reference.path = relative;
+    if (!bound) reference.installation.reset();
+    CHECK(!distribution::admitProceduralRecipe(reference, f.root, known));
+  }
+}
+
 TEST_CASE("Procedural runtime admission refuses manifest drift missing metadata and incompatible engines") {
   for (const std::string mutation : {"manifest", "receipt", "missing-manifest", "missing-receipt", "engine", "style"}) {
     RuntimeAdmissionFixture f;
@@ -1589,6 +1671,9 @@ TEST_CASE("Procedural runtime admission refuses manifest drift missing metadata 
     else if (mutation == "engine") ++f.reference.installation->engineRevision;
     else f.reference.style = "undeclared";
     CHECK(!distribution::admitProceduralRecipe(f.reference));
+    auto relative = f.reference;
+    relative.path = std::filesystem::relative(f.reference.path, f.root).generic_string();
+    CHECK(!distribution::admitProceduralRecipe(relative, f.root));
   }
   RuntimeAdmissionFixture future{false, voice_design::kSourceFilterEngineRevision + 1U};
   CHECK(!distribution::admitProceduralRecipe(future.reference));
@@ -1603,8 +1688,14 @@ TEST_CASE("Procedural runtime legacy root and development policies cannot become
   distribution::ProceduralAdmissionOptions development{{{f.root / "singers", distribution::ProceduralRootKind::Development}}, true, true};
   const auto fixture = distribution::admitProceduralRecipe(legacy, {}, development); CHECK(fixture);
   CHECK(fixture.value().origin() == distribution::ProceduralAdmissionOrigin::Development);
+  auto relative = legacy;
+  relative.path = std::filesystem::relative(legacy.path, f.root).generic_string();
+  const auto relativeFixture = distribution::admitProceduralRecipe(relative, f.root, development);
+  CHECK(relativeFixture);
+  CHECK(relativeFixture.value().origin() == distribution::ProceduralAdmissionOrigin::Development);
   development.allowDevelopmentFixtures = false;
   CHECK(!distribution::admitProceduralRecipe(legacy, {}, development));
+  CHECK(!distribution::admitProceduralRecipe(relative, f.root, development));
   std::filesystem::remove(f.candidate.resourceRoot / "manifest.json");
   CHECK(!distribution::admitProceduralRecipe(legacy)); // Receipt still identifies nested installation.
   std::filesystem::remove(f.candidate.resourceRoot / "install-receipt.json");

@@ -1046,7 +1046,25 @@ core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
   if (projectCopy) {
     if (!projectDirectory || !projectDirectory->is_absolute())
       return fail("Relative recipe reference requires a saved project directory");
-    path = *projectDirectory / path;
+    // Resolve a saved-project directory alias once, then require every component
+    // below it to be real. A relative spelling is not proof of a project copy.
+    const auto relative = path.lexically_normal();
+    if (relative.empty() || relative == "." || relative.has_root_path() ||
+        *relative.begin() == "..")
+      return fail("Relative recipe reference leaves the saved project directory");
+    std::error_code error;
+    auto directory = std::filesystem::canonical(*projectDirectory, error);
+    if (error || !isRealDirectory(directory))
+      return fail("Saved project directory is missing or unsafe");
+    path = directory / relative;
+    for (const auto& component : relative.parent_path()) {
+      if (stop.stop_requested()) return fail("Procedural admission cancelled");
+      directory /= component;
+      if (!isRealDirectory(directory))
+        return fail("Project recipe has a missing or unsafe parent directory");
+    }
+    if (!isRealRegularFile(path))
+      return fail("Project recipe is missing or is not a safe regular file");
   }
   path = path.lexically_normal();
   std::optional<std::filesystem::path> installationRoot;
@@ -1056,9 +1074,11 @@ core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
     for ([[maybe_unused]] const auto& component : std::filesystem::path{reference.installation->recipeEntry})
       root = root.parent_path();
     installationRoot = std::move(root);
-  } else if (!projectCopy) {
+  } else {
+    // Classify resolved relative paths too: a project can contain a catalogue or
+    // live inside an installation. Neither makes an installed recipe a copy.
     // Known catalogues have the fixed root/id/version/recipe-entry shape. A
-    // deleted manifest there must not turn an installation into an authored file.
+    // deleted manifest must not turn an installation into an authored file/copy.
     const auto roots = options.roots.empty() ? defaultProceduralSearchRoots() : options.roots;
     std::error_code error;
     const auto resolvedPath = std::filesystem::weakly_canonical(path, error);
@@ -1089,8 +1109,8 @@ core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
         break;
       }
     }
-    // Legacy absolute selections have no origin pin. Inspect bounded ancestors
-    // for typed metadata naming this recipe. Direct adjacent metadata is kept
+    // Inspect bounded ancestors for typed metadata naming this recipe, including
+    // legacy absolute selections and relative references. Direct metadata is kept
     // conservative even if damaged, rather than silently becoming a draft.
     if (!installationRoot) {
       auto parent = path.parent_path();

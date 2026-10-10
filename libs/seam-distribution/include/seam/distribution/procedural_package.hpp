@@ -300,6 +300,10 @@ private:
 // Always checks the actual compiled engine, never a caller-supplied revision.
 [[nodiscard]] core::Result<void> validateProceduralEngineBinding(
     const domain::ProceduralRecipeReference& reference);
+// Relative references stay below the canonical saved-project directory with no
+// symlink components below that root. Identifiable installations still use the
+// installed admission policy; a relative spelling alone does not establish a copy.
+// These location checks do not protect against concurrent ancestor replacement.
 [[nodiscard]] core::Result<AdmittedProceduralRecipe> admitProceduralRecipe(
     const domain::ProceduralRecipeReference& reference,
     const std::optional<std::filesystem::path>& projectDirectory = {},
