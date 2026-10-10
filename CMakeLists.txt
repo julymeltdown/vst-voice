@@ -2463,7 +2463,10 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_original_singer_song_journey_tests)
   # Retain all cases in one process, including sanitizer cross-case state coverage.
   # macOS instrumented timings and explicit budget trade-offs: W03_VERIFICATION_POLICY.
-  if(APPLE AND SEAM_ENABLE_SANITIZERS)
+  if(APPLE AND SEAM_ENABLE_THREAD_SANITIZER)
+    set_tests_properties(seam_original_singer_song_journey_tests PROPERTIES
+      TIMEOUT 2700 RUN_SERIAL TRUE)
+  elseif(APPLE AND SEAM_ENABLE_SANITIZERS)
     set_tests_properties(seam_original_singer_song_journey_tests PROPERTIES
       TIMEOUT 900 RUN_SERIAL TRUE)
   else()

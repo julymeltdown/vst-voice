@@ -172,9 +172,10 @@ readiness, nonterminal errors and invalid budgets. The other generation and
 preparation helpers retain their 3,000-poll limits but now also throw on budget
 exhaustion. Their negative-path assertions therefore require actual worker errors.
 
-Independent review is PENDING because the authorized reviewer returned HTTP 429.
-Current build/test outcomes and the remaining song-aggregate hold belong in the
-root execution ledger. This is a test-harness correction, not installed-product,
+Independent review was initially PENDING because the authorized reviewer returned
+HTTP429. Reviewer turn `01a12236-fba7-7752-b435-915dd847bce9` subsequently approved
+`f71b33fb`; the root ledger records that disposition and its remaining P3 follow-up.
+Current build/test outcomes belong in the root execution ledger. This is a test-harness correction, not installed-product,
 model, listening, platform or release acceptance.
 
 
@@ -205,13 +206,14 @@ showed6714.50MiB of8192MiB swap in use; memory pressure can affect these timings
 CTest reservation prevents other CTest entries from overlapping; other apps
 remain outside it. The lead ran no overlapping build or test workload.
 
-Release, TSan and non-Apple configurations retain300 seconds. **TSan and
-non-Apple sanitizer budgets remain unverified gaps**, not claimed supported
-passing schedules. The aborted TSan diagnostic was still in case1 at134s,
-versus41.39s for the ASan diagnostic, a workload-specific ratio above3.2. The
-older paired ratio around2.8 does not justify this suite's TSan budget. A
-separate bounded aggregate measurement must establish its total before a
-TSan-specific scheduling correction lands. Non-Apple timing is unmeasured and
+At checkpoint `96e252a4`, Release, TSan and non-Apple configurations retained300
+seconds. TSan and non-Apple sanitizer budgets were explicitly unverified gaps.
+The TSan follow-up below supplies its first complete measurement; non-Apple
+sanitizer timing remains unverified. The aborted TSan diagnostic was still in case1 at134s,
+versus41.39s for the ASan diagnostic. That earlier ratio approximation above3.2
+was one observation under a different schedule/load, not a fixed workload
+multiplier. The older paired ratio around2.8 likewise did not establish this
+suite's TSan total; the completed aggregate below now supplies direct evidence. Non-Apple timing is unmeasured and
 may also exceed300s; a timeout there does not alone establish a product defect.
 
 This is an explicit ASan aggregate loosening from300 to900 seconds, not
@@ -235,3 +237,79 @@ Final build/aggregate results, source and binary hashes, retained failures and
 review disposition are recorded in the root execution ledger. No human,
 installed-product, platform, learned-singer or Beta acceptance follows from this
 engineering scheduling correction; Windows qualification remains TODO.
+
+
+## Measured macOS TSan aggregate policy (2026-10-10)
+
+On committed `96e252a4`, the rebuilt Debug/TSan original-song executable ran all
+seven unchanged cases in one process. Before starting, the lead saved the300s
+registration and locally changed only this generated CTest entry to a2400s
+measurement ceiling with `RUN_SERIAL`. The command, working directory, visible
+sanitizer-report rejection expression, executable and test source were recorded
+and held unchanged. This was an explicit measurement override, not a claim that
+`ctest --timeout` supersedes a test's own TIMEOUT property.
+
+The prospective rule was `ceil(2.6 * complete_seconds / 300) * 300`. Following
+review, a3600s upper threshold for automatic proposals was recorded **after case1
+completed and before the full aggregate total**. The lead initially said this
+threshold preceded case1; timestamp review corrected that statement, preserved
+in `measurement-notes.md`. A failed measurement or a derived value above3600s
+requires another scoped review, not automatic extension or splitting of cases.
+
+**Result:** CTest exited0, passed all7 cases in955.44s, reported exactly the seven
+expected PASS names in order and `7 passed, 0 failed`, and contained no visible
+sanitizer-report markers. Executable and test-source SHA256 hashes were unchanged
+at completion. Body times were114.078,330.814,151.520,199.508,100.528,57.9238 and
+0.000346042 seconds. Tuning alone exceeded the old300s aggregate budget. The
+first body was114.078s versus42.6273s in the prior single-process ASan run; the
+older aborted per-case observation at134s elapsed remains a different, incomplete
+run. These observations do not prove a fixed instrumentation multiplier or the
+cause of timing variance.
+
+The rule gives **2700s**, below the3600s review threshold:2.826 times the955.44s
+measurement, with1744.56s headroom. CMake now sets that timeout and `RUN_SERIAL`
+for this macOS TSan entry. This explicitly loosens the old300s aggregate ceiling
+ninefold. ASan remains900s/serial; Release and non-Apple timeouts remain300s.
+The existing shared-process coverage, every case, assertions and sanitizer-marker
+rejection remain intact. A hang can now take longer to fail; no production latency,
+acoustic, model-quality or acceptance threshold changes.
+
+This budget rests on **one completed TSan aggregate measurement**; variance is
+uncharacterized. The lead overlapped no build or other test suite, but other apps
+were uncontrolled and host load changed during the run. Eighteen45-second samples
+from elapsed03:02 through15:48 observed a peak RSS of492960KiB (481.41MiB), not a
+proved whole-run peak. Sampled swap use ranged6279.44–6682.50M; it did not grow
+above its6682.50M starting value in those observations. Heavy pre-existing swap
+use and changing load are retained with the timings; neither decreasing swap use
+nor these RSS samples prove an absence of paging or establish a performance cause.
+A later timeout requires diagnosis and scoped review, not an automatic budget bump.
+
+The final generated registration is compared with the passing measurement: only
+the derived timeout may differ for TSan; command, working directory, marker checks
+and serial scheduling must match, and the measured TSan executable hash must
+remain unchanged. Release and ASan registrations must remain unchanged. Their
+regeneration advanced the generated source-commit stamp from `f71b33fb` to
+`96e252a4`, rebuilding dependent objects and changing those two executable hashes.
+The freshly stamped Release binary passed7/7 in19.82s. The refreshed ASan run
+was interrupted after three PASS bodies and the fourth START; it has no aggregate
+verdict and remains pending a coordinated heavy-validation window. Earlier ASan
+receipts are not assigned to this rebuilt binary. This interruption does not
+invalidate the complete TSan measurement on its unchanged executable. The initial comparison incorrectly required
+these hashes to equal the preceding unit's artifacts and failed; the corrected
+comparison separates registration equality from artifact identity.
+The passing TSan run used the stricter2400s measurement ceiling; no repeated
+TSan run or full-matrix result is implied by the configuration comparison.
+Raw evidence is local ignored `out/evidence/song-tsan-aggregate-2026-10-10/`; the
+root ledger records final comparison and review disposition. This is scoped
+engineering verification, not whole-project TSan, installed-product, human,
+Windows/host or `EXTERNAL_BETA_READY` acceptance.
+
+
+Resumption checkpoint: the reviewer confirmed the prospective measurement setup
+and challenged the budget rule, but its final review turn was interrupted before
+a final verdict on this TSan policy. Final independent review remains PENDING;
+no replacement reviewer or approval is inferred. Shared-machine coordination now
+requires an atomic cooperative validation lock, gives Dadum the next heavy window,
+and preserves active PacePitch/other work. No new heavy checks were started merely
+to replace the interrupted ASan receipt. The TSan policy is committed as a scoped
+engineering increment; current-ASan requalification and product acceptance stay open.
