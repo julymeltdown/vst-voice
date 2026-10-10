@@ -1,0 +1,632 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Read-only development-economics diagnosis; no new product qualification. Analytical prose is in the paired Korean report.",
+  "capturedAt": "2026-10-10T09:03:28.512318+00:00",
+  "baseline": {
+    "head": "ecb031680de84cc987ee2153b069269f2eeb8d73",
+    "originMaster": "ecb031680de84cc987ee2153b069269f2eeb8d73",
+    "liveRemoteMaster": "ecb031680de84cc987ee2153b069269f2eeb8d73",
+    "fetch": "git fetch origin: exit 0",
+    "pull": "git pull --ff-only --no-rebase: already up to date",
+    "existingDirtyFiles": [
+      {
+        "path": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+        "sha256": "a136e4b172df503fe68b1fe598a4d93ce6adc57fdb62bb839245b283cde5eb70"
+      },
+      {
+        "path": "tests/test_sample_review_cli.cpp",
+        "sha256": "2ac00d98f0d9551a1c99ea34d681be31d8866fd06b14433ed09a1afeb64f461a"
+      }
+    ],
+    "pendingImplementation": "Uncompiled and unverified; preserved, excluded from completed capability claims."
+  },
+  "inventory": {
+    "trackedPaths": 3022,
+    "missingTrackedPaths": [],
+    "trackedDocsPaths": 976,
+    "trackedLibsPaths": 734,
+    "trackedTestsPaths": 413,
+    "libraryDirectories": [
+      "seam-application",
+      "seam-authoring-runtime",
+      "seam-candidate-packaging",
+      "seam-character",
+      "seam-clap",
+      "seam-clap-editor",
+      "seam-core",
+      "seam-distribution",
+      "seam-domain",
+      "seam-editor-inspection",
+      "seam-editor-ui",
+      "seam-formats",
+      "seam-interchange",
+      "seam-live-voice",
+      "seam-native-ui",
+      "seam-neural-synthesis",
+      "seam-phonemizer",
+      "seam-platform",
+      "seam-rendering",
+      "seam-standalone",
+      "seam-synthesis",
+      "seam-text",
+      "seam-voice-design",
+      "seam-voicebank",
+      "seam-voicebank-production"
+    ],
+    "ledgerLines": 8707,
+    "ledgerBytes": 1515516,
+    "limits": "Tracked-path presence does not prove complete external assets or merged branch behavior. Sizes and counts are not completion or effort metrics."
+  },
+  "canonicalAcceptance": {
+    "usableAlphaGate": {
+      "name": "Usable Alpha",
+      "status": "BLOCKED"
+    },
+    "usableAlphaRequirementStatusCounts": {
+      "NOT_RUN": 20
+    },
+    "externalBetaStatus": "BLOCKED",
+    "externalBetaEvidenceRecords": 0,
+    "fullProductRequirements": 20,
+    "fullProductWorkPackages": 18,
+    "fullProductCases": 83,
+    "fullProductEvidenceStatus": "NOT_RUN",
+    "platforms": [
+      "macos-arm64",
+      "windows-x86_64"
+    ],
+    "hostTuples": [
+      "macos-arm64/reaper/CLAP",
+      "macos-arm64/reaper/VST3",
+      "windows-x86_64/reaper/CLAP",
+      "windows-x86_64/reaper/VST3",
+      "macos-arm64/bitwig/CLAP",
+      "macos-arm64/bitwig/VST3",
+      "windows-x86_64/bitwig/CLAP",
+      "windows-x86_64/bitwig/VST3",
+      "macos-arm64/logic-pro/AUv2"
+    ],
+    "releasedResources": [],
+    "evaluationProfileStatus": "UNRESOLVED",
+    "limits": "Acceptance-ledger state, not a fresh execution of each requirement. Stale semanticValidation UNAVAILABLE metadata does not mean validator code is absent."
+  },
+  "verificationTimingExamples": [
+    {
+      "receipt": "out/evidence/relative-procedural-admission-2026-10-10/validation-results.json",
+      "sha256": "6043e3689ff32bb9f3fda8cb0b593359f44835bf96514dcc8cc1118312c3d367",
+      "phaseTimings": [
+        {
+          "name": "release-build",
+          "seconds": 330.454,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/release",
+            "-j2"
+          ]
+        },
+        {
+          "name": "release-tests",
+          "seconds": 844.288,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/release",
+            "--output-on-failure",
+            "-j1"
+          ]
+        },
+        {
+          "name": "sanitize-build",
+          "seconds": 90.248,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/sanitize",
+            "--target",
+            "seam_procedural_install_journey_tests",
+            "seam_procedural_package_tests",
+            "seam_original_singer_song_journey_tests",
+            "-j2"
+          ]
+        },
+        {
+          "name": "sanitize-tests",
+          "seconds": 336.087,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/sanitize",
+            "-V",
+            "-j1",
+            "-R",
+            "^seam_(procedural_install_journey|procedural_package|original_singer_song_journey)_tests$"
+          ]
+        },
+        {
+          "name": "thread-build",
+          "seconds": 74.766,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/thread-sanitize",
+            "--target",
+            "seam_procedural_install_journey_tests",
+            "seam_procedural_package_tests",
+            "-j2"
+          ]
+        },
+        {
+          "name": "thread-tests",
+          "seconds": 11.948,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/thread-sanitize",
+            "-V",
+            "-j1",
+            "-R",
+            "^seam_(procedural_install_journey|procedural_package)_tests$"
+          ]
+        }
+      ],
+      "buildSeconds": 495.468,
+      "testSeconds": 1192.323,
+      "commandWallSeconds": 1687.791,
+      "limits": "Retained historical execution; excludes queue waits, coding, review and other runs. Not rerun for this diagnosis."
+    },
+    {
+      "receipt": "out/evidence/u45-project-capture-2026-10-10/validation-results.json",
+      "sha256": "e17e74be2861faaea2631a36bd10b3719d74024154d95b0058f9ba3247952608",
+      "phaseTimings": [
+        {
+          "name": "release-build",
+          "seconds": 16.474,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/release",
+            "--target",
+            "seam_sample_review_cli_tests",
+            "-j2"
+          ]
+        },
+        {
+          "name": "release-tests",
+          "seconds": 12.973,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/release",
+            "-V",
+            "-j1",
+            "-R",
+            "^seam_(sample_review_cli_tests|tracked_source_closure_unit|tracked_source_closure)$"
+          ]
+        },
+        {
+          "name": "sanitize-build",
+          "seconds": 15.437,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/sanitize",
+            "--target",
+            "seam_sample_review_cli_tests",
+            "-j2"
+          ]
+        },
+        {
+          "name": "sanitize-tests",
+          "seconds": 101.309,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/sanitize",
+            "-V",
+            "-j1",
+            "-R",
+            "^seam_sample_review_cli_tests$"
+          ]
+        },
+        {
+          "name": "thread-build",
+          "seconds": 14.09,
+          "exitCode": 0,
+          "command": [
+            "cmake",
+            "--build",
+            "build/thread-sanitize",
+            "--target",
+            "seam_sample_review_cli_tests",
+            "-j2"
+          ]
+        },
+        {
+          "name": "thread-tests",
+          "seconds": 247.783,
+          "exitCode": 0,
+          "command": [
+            "ctest",
+            "--test-dir",
+            "build/thread-sanitize",
+            "-V",
+            "-j1",
+            "-R",
+            "^seam_sample_review_cli_tests$"
+          ]
+        }
+      ],
+      "buildSeconds": 46.001,
+      "testSeconds": 362.065,
+      "commandWallSeconds": 408.066,
+      "limits": "Retained historical execution; excludes queue waits, coding, review and other runs. Not rerun for this diagnosis."
+    }
+  ],
+  "recentHistory": {
+    "gitQuery": "git log --first-parent --since=2026-10-08T00:00:00+09:00 --format=%H%x09%cI%x09%s",
+    "count": 53,
+    "commits": [
+      {
+        "hash": "ecb031680de84cc987ee2153b069269f2eeb8d73",
+        "committerTime": "2026-10-10T16:00:39+09:00",
+        "subject": "Retain verified project capture for native operations"
+      },
+      {
+        "hash": "e0e0646144b9c061b275498459b7b9be21724bc0",
+        "committerTime": "2026-10-10T15:49:30+09:00",
+        "subject": "Verify relative procedural admission origin repair"
+      },
+      {
+        "hash": "c5769b572cf99de70e240e2e3217210946c7a983",
+        "committerTime": "2026-10-10T15:15:22+09:00",
+        "subject": "Checkpoint relative recipe admission hardening (unverified)"
+      },
+      {
+        "hash": "5ec1860cd6c2f781a59915d18d43c3a27f078c4b",
+        "committerTime": "2026-10-10T14:15:15+09:00",
+        "subject": "Clarify Phase 11 packaging source evidence"
+      },
+      {
+        "hash": "e4dcd47286f0405973075d0cd4de40bc7766334b",
+        "committerTime": "2026-10-10T14:01:57+09:00",
+        "subject": "Set measured original-song TSan aggregate budget"
+      },
+      {
+        "hash": "96e252a4ac79da7114ccefddfa42b315302ed840",
+        "committerTime": "2026-10-10T04:56:17+09:00",
+        "subject": "Preserve aggregate coverage in original-song ASan checks"
+      },
+      {
+        "hash": "f71b33fbaa8ffa4602f35b0243384a1ad3c2d5a4",
+        "committerTime": "2026-10-10T04:27:28+09:00",
+        "subject": "Distinguish async test deadlines from worker refusals"
+      },
+      {
+        "hash": "9d0027b3db976579c35c18e2d14cd085b4d826db",
+        "committerTime": "2026-10-10T04:11:53+09:00",
+        "subject": "Checkpoint production singer binding with sanitizer audit open"
+      },
+      {
+        "hash": "71370ae80d46359f6f75ee64afa0e92ce44401b3",
+        "committerTime": "2026-10-10T03:41:56+09:00",
+        "subject": "Verify saved procedural installation pins in U45 linkage"
+      },
+      {
+        "hash": "750bdcbff253ec9372be9cf3cc348aeded59ef02",
+        "committerTime": "2026-10-10T03:25:29+09:00",
+        "subject": "Reconcile local verification after CI retirement"
+      },
+      {
+        "hash": "d500b603b192a6a7a98635455b680e79213800aa",
+        "committerTime": "2026-10-10T03:12:50+09:00",
+        "subject": "Enforce procedural runtime admission"
+      },
+      {
+        "hash": "6632f584c518d07bf1ddec5a68c7c4535f6d7401",
+        "committerTime": "2026-10-09T11:06:45-07:00",
+        "subject": "Remove GitHub Actions CI workflows at owner's request"
+      },
+      {
+        "hash": "4f47c1ea8bd1f0cbc4b9670267525453c1b62abf",
+        "committerTime": "2026-10-10T02:34:42+09:00",
+        "subject": "Persist procedural installation bindings"
+      },
+      {
+        "hash": "2a13df06b2a4ea98a1620e6a88992f2f140ba380",
+        "committerTime": "2026-10-10T01:40:55+09:00",
+        "subject": "Reject stale installed singer choices across modal dialogs"
+      },
+      {
+        "hash": "d2089721870d0bb27fe03cb8af71216230d89a56",
+        "committerTime": "2026-10-10T01:25:04+09:00",
+        "subject": "Validate procedural recipe claims during package admission"
+      },
+      {
+        "hash": "f3feb18c36ee8dcae37fe9720125441bfb2d9e0c",
+        "committerTime": "2026-10-10T01:06:13+09:00",
+        "subject": "Bind verified installed resources to native project references"
+      },
+      {
+        "hash": "b6092fab12d0eb1c0ba86a1d9367150594c15848",
+        "committerTime": "2026-10-10T00:39:41+09:00",
+        "subject": "Verify native project singer and language bindings"
+      },
+      {
+        "hash": "f6533d311aad7098adfcd8072006c41e7323ee22",
+        "committerTime": "2026-10-10T00:07:03+09:00",
+        "subject": "Report signed dependencies in installed candidate records"
+      },
+      {
+        "hash": "6cc1786e457c762af7a5e68f96592eefc83034be",
+        "committerTime": "2026-10-09T23:52:44+09:00",
+        "subject": "Pin typed model manifests and verify refusal scratch contents"
+      },
+      {
+        "hash": "0bc8717ddda0dc6ae3b1e16263c7df081664bebe",
+        "committerTime": "2026-10-09T23:44:24+09:00",
+        "subject": "Synchronize playback menu test with feeder acknowledgement"
+      },
+      {
+        "hash": "4a4d4c30c49db4a89cce567ed994fc65abb55ef5",
+        "committerTime": "2026-10-09T17:35:35+09:00",
+        "subject": "Checkpoint native model installation refusal records"
+      },
+      {
+        "hash": "a366160b69f6ae7d29bbd3cae40d75ac418cca72",
+        "committerTime": "2026-10-09T17:20:25+09:00",
+        "subject": "Harden candidate replay scratch and recipe manifest identity"
+      },
+      {
+        "hash": "7d9c7e7db1c33fe6d3f0d597940f58744350d834",
+        "committerTime": "2026-10-09T17:11:55+09:00",
+        "subject": "Verify installed candidate contents through native replay"
+      },
+      {
+        "hash": "f9548eacf2d48616f75b8472c9c348b18fb9c230",
+        "committerTime": "2026-10-09T16:38:17+09:00",
+        "subject": "Record final U45 checkpoint and playback review"
+      },
+      {
+        "hash": "150fbf5dc3d8508d04916146f267d9cbc29afcac",
+        "committerTime": "2026-10-09T16:35:41+09:00",
+        "subject": "Synchronize buffered playback test precondition"
+      },
+      {
+        "hash": "4d344a590be060820d560675d06e4bccdb576579",
+        "committerTime": "2026-10-09T16:25:12+09:00",
+        "subject": "Checkpoint U45 typed audit behind reconciliation hold"
+      },
+      {
+        "hash": "ed5f9a5d7ff1309795e5c3ba104d19c5e649cc9d",
+        "committerTime": "2026-10-09T16:01:57+09:00",
+        "subject": "Record verified candidate packaging integration"
+      },
+      {
+        "hash": "c3d94c64ca8b1e22b5154a4a9bf665cf82f96796",
+        "committerTime": "2026-10-09T15:45:59+09:00",
+        "subject": "Merge remote production render binding validation"
+      },
+      {
+        "hash": "2e5d0d43ec7c6f9371c38f12939bf348d6507602",
+        "committerTime": "2026-10-09T15:45:01+09:00",
+        "subject": "Checkpoint typed candidate packaging integration"
+      },
+      {
+        "hash": "9160e78f9344118a1cd4353814e1dfb4072e8177",
+        "committerTime": "2026-10-09T15:04:16+09:00",
+        "subject": "Show voicebank installation errors from the macOS menu"
+      },
+      {
+        "hash": "dc799b59eb45a5ed1bccdc32ebedd9a23ce52899",
+        "committerTime": "2026-10-09T14:55:33+09:00",
+        "subject": "Retain standalone installation durability warnings"
+      },
+      {
+        "hash": "3bf4fe55bc916d3f9cac2d9200be4c5a932247cc",
+        "committerTime": "2026-10-09T14:37:14+09:00",
+        "subject": "Install signed resources through a guarded atomic transaction"
+      },
+      {
+        "hash": "3e658e219b16a0a0b0c13261be8d55f1ef2ce311",
+        "committerTime": "2026-10-09T14:12:56+09:00",
+        "subject": "Publish typed v3 resource candidates from pinned generations"
+      },
+      {
+        "hash": "e1873a7b996e12f732725bf443211dee61e259d5",
+        "committerTime": "2026-10-09T13:58:53+09:00",
+        "subject": "Reserve CTest capacity for dependency-enabled training"
+      },
+      {
+        "hash": "40682e353216408868f54653659155aa1e1d0af6",
+        "committerTime": "2026-10-09T13:33:57+09:00",
+        "subject": "Record complete training verification and preserve timeout diagnostics"
+      },
+      {
+        "hash": "aef6ee80c5275af4f85be879660c4a825ea1a6f9",
+        "committerTime": "2026-10-09T13:16:19+09:00",
+        "subject": "Preserve concurrent meter publications during UI reset"
+      },
+      {
+        "hash": "946f56945a678eee7062830103ad77938ed284a5",
+        "committerTime": "2026-10-09T13:13:21+09:00",
+        "subject": "Stabilize live RSS fixture and document compiled training setup"
+      },
+      {
+        "hash": "48e87d754e4c45c6b095ce12a0cc7b751ee08554",
+        "committerTime": "2026-10-09T12:54:03+09:00",
+        "subject": "test: enable portable dependency-complete training checks"
+      },
+      {
+        "hash": "f41d843f542bc0903ab21019fb0b0093ff5d7b75",
+        "committerTime": "2026-10-09T12:41:06+09:00",
+        "subject": "docs: clarify production verification timeout boundaries"
+      },
+      {
+        "hash": "fd2b50a339ed94ee367248d22327d85a00d5e7d9",
+        "committerTime": "2026-10-09T12:33:59+09:00",
+        "subject": "test: split expensive production verification modules"
+      },
+      {
+        "hash": "b961e7547259ebb6c0553def9381910a52e9f19a",
+        "committerTime": "2026-10-09T01:13:15+09:00",
+        "subject": "feat: checkpoint portable listener packet validation"
+      },
+      {
+        "hash": "9fc0d501a516c2633f1639803363bcb99e8231a2",
+        "committerTime": "2026-10-09T00:46:13+09:00",
+        "subject": "fix: refuse overridden listening controls and clarify evidence failures"
+      },
+      {
+        "hash": "b8b10a5877784b54ae2eada0e3b1f7fff139cfac",
+        "committerTime": "2026-10-09T00:35:37+09:00",
+        "subject": "feat: share listener verdicts and matched rest controls"
+      },
+      {
+        "hash": "b258d34918018ec3717dfbafc5defb2c17ea9c5e",
+        "committerTime": "2026-10-09T00:24:38+09:00",
+        "subject": "fix: fail legacy listening packet integrity checks"
+      },
+      {
+        "hash": "79b91d6566fdab427247e5049550ee649d089202",
+        "committerTime": "2026-10-09T00:11:34+09:00",
+        "subject": "docs: define reviewed full-scope completion plan and goal"
+      },
+      {
+        "hash": "96ec8fbee8e08b695866d909c090ca0c52a5a8d9",
+        "committerTime": "2026-10-08T23:30:57+09:00",
+        "subject": "Merge U21 request-owned storage budget with entry-boundary repair"
+      },
+      {
+        "hash": "cfc7c777035537097ef9d247e5a8f21fca620a64",
+        "committerTime": "2026-10-08T23:00:33+09:00",
+        "subject": "docs: record critically reviewed progress and completeness audit"
+      },
+      {
+        "hash": "8c4678ceff3b65cfed5f0be83a8a7e42d25e15eb",
+        "committerTime": "2026-10-08T22:57:28+09:00",
+        "subject": "docs: correct five stale SEAM unit classifications from source evidence"
+      },
+      {
+        "hash": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7",
+        "committerTime": "2026-10-08T21:58:56+09:00",
+        "subject": "docs: reconcile current implementation and acceptance progress"
+      },
+      {
+        "hash": "00eb57e5d1177524619076833060907ebd6cc96c",
+        "committerTime": "2026-10-08T08:59:59+09:00",
+        "subject": "Require supervised soak evidence in public replay tests"
+      },
+      {
+        "hash": "2b095463272a552f34f94eed368b1d5503e5bee0",
+        "committerTime": "2026-10-08T08:56:09+09:00",
+        "subject": "Preserve public gate errors through exception reporting"
+      },
+      {
+        "hash": "665046c1f34eec643a07a7d6c3c4fea38effb5d5",
+        "committerTime": "2026-10-08T08:50:26+09:00",
+        "subject": "Exercise live soak collection at the production cadence"
+      },
+      {
+        "hash": "16c0d719a593bfe8295d823e011c42896014bb58",
+        "committerTime": "2026-10-08T07:53:58+09:00",
+        "subject": "Guard relocated Save As backing audio before project writes"
+      }
+    ],
+    "limits": "Commit count is not elapsed effort or delivered features; merges can contain additional work."
+  },
+  "reviewContext": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "latestInspectedTurn": "01a12242-d47f-7221-b93e-deac8d6ecd2e",
+    "latestInspectedTurnStatus": "interrupted",
+    "previousCompletedTurn": "01a12240-d44e-7641-97b8-f16ddc41d499",
+    "usedFor": "Confirmed timestamp/measurement correction and limits of review evidence, not independent approval of this diagnosis. No new outbound task message sent under current coordination restriction."
+  },
+  "sourceInventory": [
+    {
+      "path": "README.md",
+      "sha256": "7411610d706fcb18ce6905caa6e5035394ee783868f363eccab9518b319140ea"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99"
+    },
+    {
+      "path": "docs/product/USABLE_ALPHA_ACCEPTANCE.md",
+      "sha256": "a4a9f41aa24b77bf5f7b208beb6f43f8fc6564f1fbabfc6f7c2926b0d3425223"
+    },
+    {
+      "path": "docs/product/usable-alpha-acceptance.json",
+      "sha256": "735e6dcba0fcd96e904518812e7ffaaf9b24b47efd8e5f442477a9e6e54c4a84"
+    },
+    {
+      "path": "docs/product/full-product-beta-contract.json",
+      "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f"
+    },
+    {
+      "path": "docs/product/external-beta-acceptance.json",
+      "sha256": "fbf453566dbe33452d2c217f91521545ecbec787f7497ce4d4240881ef8eba9e"
+    },
+    {
+      "path": "docs/implementation/FULL_SCOPE_BETA_EXECUTION.md",
+      "sha256": "37b042af4f78490150ae6b30a90231c9ae3f0da812802b20f96f59ce53b7a55e"
+    },
+    {
+      "path": "docs/plans/2026-10-08-full-scope-completion-execution-plan.md",
+      "sha256": "97d4779f460a2a9112bcab4b4400bf9640d9b42b713013344cc5c3693fcb0317"
+    },
+    {
+      "path": "SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md",
+      "sha256": "adeb944a0abddddd51588a3d46c118269ed45524a404f09e427a6aa3062f07fb"
+    },
+    {
+      "path": "DEVELOPMENT_DIRECTION_CHECKPOINT_REVIEW_2026-09-09_EN.md",
+      "sha256": "0f8769573998e26b84a0ecab95bed19f4403d7dd2f4f7e35d2d2dfc9c2127217"
+    },
+    {
+      "path": "docs/implementation/W03_VERIFICATION_POLICY_2026-10-09.md",
+      "sha256": "d503412ec750f13eb3c69440c6362c56b59638c57f87a07114d159fe571d99a2"
+    },
+    {
+      "path": "tests/test_original_singer_song_journey.cpp",
+      "sha256": "7b0d8eb82bba15e82e52121a0be455f3c4f41f53775043500734cf8b6666b55e"
+    },
+    {
+      "path": "libs/seam-rendering/src/project_renderer.cpp",
+      "sha256": "b7db189b772f298fe977960b702dc06c904a125d6dd4ae02fd44c96f91f373d5"
+    },
+    {
+      "path": "libs/seam-distribution/include/seam/distribution/procedural_package.hpp",
+      "sha256": "f1018c47b11fc104179d23329511f59bf11f25217b85ebeca17758b4216f0a91"
+    },
+    {
+      "path": "apps/seam-voicebank-cli/project_binding_commands.hpp",
+      "sha256": "6408942d776864c1f134387e54791d12675736f8300938ef03fecd509bf0b7d5"
+    },
+    {
+      "path": "docs/formats/PROJECT_BINDING_VERIFICATION.md",
+      "sha256": "580a99a162b1b25919f8da769d279a358acf913fd14e9911514f73dad26604ca"
+    },
+    {
+      "path": "docs/implementation/LISTENING_PACKET_001_SUMMARY_2026-10-04.json",
+      "sha256": "1e6c098195ba64ef99945b6e99a30ab76af1c503a4b74d9a91f1d2ddfc81d1c4"
+    }
+  ],
+  "scopeLimitations": [
+    "No builds or product tests executed for this diagnosis.",
+    "No live UI, listening, DAW, screen-reader, signing, Windows or external-review acceptance performed.",
+    "No comprehensive time-motion accounting or controlled comparison; causal rankings are reasoned judgments.",
+    "Existing implementation plan, acceptance contracts, pending code, stashes and workflows are unchanged."
+  ]
+}
