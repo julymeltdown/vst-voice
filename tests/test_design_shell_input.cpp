@@ -62,6 +62,8 @@ struct ShellFixture final {
   native_ui::NativeEditorController controller;
   SingShell shell;
   std::optional<native_ui::TextInputRequest> lastTextInput;
+  std::size_t textInputStarts{0U};
+  std::size_t textInputEnds{0U};
 
   explicit ShellFixture(time::Tick regionStart = time::Tick{0}, bool wide = false,
                         time::Tick noteDuration = time::Tick{960})
@@ -70,9 +72,10 @@ struct ShellFixture final {
                    native_ui::EditorHostCallbacks{
                        .beginTextInput =
                            [this](const native_ui::TextInputRequest& request) {
+                             ++textInputStarts;
                              lastTextInput = shell.translateTextInput(request);
                            },
-                       .endTextInput = [this] { shell.textInputEnded(); },
+                       .endTextInput = [this] { ++textInputEnds; shell.textInputEnded(); },
                    }} {
     controller.resize(1600.0, 900.0);
     shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
@@ -124,11 +127,12 @@ struct ShellFixture final {
   }
 
   // Paints one real frame so the shell records what the scene state allows (lane editability).
-  bool frame() {
+  bool frame(double scale = 1.0) {
     if (!shell.prepareFrame(controller, 1600.0, 900.0)) return false;
     // The frame's own surface is kept, so a test can read the pixels the painters produced.
-    surface = native_ui::PixelSurface{1600U, 900U};
-    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    surface = native_ui::PixelSurface{static_cast<std::uint32_t>(1600.0 * scale),
+                                    static_cast<std::uint32_t>(900.0 * scale)};
+    native_ui::RasterCanvas canvas{surface, scale, nullptr};
     return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
   }
 
@@ -136,6 +140,13 @@ struct ShellFixture final {
 };
 
 PointerEvent press(ui::Point p) { return {.position = p, .button = PointerButton::Left}; }
+
+void checkLyricRect(ui::Rect actual, ui::Rect expected) {
+  CHECK_NEAR(actual.x, expected.x, 1e-9);
+  CHECK_NEAR(actual.y, expected.y, 1e-9);
+  CHECK_NEAR(actual.width, expected.width, 1e-9);
+  CHECK_NEAR(actual.height, expected.height, 1e-9);
+}
 
 }  // namespace
 
@@ -261,7 +272,10 @@ TEST_CASE("text fields move into shell space: lyrics with the grid, other fields
   const ui::Rect bounds{200.0, 300.0, 80.0, 20.0};
   const auto grid = f.shell.translateTextInput(
       {domain::LyricTokenId{7U}, bounds, U"", native_ui::TextInputAnchor::NoteGrid});
-  CHECK_NEAR(grid.logicalBounds.y, bounds.y + offset, 1e-9);
+  CHECK(grid.presentedLyricBounds != nullptr);
+  CHECK_NEAR(grid.logicalBounds.y + grid.logicalBounds.height * 0.5,
+             bounds.y + offset + bounds.height * 0.5, 1e-9);
+  CHECK_NEAR(grid.logicalBounds.width, native_ui::design::kLyricEditorMinWidth, 1e-9);
   // The anchor, not the target id, decides: any other field sits on the field the shell draws for
   // it, whatever classic rectangle the controller computed.
   using native_ui::TextInputAnchor;
@@ -345,6 +359,180 @@ TEST_CASE("the inline lyric editor paints what is typed whole, even over a short
   CHECK(typed->ink.right() <= grid.right());
   CHECK(typed->ink.x >= typed->clip.x - 1e-9);
   CHECK(typed->ink.right() <= typed->clip.right() + 1e-9);
+}
+
+TEST_CASE("lyric presentation resolves the note anchor once and clamps short long and edge fields") {
+  namespace design = native_ui::design;
+  design::SingLayout layout;
+  layout.grid = {80.0, 172.0, 1040.0, 504.0};
+  constexpr double contentTop = 64.0;
+  const ui::Rect anchor{300.0, 292.0, 28.0, 16.0};
+  checkLyricRect(design::singLyricPresentationBounds(layout, anchor, 0.0, contentTop),
+                 {300.0, 396.0, 96.0, 24.0});
+  checkLyricRect(design::singLyricPresentationBounds(layout, anchor, 300.0, contentTop),
+                 {300.0, 396.0, 326.0, 24.0});
+  checkLyricRect(design::singLyricPresentationBounds(layout, {1115.0, 292.0, 28.0, 16.0}, 0.0, contentTop),
+                 {1024.0, 396.0, 96.0, 24.0});
+  checkLyricRect(design::singLyricPresentationBounds(layout, {50.0, 1000.0, 28.0, 16.0}, 0.0, contentTop),
+                 {80.0, 652.0, 96.0, 24.0});
+  checkLyricRect(design::singLyricPresentationBounds(layout, {70.0, 50.0, 28.0, 16.0}, 5000.0, contentTop),
+                 {80.0, 172.0, 1040.0, 24.0});
+  auto narrow = layout;
+  narrow.grid = {80.0, 172.0, 60.0, 20.0};
+  checkLyricRect(design::singLyricPresentationBounds(narrow, anchor, 300.0, contentTop),
+                 {80.0, 172.0, 60.0, 20.0});
+  // The immutable controller anchor still describes the musical note, not its larger editor.
+  CHECK_NEAR(anchor.y, 292.0, 1e-9);
+  CHECK_NEAR(anchor.width, 28.0, 1e-9);
+  checkLyricRect(design::singLyricPresentationBounds({}, anchor, 0.0, contentTop), {});
+  checkLyricRect(design::singLyricPresentationBounds(layout, {}, 0.0, contentTop), {});
+  checkLyricRect(design::singLyricPresentationBounds(layout, anchor,
+                    std::numeric_limits<double>::quiet_NaN(), contentTop), {});
+
+  SingShell unavailable;
+  const native_ui::TextInputRequest classic{domain::LyricTokenId{7U}, anchor, U"original",
+                                           native_ui::TextInputAnchor::NoteGrid};
+  const auto unchanged = unavailable.translateTextInput(classic);
+  CHECK(!unchanged.presentedLyricBounds);
+  CHECK(unchanged.currentText == classic.currentText);
+  checkLyricRect(unchanged.currentLogicalBounds(), anchor);
+}
+
+TEST_CASE("paint and native lyric bounds grow together at 1x and 2x without restarting composition") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  std::optional<ui::Rect> oneXField;
+  for (const double scale : {1.0, 2.0}) {
+    ShellFixture f{time::Tick{0}, false, time::Tick{240}};
+    // Opening before the first paint must already use the shell's logical text metrics.
+    CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto initialNotes = f.shell.accessibilityTree().materializeNotes(0U, 1U);
+    CHECK(initialNotes.size() == 1U);
+    if (initialNotes.empty()) return;
+    const auto noteAnchor = f.controller.pianoRoll().visibleNotes().front().bounds;
+    const auto noteId = f.note().id;
+    const auto nodeId = "note." + noteId.toString();
+    CHECK(f.shell.dispatchController(f.controller, nodeId, native_ui::SemanticAction::SetFocus));
+    CHECK(f.shell.dispatchController(f.controller, nodeId, native_ui::SemanticAction::EditText));
+    CHECK(f.lastTextInput.has_value() && f.lastTextInput->presentedLyricBounds != nullptr);
+    if (!f.lastTextInput || !f.lastTextInput->presentedLyricBounds) return;
+    const auto request = *f.lastTextInput;
+    const auto revision = f.controller.documentRevision();
+    const auto starts = f.textInputStarts;
+    const auto ends = f.textInputEnds;
+    const auto shortField = request.currentLogicalBounds();
+    CHECK_NEAR(shortField.width, 96.0, 1e-9);
+    CHECK_NEAR(shortField.height, 24.0, 1e-9);
+    {
+      native_ui::paint::ScopedTextCapture shortCapture;
+      CHECK(f.frame(scale));
+      const native_ui::paint::TextRecord* shortText = nullptr;
+      for (const auto& record : shortCapture.records()) {
+        if (record.text == "\u3042" && record.bounds.width >= 80.0) shortText = &record;
+      }
+      CHECK(shortText != nullptr);
+      if (!shortText) return;
+      checkLyricRect({shortText->bounds.x - 8.0, shortText->bounds.y,
+                      shortText->bounds.width + 16.0, shortText->bounds.height}, shortField);
+    }
+    const std::string typed = "komorebi komorebi komorebi komorebi komorebi";
+    const ui::CompositionSelection selection{3U, 4U};
+    CHECK(f.controller.updateTextComposition(domain::fromUtf8(typed).value(), selection));
+    native_ui::paint::ScopedTextCapture capture;
+    CHECK(f.frame(scale));
+    const native_ui::paint::TextRecord* painted = nullptr;
+    for (const auto& record : capture.records())
+      if (record.text == typed) painted = &record;
+    CHECK(painted != nullptr);
+    if (painted == nullptr) return;
+    const auto live = request.currentLogicalBounds();
+    CHECK(live.width > shortField.width);
+    if (oneXField) checkLyricRect(live, *oneXField);
+    else oneXField = live;
+    checkLyricRect({painted->bounds.x - 8.0, painted->bounds.y,
+                    painted->bounds.width + 16.0, painted->bounds.height}, live);
+    CHECK(live.x >= f.shell.layout().grid.x);
+    CHECK(live.right() <= f.shell.layout().grid.right());
+    CHECK(f.controller.textInputActive());
+    CHECK(f.controller.sceneState().compositionPreview == typed);
+    CHECK(f.controller.textCompositionSelection() == selection);
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.textInputStarts == starts && f.textInputEnds == ends);
+    CHECK(request.currentText == f.lastTextInput->currentText);
+    CHECK(request.presentedLyricBounds == f.lastTextInput->presentedLyricBounds);
+
+    // The editor's enlarged box must not enlarge the note's hit or semantic rectangle.
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto notes = f.shell.accessibilityTree().materializeNotes(0U, 1U);
+    CHECK(notes.size() == 1U && notes.front().id == nodeId);
+    if (!notes.empty()) {
+      CHECK(notes.front().bounds.width < shortField.width);
+      checkLyricRect(notes.front().bounds, initialNotes.front().bounds);
+    }
+    checkLyricRect(f.controller.pianoRoll().visibleNotes().front().bounds, noteAnchor);
+    const auto* focused = f.controller.accessibilityTree().focusedNode();
+    CHECK(focused != nullptr && focused->id == nodeId);
+    const auto before = f.session.project().findRegion(f.regionId)->findLyric(f.note().lyricTokenId)->surface;
+    CHECK(f.controller.commitTextComposition(U"\u3044"));
+    CHECK(!f.controller.textInputActive());
+    checkLyricRect(request.currentLogicalBounds(), {});
+    CHECK(f.session.undo());
+    CHECK(f.session.project().findRegion(f.regionId)->findLyric(f.note().lyricTokenId)->surface == before);
+    // The direct command and the semantic EditText action resolve the same note presentation.
+    CHECK(f.controller.beginLyricEdit(noteId));
+    checkLyricRect(f.lastTextInput->currentLogicalBounds(), shortField);
+    f.controller.cancelTextComposition();
+  }
+}
+
+TEST_CASE("lyric native geometry follows scroll and retires on resize or a covering workspace") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f{time::Tick{0}, false, time::Tick{240}};
+  CHECK(f.frame());
+  CHECK(f.controller.beginLyricEdit(f.note().id));
+  const ui::CompositionSelection selection{2U, 3U};
+  CHECK(f.controller.updateTextComposition(U"komorebi", selection));
+  CHECK(f.frame());
+  CHECK(f.lastTextInput.has_value());
+  if (!f.lastTextInput) return;
+  const auto request = *f.lastTextInput;
+  const auto before = request.currentLogicalBounds();
+  const auto revision = f.controller.documentRevision();
+  const auto starts = f.textInputStarts;
+  const auto ends = f.textInputEnds;
+  const auto anchor = f.noteCenter();
+  CHECK(f.shell.scroll(f.controller, 16.0, 0.0, anchor, {}));
+  CHECK(f.frame());
+  CHECK(std::abs(request.currentLogicalBounds().x - before.x) > 1.0);
+  CHECK(f.controller.textInputActive());
+  CHECK(f.controller.textCompositionSelection() == selection);
+  CHECK(f.textInputStarts == starts && f.textInputEnds == ends);
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.scroll(f.controller, 100000.0, 0.0, anchor, {}));
+  CHECK(f.frame());
+  CHECK(!f.controller.sceneState().lyricEditor.has_value());
+  checkLyricRect(request.currentLogicalBounds(), {});
+  CHECK(f.controller.textInputActive());
+  CHECK(f.controller.textCompositionSelection() == selection);
+  CHECK(f.shell.scroll(f.controller, -100016.0, 0.0, anchor, {}));
+  CHECK(f.frame());
+  CHECK(request.currentLogicalBounds().width > 0.0);
+  CHECK(f.textInputStarts == starts && f.textInputEnds == ends);
+  CHECK(f.controller.sceneState().compositionPreview == "komorebi");
+  CHECK(f.controller.textCompositionSelection() == selection);
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  CHECK(!f.controller.textInputActive());
+  CHECK(f.controller.documentRevision() == revision);
+  checkLyricRect(request.currentLogicalBounds(), {});
+  CHECK(f.frame());
+  CHECK(f.controller.beginLyricEdit(f.note().id));
+  const auto second = *f.lastTextInput;
+  f.shell.setWorkspace(f.controller, native_ui::design::Workspace::Tune);
+  CHECK(!f.controller.textInputActive());
+  checkLyricRect(second.currentLogicalBounds(), {});
+  CHECK(f.controller.documentRevision() == revision);
 }
 
 TEST_CASE("a track rename field is an inline field card in the shell") {

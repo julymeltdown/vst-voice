@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-12",
+  "scope": "ENGINEERING_ONLY",
+  "sourceBase": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+  "entryCondition": "Repeated inconsistent lyric geometry rules in shell paint, translation and embedded native placement",
+  "sourceTrigger": {
+    "translatedNote": [
+      300,
+      400,
+      28,
+      16
+    ],
+    "paintedEmptyField": [
+      300,
+      396,
+      96,
+      24
+    ],
+    "oldEmbeddedField": [
+      300,
+      400,
+      80,
+      24
+    ],
+    "interpretation": "Source/formula evidence, not a claimed live-host failure"
+  },
+  "review": "Independent worker approved source; lead performed all execution",
+  "checks": [
+    {
+      "command": "cmake --build build/release -j6",
+      "result": "PASS"
+    },
+    {
+      "command": "ctest --test-dir build/release --output-on-failure -R '^(seam_design_shell_input_tests|seam_design_frame_pipeline_tests|seam_clap_design_shell_tests)$'",
+      "result": "PASS",
+      "entries": 3,
+      "seconds": 13.43
+    },
+    {
+      "command": "cmake --build build/release --target seam_tests -j6",
+      "result": "PASS",
+      "scope": "Additional test-only Cocoa source; prior full dependency build current"
+    },
+    {
+      "command": "build/release/seam_tests 'AppKit'",
+      "result": "PASS",
+      "nativeCases": 5,
+      "actualStandaloneBackingScale": 2,
+      "actualEmbeddedBackingScale": 2
+    }
+  ],
+  "limitations": [
+    "No physical native 1x run",
+    "No VoiceOver or DAW/human acceptance",
+    "Other native adapters remain unchanged",
+    "ClassicSurface compatibility retained"
+  ],
+  "executedSources": [
+    {
+      "path": "libs/seam-native-ui/include/seam/native_ui/design/sing_shell.hpp",
+      "sha256": "920cf099ed35e05bf88c87f0be5bec80599a9d603516a3d8eb9ca3ad1edf630c"
+    },
+    {
+      "path": "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+      "sha256": "02aa785dcabbfefc889251fdf959259d2531f177a7dea24e5f2841f1bfe7ee0a"
+    },
+    {
+      "path": "libs/seam-native-ui/src/design/sing_shell.cpp",
+      "sha256": "30b166c2650a57e03347097a74cbf3b9a61f774062f34e02e4797d5b0e0a5f80"
+    },
+    {
+      "path": "libs/seam-native-ui/src/native_window_appkit.mm",
+      "sha256": "4a58e3cfa6f12467832b9aa8e680782e33f256fd81e4aa81a45b8b176cdafc73"
+    },
+    {
+      "path": "libs/seam-clap-editor/include/seam/clap_editor/text_input_geometry.hpp",
+      "sha256": "7ffbd1b727787380230a3445fec1f4610def8bf468436e1c1af34b1de744f3c4"
+    },
+    {
+      "path": "libs/seam-clap-editor/src/embedded_view_appkit.mm",
+      "sha256": "9082336e17fbdddfe1c811ed1d24481386a146b8c4613bd920d2bfe40a6af771"
+    },
+    {
+      "path": "tests/test_design_shell_input.cpp",
+      "sha256": "be0876121cf99021cdb6ac424702c29fc5d97573f6c5c1afd0fcc01a4ae14b90"
+    },
+    {
+      "path": "tests/test_clap_design_shell.cpp",
+      "sha256": "ea5aaa44b7888f7c10a69e92dcd4aa0ee7cd6669072243d707c413cdc5fe6207"
+    },
+    {
+      "path": "tests/test_accessibility_appkit.mm",
+      "sha256": "5bf2889022328c15fc7e1194e7f7957990ddc56ab3a3b7a59cb86a83b6cff6cd"
+    }
+  ],
+  "retainedArtifacts": [
+    {
+      "path": "out/evidence/rs09-lyric-geometry-2026-10-12/seam-rs09-cocoa-build.log",
+      "sha256": "9b5bd77038bbdb2309f4e44d0dc10a167b1e386e130edc38cbd6003dd5238c5b"
+    },
+    {
+      "path": "out/evidence/rs09-lyric-geometry-2026-10-12/seam-rs09-cocoa.log",
+      "sha256": "83304b818a598a382159590ec2d864ac244e76d24fb9640a551c8ea58de87785"
+    },
+    {
+      "path": "out/evidence/rs09-lyric-geometry-2026-10-12/seam-rs09-full-build.log",
+      "sha256": "754b1b49150de1bec7b710d758202b7a9490c13f630b513eecc309cb5049d0f2"
+    },
+    {
+      "path": "out/evidence/rs09-lyric-geometry-2026-10-12/seam-rs09-v06.log",
+      "sha256": "0e5a74f8e6c394e0b0f5ae6ed0e07a10248e1d010c216dca935702607bb1033d"
+    },
+    {
+      "path": "out/evidence/rs09-lyric-geometry-2026-10-12/v06-native.log",
+      "sha256": "018e7252638b482d0713093579e245345ac130ea802687dbdc3920939b2b3161"
+    }
+  ]
+}

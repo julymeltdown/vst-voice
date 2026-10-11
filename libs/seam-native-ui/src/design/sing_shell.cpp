@@ -433,6 +433,19 @@ ui::Rect singLyricEditorBounds(ui::Rect note, double textWidth, ui::Rect grid) n
   return {x, y, width, height};
 }
 
+ui::Rect singLyricPresentationBounds(const SingLayout& layout, ui::Rect controllerNote,
+                                    double textWidth, double controllerContentTop) noexcept {
+  const auto finite = [](ui::Rect rect) {
+    return std::isfinite(rect.x) && std::isfinite(rect.y) &&
+           std::isfinite(rect.width) && std::isfinite(rect.height);
+  };
+  if (!finite(layout.grid) || !finite(controllerNote) || !std::isfinite(textWidth) ||
+      !std::isfinite(controllerContentTop) || layout.grid.width <= 0.0 || layout.grid.height <= 0.0 ||
+      controllerNote.width <= 0.0 || controllerNote.height <= 0.0) return {};
+  controllerNote.y += layout.grid.y - controllerContentTop;
+  return singLyricEditorBounds(controllerNote, textWidth, layout.grid);
+}
+
 std::vector<SingOverlapBadge> layoutSingOverlapBadges(
     const std::vector<ui::NoteVisual>& notes, ui::Rect grid) {
   std::vector<SingOverlapBadge> result;
@@ -804,7 +817,10 @@ void SingShell::setSettingsOpen(bool open) {
   repaint();
 }
 
-SingShell::~SingShell() { uninstallShellStrings(strings_.get()); }
+SingShell::~SingShell() {
+  textInputEnded();
+  uninstallShellStrings(strings_.get());
+}
 
 void SingShell::applyLanguage() {
   preferences_.language = std::string{shellLanguageFor(
@@ -895,16 +911,26 @@ ui::Rect shellFieldBounds(TextInputAnchor anchor, const SingLayout& layout) {
 }  // namespace
 
 TextInputRequest SingShell::translateTextInput(TextInputRequest request) {
-  // The controller states which surface the field belongs to. A note-grid anchor moves with the
-  // grid; every other field is placed on the rectangle the shell draws it at (the time map's event
-  // field, the transport's tempo or meter field, the inline field card), the same function the
-  // overlay lays it out with. A new request has replaced whatever composition was open before.
-  lyricInputActive_ = false;
-  fieldAnchor_.reset();
+  // The controller states which surface the field belongs to. A note-grid anchor resolves to its
+  // presented lyric field; every other field is placed on the rectangle the shell draws it at
+  // (the time map's event field, the transport's tempo or meter field, the inline field card), using
+  // the overlay's placement function. A new request replaces the composition open before it.
+  textInputEnded();
   if (!presented_) return request;
   if (request.anchor == TextInputAnchor::NoteGrid) {
     lyricInputActive_ = true;
-    request.logicalBounds = fromLegacy(request.logicalBounds);
+    // Use the same logical-point metrics the recording canvas uses, including when input opens
+    // after prepareFrame but before the first paint. Backing scale belongs to the native host.
+    if (metrics_ == nullptr) {
+      metricsSurface_ = PixelSurface{1U, 1U};
+      metrics_ = paint::makeCanvas(metricsSurface_, 1.0);
+    }
+    const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
+    const auto width = measureText(domain::toUtf8(request.currentText), style(FontRole::Ui, t.type.lyric));
+    request.logicalBounds = metrics_ ? singLyricPresentationBounds(layout_, request.logicalBounds,
+                                                                  width, legacyContentTop_) : ui::Rect{};
+    lyricInputBounds_ = std::make_shared<ui::Rect>(request.logicalBounds);
+    request.presentedLyricBounds = lyricInputBounds_;
     return request;
   }
   const auto bounds = shellFieldBounds(request.anchor, layout_);
@@ -1547,6 +1573,9 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     voice_->setListeningPortrait(artShown ? lookListeningPortrait() : nullptr);
     if (voice_->poll()) repaint();
   }
+  // A composing note can scroll wholly off screen. Do not retain its old native field rectangle
+  // when this frame paints no lyric field; scrolling it back restores geometry without reopening.
+  if (lyricInputBounds_) *lyricInputBounds_ = {};
   if (auto* body = bodyWorkspace(); body != nullptr) {
     stageShown_ = false;
     body->paint(*c, t, controller, state, workspaceArea());
@@ -2613,16 +2642,19 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     const auto textStyle = style(FontRole::Ui, t.type.lyric);
     const auto textWidth =
         state.compositionPreview.empty() ? 0.0 : c.measure(state.compositionPreview, textStyle);
-    const auto editor = singLyricEditorBounds(fromLegacy(*state.lyricEditor), textWidth, l.grid);
-    c.fill(Path::roundedRect(editor, 6.0), t.color.surfaceSunken);
-    c.save();
-    c.setGlow(t.color.accent, 8.0);
-    c.stroke(Path::roundedRect(editor, 6.0), t.color.accent, StrokeStyle{1.5});
-    c.restore();
-    if (!state.compositionPreview.empty())
-      c.text({editor.x + kLyricEditorInset, editor.y, editor.width - 2.0 * kLyricEditorInset,
-              editor.height},
-             state.compositionPreview, textStyle, t.color.textPrimary);
+    const auto editor = singLyricPresentationBounds(l, *state.lyricEditor, textWidth, legacyContentTop_);
+    if (lyricInputBounds_) *lyricInputBounds_ = editor;
+    if (editor.width > 0.0 && editor.height > 0.0) {
+      c.fill(Path::roundedRect(editor, 6.0), t.color.surfaceSunken);
+      c.save();
+      c.setGlow(t.color.accent, 8.0);
+      c.stroke(Path::roundedRect(editor, 6.0), t.color.accent, StrokeStyle{1.5});
+      c.restore();
+      if (!state.compositionPreview.empty())
+        c.text({editor.x + kLyricEditorInset, editor.y, std::max(0.0, editor.width - 2.0 * kLyricEditorInset),
+                editor.height},
+               state.compositionPreview, textStyle, t.color.textPrimary);
+    }
   }
   layerTo(paint::Layer::Content);
 }

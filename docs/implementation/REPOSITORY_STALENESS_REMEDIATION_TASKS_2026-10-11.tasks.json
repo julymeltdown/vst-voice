@@ -348,7 +348,7 @@
       ],
       "mandatory": false,
       "planningState": "CONDITIONAL",
-      "implementationState": "DEFERRED",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
@@ -356,7 +356,11 @@
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/design/sing_shell.cpp",
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_shell_input.cpp",
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_frame_pipeline.cpp",
-        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_clap_design_shell.cpp"
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_clap_design_shell.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-clap-editor/include/seam/clap_editor/text_input_geometry.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-clap-editor/src/embedded_view_appkit.mm",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/native_window_appkit.mm",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_accessibility_appkit.mm"
       ],
       "verificationRecipes": [
         "V00",
@@ -375,7 +379,9 @@
       "commitUnits": [
         "Bounded geometry unit only after trigger is recorded"
       ],
-      "disposition": "No reproduced geometry mismatch or repeated coordinate-rule change demonstrated; existing presentation adapter retained."
+      "disposition": "IMPLEMENT_BOUNDED_FIX: one shared lyric resolver, owner-thread live native geometry and preserved musical-note semantics. Actual Cocoa 2x composition lifecycle verified; logical 1x/2x tests passed.",
+      "entryConditionEvidence": "docs/reviews/RS09_LYRIC_GEOMETRY_COMPLETION_2026-10-12.evidence.json",
+      "verificationResult": "Full Release dependent rebuild, V06 3/3 (13.43s), supplemental test-only Cocoa rebuild and actual AppKit 5/5 (physical 2x); pure logical cases 1x/2x. Independent source review approved."
     },
     {
       "id": "RS-10",

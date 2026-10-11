@@ -5,6 +5,7 @@
 #include "test_support.hpp"
 
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/clap_editor/text_input_geometry.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -42,6 +43,83 @@ const SemanticNode* childById(const std::vector<SemanticNode>& children, std::st
 }
 
 }  // namespace
+
+TEST_CASE("CLAP native lyric placement preserves converted small and empty bounds and classic minima") {
+  native_ui::TextInputRequest request{domain::LyricTokenId{7U}, {10.0, 20.0, 28.0, 16.0}, U"a",
+                                      native_ui::TextInputAnchor::NoteGrid};
+  const auto classic = clap_editor::embeddedTextInputBounds(request);
+  CHECK_NEAR(classic.x, 10.0, 1e-9);
+  CHECK_NEAR(classic.y, 20.0, 1e-9);
+  CHECK_NEAR(classic.width, 80.0, 1e-9);
+  CHECK_NEAR(classic.height, 24.0, 1e-9);
+  auto presented = std::make_shared<ui::Rect>(ui::Rect{12.0, 18.0, 60.0, 20.0});
+  request.presentedLyricBounds = presented;
+  const auto converted = clap_editor::embeddedTextInputBounds(request);
+  CHECK_NEAR(converted.x, 12.0, 1e-9);
+  CHECK_NEAR(converted.y, 18.0, 1e-9);
+  CHECK_NEAR(converted.width, 60.0, 1e-9);
+  CHECK_NEAR(converted.height, 20.0, 1e-9);
+  *presented = {};
+  const auto retired = clap_editor::embeddedTextInputBounds(request);
+  CHECK_NEAR(retired.width, 0.0, 1e-9);
+  CHECK_NEAR(retired.height, 0.0, 1e-9);
+}
+
+TEST_CASE("CLAP lyric native bounds follow the painted composition without new begin callbacks") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  application::ProjectFactory factory{9901U};
+  auto project = factory.createProject("Lyric geometry");
+  project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
+  const auto trackId = factory.addVocalTrack(project, "Singer");
+  const auto regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{7680});
+  auto [lyric, note] = factory.makeNote(time::Tick{960}, time::Tick{240}, 72U, U"\u3042", domain::Language::Japanese);
+  const auto noteId = note.id;
+  auto* region = project.findRegion(regionId);
+  region->lyrics.push_back(std::move(lyric));
+  region->notes.push_back(std::move(note));
+  std::optional<native_ui::TextInputRequest> nativeRequest;
+  std::size_t starts = 0U, ends = 0U;
+  clap_editor::EditorRuntime runtime{std::move(project)};
+  runtime.activateDesignShell(native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Emo});
+  runtime.setTextInputCallbacks([&](const auto& request) { nativeRequest = request; ++starts; },
+                                [&] { ++ends; });
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  const auto elementId = "note." + noteId.toString();
+  CHECK(runtime.dispatchAccessibility(elementId, SemanticAction::SetFocus));
+  CHECK(runtime.dispatchAccessibility(elementId, SemanticAction::EditText));
+  CHECK(nativeRequest.has_value() && nativeRequest->presentedLyricBounds != nullptr);
+  if (!nativeRequest || !nativeRequest->presentedLyricBounds) return;
+  const auto request = *nativeRequest;
+  const auto revision = runtime.revision();
+  const auto startCount = starts, endCount = ends;
+  const std::string text = "komorebi komorebi komorebi komorebi";
+  const ui::CompositionSelection selection{2U, 4U};
+  runtime.textComposition(domain::fromUtf8(text).value(), selection);
+  native_ui::paint::ScopedTextCapture capture;
+  paintFrame(runtime);
+  const native_ui::paint::TextRecord* painted = nullptr;
+  for (const auto& record : capture.records()) if (record.text == text) painted = &record;
+  CHECK(painted != nullptr);
+  if (!painted) return;
+  const auto placed = clap_editor::embeddedTextInputBounds(request);
+  CHECK_NEAR(placed.x, painted->bounds.x - 8.0, 1e-9);
+  CHECK_NEAR(placed.y, painted->bounds.y, 1e-9);
+  CHECK_NEAR(placed.width, painted->bounds.width + 16.0, 1e-9);
+  CHECK_NEAR(placed.height, painted->bounds.height, 1e-9);
+  CHECK(starts == startCount && ends == endCount);
+  CHECK(runtime.textInputActive());
+  CHECK(runtime.controller().textCompositionSelection() == selection);
+  CHECK(runtime.revision() == revision);
+  const auto focused = runtime.accessibilityFocusedNode();
+  CHECK(focused.has_value() && focused->id == elementId);
+  runtime.resize(1100.0, 720.0);
+  CHECK(!runtime.textInputActive());
+  CHECK_NEAR(clap_editor::embeddedTextInputBounds(request).width, 0.0, 1e-9);
+  CHECK(runtime.revision() == revision);
+  // Retire callbacks explicitly; their captured locals also outlive the runtime on failure paths.
+  runtime.setTextInputCallbacks({}, {});
+}
 
 TEST_CASE("CLAP shell: EXPORT refuses retained score elements and editing keys") {
   if (!native_ui::paint::vectorBackendAvailable()) return;

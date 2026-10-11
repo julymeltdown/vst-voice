@@ -6,9 +6,15 @@
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/native_window.hpp"
 
+#if __has_include("seam/clap_editor/embedded_view.hpp")
+#include "seam/clap_editor/embedded_view.hpp"
+#include "seam/native_ui/design/sing_shell.hpp"
+#endif
+
 #import <AppKit/AppKit.h>
 
 #include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -32,6 +38,8 @@
 @end
 
 @interface NSView (SEAMTextInputClient)
+- (NSRange)markedRange;
+- (NSRange)selectedRange;
 - (void)setMarkedText:(id)string
         selectedRange:(NSRange)selectedRange
       replacementRange:(NSRange)replacementRange;
@@ -191,6 +199,49 @@ id findAccessibilityElement(NSArray* elements, NSString* identifier) {
   return nil;
 }
 
+void checkNativeRect(NSRect actual, NSRect expected) {
+  CHECK_NEAR(actual.origin.x, expected.origin.x, 1e-7);
+  CHECK_NEAR(actual.origin.y, expected.origin.y, 1e-7);
+  CHECK_NEAR(actual.size.width, expected.size.width, 1e-7);
+  CHECK_NEAR(actual.size.height, expected.size.height, 1e-7);
+}
+
+#if __has_include("seam/clap_editor/embedded_view.hpp")
+NSTextField* findNativeTextField(NSView* parent) {
+  for (NSView* child in parent.subviews) {
+    if ([child isKindOfClass:[NSTextField class]]) return static_cast<NSTextField*>(child);
+    if (auto* field = findNativeTextField(child); field != nil) return field;
+  }
+  return nil;
+}
+
+// requestRepaint queues main-thread blocks that capture the embedded owner. Retire its callbacks
+// and drain those blocks while that owner is still alive, including when a CHECK throws.
+struct CocoaEmbeddedWindow final {
+  NSWindow* __strong window{nil};
+  std::unique_ptr<seam::clap_editor::IEmbeddedView> view;
+  explicit CocoaEmbeddedWindow(seam::clap_editor::EditorRuntime& runtime)
+      : view(seam::clap_editor::createEmbeddedView(runtime)) {}
+  ~CocoaEmbeddedWindow() {
+    if (view) {
+      static_cast<void>(view->hide());
+      view->destroy();
+      [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+      view.reset();
+    }
+    [window orderOut:nil];
+    [window close];
+  }
+  void frame() {
+    view->requestRepaint();
+    view->onTimer();
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    [NSApp updateWindows];
+    [window displayIfNeeded];
+  }
+};
+#endif
+
 }
 
 TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages") {
@@ -224,6 +275,9 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
     CHECK_NEAR(nativeWindow.contentMinSize.height, 320.0, 1e-9);
     NSView* view = nativeWindow.contentView;
     CHECK(view != nil);
+    std::cout << "[NATIVE_SCALE] standalone backingScaleFactor="
+              << nativeWindow.backingScaleFactor << '\n';
+    CHECK(nativeWindow.backingScaleFactor > 0.0);
     CHECK([view isAccessibilityEnabled]);
     NSArray* children = [view accessibilityChildren];
     CHECK(children != nil);
@@ -330,9 +384,173 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
     [view doCommandBySelector:@selector(insertNewline:)];
     CHECK(client.lastCommit == U"きゃ");
 
+    // Exercise the native candidate anchor's live converted rectangle, rather than only the
+    // original request snapshot. Updating it must not begin input again or reset marked ranges.
+    auto presented = std::make_shared<seam::ui::Rect>(seam::ui::Rect{60.0, 70.0, 96.0, 24.0});
+    window->beginTextInput(seam::native_ui::TextInputRequest{
+        .lyricId = seam::domain::LyricTokenId{1U},
+        .logicalBounds = *presented,
+        .currentText = U"あ",
+        .anchor = seam::native_ui::TextInputAnchor::NoteGrid,
+        .presentedLyricBounds = presented,
+    });
+    [view setMarkedText:@"こもれび"
+          selectedRange:NSMakeRange(1U, 2U)
+        replacementRange:NSMakeRange(0U, 1U)];
+    const auto marked = [view markedRange];
+    const auto selected = [view selectedRange];
+    CHECK(marked.location == 0U && marked.length == 4U);
+    CHECK(selected.location == 1U && selected.length == 2U);
+    const auto composition = client.lastComposition;
+    const auto checkCandidate = [&](NSRect local) {
+      NSRange actual = NSMakeRange(NSNotFound, 0U);
+      const auto candidate = [view firstRectForCharacterRange:selected actualRange:&actual];
+      const auto expected = NSEqualRects(local, NSZeroRect) ? NSZeroRect
+          : [nativeWindow convertRectToScreen:[view convertRect:local toView:nil]];
+      checkNativeRect(candidate, expected);
+      CHECK(NSEqualRanges(actual, selected));
+      CHECK(NSEqualRanges([view markedRange], marked));
+      CHECK(NSEqualRanges([view selectedRange], selected));
+      CHECK(client.lastComposition == composition);
+      CHECK(client.lastCommit == U"きゃ");
+    };
+    checkCandidate(NSMakeRect(60.0, 70.0, 96.0, 24.0));
+    *presented = {110.0, 85.0, 326.0, 24.0};
+    checkCandidate(NSMakeRect(110.0, 85.0, 326.0, 24.0));
+    *presented = {};
+    checkCandidate(NSZeroRect);
+    *presented = {110.0, 85.0, 60.0, 20.0};
+    checkCandidate(NSMakeRect(110.0, 85.0, 60.0, 20.0));
+    window->endTextInput();
+
     window.reset();
   }
 }
+
+#if __has_include("seam/clap_editor/embedded_view.hpp")
+TEST_CASE("AppKit converted lyric field preserves native marked text and selection through geometry refresh") {
+  using namespace seam;
+  @autoreleasepool {
+    CHECK([NSThread isMainThread]);
+    CHECK(native_ui::paint::vectorBackendAvailable());
+    NSApplication* app = [NSApplication sharedApplication];
+    [app finishLaunching];
+    static_cast<void>([app setActivationPolicy:NSApplicationActivationPolicyRegular]);
+    application::ProjectFactory factory{31000U};
+    auto project = factory.createProject("Native lyric geometry");
+    project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
+    const auto track = factory.addVocalTrack(project, "Singer");
+    const auto regionId = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{7680});
+    auto [lyric, note] = factory.makeNote(time::Tick{960}, time::Tick{240}, 72U,
+                                         U"あ", domain::Language::Japanese);
+    const auto noteId = note.id;
+    const auto lyricId = lyric.id;
+    auto* region = project.findRegion(regionId);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+    clap_editor::EditorRuntime runtime{std::move(project)};
+    runtime.activateDesignShell(native_ui::design::DesignPreferences{
+        .mode = native_ui::design::DesignMode::Emo, .reduceMotion = true});
+    CocoaEmbeddedWindow native{runtime};
+    native.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 1600.0, 900.0)
+        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    native.window.releasedWhenClosed = NO;
+    CHECK(native.window != nil && native.view != nullptr);
+    CHECK(native.view->create("cocoa", false));
+    CHECK(native.view->setParent(reinterpret_cast<std::uintptr_t>(
+        (__bridge void*)native.window.contentView)));
+    CHECK(native.view->setSize(1600U, 900U));
+    [native.window makeKeyAndOrderFront:nil];
+    [app activateIgnoringOtherApps:YES];
+    CHECK(native.view->show());
+    native.frame();
+    // Cocoa owns the actual backing scale. This records one physical configuration, not a
+    // synthetic claim of native 1x/2x coverage from a requested scale or raster-only test.
+    std::cout << "[NATIVE_SCALE] embedded backingScaleFactor="
+              << native.window.backingScaleFactor << '\n';
+    CHECK(native.window.backingScaleFactor > 0.0);
+    const auto elementId = "note." + noteId.toString();
+    CHECK(runtime.dispatchAccessibility(elementId, native_ui::SemanticAction::SetFocus));
+    CHECK(runtime.dispatchAccessibility(elementId, native_ui::SemanticAction::EditText));
+    NSTextField* field = findNativeTextField(native.window.contentView);
+    CHECK(field != nil && !field.hidden);
+    CHECK_NEAR(field.frame.size.width, native_ui::design::kLyricEditorMinWidth, 1e-7);
+    CHECK([field.currentEditor isKindOfClass:[NSTextView class]]);
+    NSTextView* editor = static_cast<NSTextView*>(field.currentEditor);
+    CHECK(native.window.firstResponder == editor);
+    NSString* markedText = @"こもれび こもれび こもれび こもれび";
+    const std::string utf8{markedText.UTF8String};
+    const auto revision = runtime.revision();
+    [editor setMarkedText:markedText selectedRange:NSMakeRange(2U, 3U)
+        replacementRange:NSMakeRange(0U, editor.string.length)];
+    // Public NSTextView change delivery exercises the existing NSControl delegate bridge;
+    // do not substitute a direct runtime.textComposition call for native marked-text input.
+    [editor didChangeText];
+    CHECK(editor.hasMarkedText);
+    CHECK([editor.string isEqualToString:markedText]);
+    const auto markedRange = editor.markedRange;
+    const auto selectedRange = editor.selectedRange;
+    CHECK(markedRange.location == 0U && markedRange.length == markedText.length);
+    CHECK(selectedRange.location == 2U && selectedRange.length == 3U);
+    const auto unchangedInput = [&] {
+      CHECK(field.currentEditor == editor);
+      CHECK(native.window.firstResponder == editor);
+      CHECK(editor.hasMarkedText);
+      CHECK(NSEqualRanges(editor.markedRange, markedRange));
+      CHECK(NSEqualRanges(editor.selectedRange, selectedRange));
+      CHECK([editor.string isEqualToString:markedText]);
+      CHECK(!field.hidden && runtime.textInputActive());
+      CHECK(runtime.revision() == revision);
+      CHECK(runtime.controller().sceneState().compositionPreview == utf8);
+    };
+    const auto paintedFrame = [&] {
+      native_ui::paint::ScopedTextCapture capture;
+      native.frame();
+      const native_ui::paint::TextRecord* painted = nullptr;
+      for (const auto& record : capture.records()) if (record.text == utf8) painted = &record;
+      CHECK(painted != nullptr);
+      const auto inset = native_ui::design::kLyricEditorInset;
+      checkNativeRect(field.frame, NSMakeRect(painted->bounds.x - inset, painted->bounds.y,
+          painted->bounds.width + 2.0 * inset, painted->bounds.height));
+      unchangedInput();
+      return field.frame;
+    };
+    const auto expanded = paintedFrame();
+    CHECK(expanded.size.width > native_ui::design::kLyricEditorMinWidth);
+    const auto notes = runtime.accessibilityNotes(0U, 1U);
+    CHECK(notes.size() == 1U && notes.front().id == elementId);
+    const ui::Point scrollAnchor{notes.front().bounds.x + notes.front().bounds.width * 0.5,
+                                 notes.front().bounds.y + notes.front().bounds.height * 0.5};
+    runtime.scroll(16.0, 0.0, scrollAnchor, {});
+    const auto scrolled = paintedFrame();
+    CHECK(std::abs(scrolled.origin.x - expanded.origin.x) > 1.0);
+    runtime.scroll(100000.0, 0.0, scrollAnchor, {});
+    native.frame();
+    CHECK(!runtime.controller().sceneState().lyricEditor.has_value());
+    checkNativeRect(field.frame, NSZeroRect);
+    unchangedInput();
+    runtime.scroll(-100016.0, 0.0, scrollAnchor, {});
+    checkNativeRect(paintedFrame(), expanded);
+    CHECK(native.view->setSize(1100U, 720U));
+    native.frame();
+    CHECK(!runtime.textInputActive() && field.hidden);
+    CHECK(field.currentEditor != editor && native.window.firstResponder != editor);
+    CHECK(runtime.revision() == revision);
+    CHECK(runtime.dispatchAccessibility(elementId, native_ui::SemanticAction::EditText));
+    CHECK([field.currentEditor isKindOfClass:[NSTextView class]]);
+    editor = static_cast<NSTextView*>(field.currentEditor);
+    [editor setMarkedText:markedText selectedRange:NSMakeRange(2U, 3U)
+        replacementRange:NSMakeRange(0U, editor.string.length)];
+    [editor didChangeText];
+    CHECK(editor.hasMarkedText && runtime.textInputActive());
+    CHECK(native.view->hide());
+    CHECK(!runtime.textInputActive() && field.hidden);
+    CHECK(field.currentEditor != editor && native.window.firstResponder != editor);
+    CHECK(runtime.revision() == revision);
+    CHECK(runtime.projectCopy().findRegion(regionId)->findLyric(lyricId)->surface == U"あ");
+  }
+}
+#endif
 
 TEST_CASE("AppKit pages and focuses notes a custom surface delegates to the editor tree") {
   @autoreleasepool {

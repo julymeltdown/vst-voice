@@ -501,7 +501,18 @@ public:
     // while polling a worker belongs to the next frame, including completion.
     const bool announceAccessibility = accessibilityAnnouncementPending_.exchange(
         false, std::memory_order_acq_rel);
+    const auto previousTextBounds = textRequest_
+                                        ? std::optional<ui::Rect>{textRequest_->currentLogicalBounds()}
+                                        : std::nullopt;
     auto damage = client_->paintFrame(canvas);
+    if (textInputActive_ && textRequest_ && textRequest_->presentedLyricBounds && view_ != nil) {
+      const auto bounds = textRequest_->currentLogicalBounds();
+      if (!previousTextBounds || bounds.x != previousTextBounds->x || bounds.y != previousTextBounds->y ||
+          bounds.width != previousTextBounds->width || bounds.height != previousTextBounds->height) {
+        // Refresh the IME candidate anchor without changing storage, marked range or selection.
+        [[view_ inputContext] invalidateCharacterCoordinates];
+      }
+    }
     // A new or resized surface was never presented, whatever the frame reports.
     if (surfaceStale_) damage = FrameDamage::everything();
     surfaceStale_ = false;
@@ -801,7 +812,8 @@ public:
     if (view_ == nil || window_ == nil || !textRequest_.has_value()) {
       return NSZeroRect;
     }
-    const auto& bounds = textRequest_->logicalBounds;
+    const auto bounds = textRequest_->currentLogicalBounds();
+    if (bounds.width <= 0.0 || bounds.height <= 0.0) return NSZeroRect;
     const NSRect viewRect = NSMakeRect(bounds.x, bounds.y, bounds.width,
                                        bounds.height);
     return [window_ convertRectToScreen:[view_ convertRect:viewRect toView:nil]];

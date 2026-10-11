@@ -143,6 +143,10 @@ inline constexpr double kLyricEditorCaretRoom = 10.0;
 inline constexpr double kLyricEditorMinWidth = 96.0;
 inline constexpr double kLyricEditorMinHeight = 24.0;
 [[nodiscard]] ui::Rect singLyricEditorBounds(ui::Rect note, double textWidth, ui::Rect grid) noexcept;
+// Pure presentation adapter: controller note bounds to the drawn lyric field in shell logical
+// points. Note hit/gesture anchors remain in the controller. Invalid/empty geometry returns {}.
+[[nodiscard]] ui::Rect singLyricPresentationBounds(const SingLayout& layout, ui::Rect controllerNote,
+                                                 double textWidth, double controllerContentTop) noexcept;
 struct SingOverlapBadge final {
   std::size_t group{0U};
   std::size_t members{0U};
@@ -413,12 +417,15 @@ public:
   // Returns true when the shell consumed the key: Escape cancels a knob drag or a forwarded pointer
   // gesture without committing it, and an open overlay owns the keyboard.
   bool handleShellKey(NativeEditorController& controller, const KeyEvent& event);
-  // Lyric requests come from note bounds in the shell's viewport and are moved into shell space.
+  // Lyric requests keep the controller's note anchor but receive the same expanded/clamped field
+  // geometry as paint. The request's presentation view follows later painted composition frames.
   // Every other request (tempo/meter, hint, find/replace and draft fields, renames) is placed on
   // the field the shell draws for it, so the input client, the painted field, its hit rectangle
   // and its accessible bounds are one rectangle.
   [[nodiscard]] TextInputRequest translateTextInput(TextInputRequest request);
   void textInputEnded() noexcept {
+    if (lyricInputBounds_) *lyricInputBounds_ = {};
+    lyricInputBounds_.reset();
     lyricInputActive_ = false;
     fieldAnchor_.reset();
   }
@@ -613,6 +620,7 @@ private:
   bool technicalLane_{false};
   std::array<bool, 3U> technicalCollapsed_{};
   bool lyricInputActive_{false};
+  std::shared_ptr<ui::Rect> lyricInputBounds_;
   // The anchor of an open non-lyric field the shell moved into shell space, and the rectangle it
   // was placed at; a layout that moves that rectangle cancels the composition (as for lyrics).
   std::optional<TextInputAnchor> fieldAnchor_;

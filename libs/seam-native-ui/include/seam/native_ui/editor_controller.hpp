@@ -35,6 +35,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -122,6 +123,15 @@ struct TextInputRequest final {
   ui::Rect logicalBounds;
   std::u32string currentText;
   TextInputAnchor anchor{TextInputAnchor::ClassicSurface};
+  // Owner-thread presentation geometry for a converted lyric field. The shell updates only this
+  // rectangle as the composition or viewport changes; native clients must not restart editing to
+  // pick it up. An empty rectangle has no displayed anchor. Unconverted/classic requests retain
+  // their bounds.
+  std::shared_ptr<const ui::Rect> presentedLyricBounds{};
+
+  [[nodiscard]] ui::Rect currentLogicalBounds() const noexcept {
+    return presentedLyricBounds ? *presentedLyricBounds : logicalBounds;
+  }
 };
 
 struct SampleMicroscopeData final {
@@ -248,6 +258,10 @@ public:
   [[nodiscard]] core::Result<void> activatePhonemeReview(std::size_t action);
   [[nodiscard]] bool playing() const noexcept { return playing_; }
   [[nodiscard]] bool textInputActive() const noexcept { return composition_.active(); }
+  // A geometry refresh observes composition; it never replaces the input client's selection.
+  [[nodiscard]] ui::CompositionSelection textCompositionSelection() const noexcept {
+    return composition_.selection();
+  }
   [[nodiscard]] const ArrangementPanelModel& arrangementPanel() const noexcept {
     return arrangementPanel_;
   }

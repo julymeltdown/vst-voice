@@ -1,5 +1,7 @@
 # Repository staleness remediation: code-level development tasks
 
+> **Follow-up execution — 2026-10-12.** The user authorized completing the pending installed-recipe operation and all remaining task dispositions. Installed export is fixed and pushed at `95d093b1` with the original peak threshold retained; [diagnosis](../reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.md). RS-09's repeated lyric-coordinate rule is now fixed and verified, including real Cocoa composition checks; [geometry completion](../reviews/RS09_LYRIC_GEOMETRY_COMPLETION_2026-10-12.md). RS-10's current admitted-resource trace remains NO_CHANGE_RECOMMENDED. RS-11 measurement is still in progress. Earlier preservation restrictions and deferred statuses below record the original planning/execution dates.
+
 > **Execution update — 2026-10-11.** Mandatory RS-01–RS-08 are implemented, locally verified and pushed. See [completion record](REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md) for exact commits/checks, the preserved pending test failure and conditional dispositions. The original planning baseline and criteria below remain historical planning context; no product/Beta acceptance is promoted.
 
 > **Completion-audit supplement — 2026-10-11.** RS-02's previously missing sanitizer checks now pass after a test-only symbolizer correction at `2d739855`. Normal CTest in a clean committed checkout also passes all five selected suites, including CLI 24/24. The completion record preserves the initial sanitizer failures and the separate unfinished-feature failure.

@@ -2,6 +2,7 @@
 
 #if defined(__APPLE__)
 
+#include "seam/clap_editor/text_input_geometry.hpp"
 #include "seam/domain/note.hpp"
 #include "seam/text/text_engine.hpp"
 
@@ -15,6 +16,7 @@
 #include <atomic>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -187,6 +189,9 @@ public:
 
   [[nodiscard]] bool hide() override {
     if (view_ == nil) return false;
+    // Retire a converted lyric before hiding its responder; Cocoa must not commit it as a side
+    // effect of hiding the view, and a later show must not reuse the old presentation rectangle.
+    if (nativeTextRequest_ && nativeTextRequest_->presentedLyricBounds) runtime_.textCancel();
     view_.hidden = YES;
     visible_ = false;
     return true;
@@ -234,6 +239,7 @@ public:
     // Logical layout is the view's bounds; the surface holds backing pixels.
     native_ui::RasterCanvas canvas{surface_, backingScale_, textEngine_.get()};
     auto damage = runtime_.paintFrame(canvas);
+    updateTextInputGeometry();
     // A new or resized surface was never presented, whatever the frame reports.
     if (surfaceStale_) damage = native_ui::FrameDamage::everything();
     surfaceStale_ = false;
@@ -517,15 +523,27 @@ private:
       view_.editField.drawsBackground = YES;
       [view_ addSubview:view_.editField];
     }
-    view_.editField.frame = NSMakeRect(request.logicalBounds.x,
-                                       request.logicalBounds.y,
-                                       std::max(80.0, request.logicalBounds.width),
-                                       std::max(24.0, request.logicalBounds.height));
+    nativeTextRequest_ = request;
     const auto utf8 = domain::toUtf8(request.currentText);
     view_.editField.stringValue = [NSString stringWithUTF8String:utf8.c_str()];
     nativeTextActive_ = true;
     view_.editField.hidden = NO;
+    updateTextInputGeometry();
     [view_.window makeFirstResponder:view_.editField];
+  }
+
+  void updateTextInputGeometry() noexcept {
+    if (!nativeTextActive_ || !nativeTextRequest_ || view_ == nil || view_.editField == nil) return;
+    const auto bounds = embeddedTextInputBounds(*nativeTextRequest_);
+    const auto frame = bounds.width > 0.0 && bounds.height > 0.0
+                           ? NSMakeRect(bounds.x, bounds.y, bounds.width, bounds.height)
+                           : NSZeroRect;
+    // Geometry only: keep the field editor's marked text, selected range and responder intact.
+    // A scrolled-off field has a zero frame; hiding its responder would end composition.
+    if (!NSEqualRects(view_.editField.frame, frame)) {
+      view_.editField.frame = frame;
+      [[view_.editField.currentEditor inputContext] invalidateCharacterCoordinates];
+    }
   }
 
   void endTextInput() noexcept {
@@ -533,12 +551,14 @@ private:
     // Responder changes may synchronously deliver didEndEditing. That callback
     // must not commit this field twice or recurse during cancellation.
     nativeTextActive_ = false;
+    nativeTextRequest_.reset();
     view_.editField.hidden = YES;
     [view_.window makeFirstResponder:view_];
   }
 
   EditorRuntime& runtime_;
   bool nativeTextActive_{false};
+  std::optional<native_ui::TextInputRequest> nativeTextRequest_;
   NSView* __strong parent_{nil};
   SeamClapChildView* __strong view_{nil};
   native_ui::PixelSurface surface_;
