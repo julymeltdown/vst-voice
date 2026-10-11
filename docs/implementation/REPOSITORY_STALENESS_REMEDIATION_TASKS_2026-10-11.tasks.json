@@ -113,8 +113,12 @@
       ],
       "integrationConstraint": "Preserve and reconcile pre-existing uncommitted CLI-test changes; do not count the shell workaround as landed completion",
       "platformLimit": "Windows branch must retain equivalent source semantics; macOS testing is not Windows runtime acceptance",
-      "verificationResult": "Full dependent Release build; 4 focused CTest entries PASS; separately compiled committed CLI test content plus RS-02: 24/24 PASS. Dirty CLI suite retains unrelated pending audio-peak failure (24/25). Windows source review only.",
-      "integratedCommit": "e63d5556636a23a3a8d3a1dd8b67042818518c4f"
+      "verificationResult": "Full dependent Release build; clean committed Release CTest 5/5 (66 native cases, CLI 24/24). Test-only probe correction followed by helper 4/4 in clean and integrating ASan/UBSan and TSan, plus integrating Release. Initial sanitizer failures and original dirty CLI peak failure retained. Windows source review only.",
+      "integratedCommit": "e63d5556636a23a3a8d3a1dd8b67042818518c4f",
+      "verificationSupplement": {
+        "probeCommit": "2d739855b10c7bb0946b9296a6fb2a29b04e2035",
+        "evidenceRecord": "docs/reviews/RS02_COMPLETION_VERIFICATION_2026-10-11.evidence.json"
+      }
     },
     {
       "id": "RS-03",
@@ -952,7 +956,7 @@
       "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
     }
   ],
-  "documentSha256": "adb31611b76f341cb482703ab39d20c2fdd81377097de87c6a2afaba10d7221a",
+  "documentSha256": "b4ca79213dd181de335b24379ba4e6288e3c677289e483ea6ec8701434324806",
   "planningValidation": {
     "taskCount": 11,
     "mandatoryCount": 8,
@@ -982,5 +986,7 @@
   "executionStarted": "2026-10-11",
   "executionScope": "RS-01 through RS-08, with evidence-based dispositions for conditional RS-09 through RS-11, as requested on 2026-10-11",
   "mandatoryExecutionCompleted": "2026-10-11",
-  "executionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md"
+  "executionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md",
+  "planningDocumentSha256": "adb31611b76f341cb482703ab39d20c2fdd81377097de87c6a2afaba10d7221a",
+  "executionVerificationStatus": "RS-01 through RS-08 complete within the task scope. RS-02 clean committed suite and scoped sanitizer checks passed; preserved pending feature failure remains outside this goal."
 }

@@ -17,7 +17,7 @@ Before implementation, `git fetch origin` and `git pull --ff-only --no-rebase` s
 | 7 | RS-07: exact fixed-input/source inventory and archived diagnostic classification | `bc835c405f3ce10584d021e42ba30b99c299e2b5` |
 | 8 | RS-08: five unavailable historical attachments, six retained references and honest availability notes | `3c1ac597da331af86b8ed7d21c5be63b520a9fa5` |
 
-The commit containing this report consolidates execution metadata only; it does not substitute new runtime evidence for the tested units above. The root [execution ledger](FULL_SCOPE_BETA_EXECUTION.md) contains each unit's behavior, verification and preservation record. The [task manifest](REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.tasks.json) supplies machine-readable task states and integrated unit identities.
+The initial commit containing this report consolidated execution metadata only. A subsequent completion audit closed the missing RS-02 sanitizer verification and landed a test-probe correction at `2d739855b10c7bb0946b9296a6fb2a29b04e2035`. The root [execution ledger](FULL_SCOPE_BETA_EXECUTION.md) contains each unit's behavior, verification and preservation record. The [task manifest](REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.tasks.json) supplies machine-readable task states and integrated unit identities.
 
 ## Verification and its limits
 
@@ -35,9 +35,27 @@ The commit containing this report consolidates execution metadata only; it does 
 | RS-08 | Exact target existence recheck; bounded inline-link scan of three historical reports | 204 inline links examined; exactly six unavailable occurrences / five unique targets retained. Referring lines/report hashes match availability JSON. No recovered original bytes or historical PASS substitute. |
 | Every unit | Staged diff/status inspection, `git diff --cached --check`, tracked-source closure after new files staged | **PASS** before publication. Closure is registration hygiene, not historical artifact or product acceptance. |
 
-No full-project CTest, new ASan/UBSan/TSan run, independent review verdict, human listening, VoiceOver, DAW, signing or Windows runtime acceptance is claimed by this remediation. The POSIX signal outcome and legacy wrapper were executed on macOS; Windows's unsigned exit-code/source semantics were reviewed only.
+No full-project CTest or sanitizer result, independent review verdict, human listening, VoiceOver, DAW, signing or Windows runtime acceptance is claimed by this remediation. The scoped RS-02 follow-up below supplies actual ASan/UBSan and TSan checks; the initial eight-unit execution did not include them. The POSIX signal outcome and legacy wrapper were executed on macOS; Windows's unsigned exit-code/source semantics were reviewed only.
 
 Local raw build/failure/pass logs, isolated test source/binary and preservation patch are under ignored `out/evidence/repository-staleness-2026-10-11/`. That directory is local engineering retention, not a pushed immutable archive. The tracked summaries retain exact tested identities and contrary outcomes; external release retention remains a separate obligation.
+
+## RS-02 completion-audit follow-up
+
+The verification recipe requires sanitizer checks for process-lifetime changes when a configured lane exists. Both lanes were available. A clean managed checkout at `6cd08542b8fe50b2ac63d751e76feaec5d2fb09d` also allowed the committed CLI suite to run through its normal CTest registration without either pending file. Release used the checked-in preset defaults; no optional learned-runtime or GUI qualification is implied.
+
+| Checkout / source scope | Executed check | Result |
+|---|---|---|
+| Clean committed baseline, no pending edits | Dependency build of the five RS-02 target entries, then serial CTest | **5/5 PASS, 66 native cases, 16.39s**: helper 4, worker protocol 32, phrase runner 5, Japanese reading 1, CLI 24. This is a normal complete committed CLI suite, beyond the earlier separately linked test evidence. |
+| Clean baseline, initial instrumented probe | ASan/UBSan helper CTest; TSan helper CTest | Each **FAIL, 2 passing / 2 failing cases**. Fresh binaries failed exact stderr checks because the runtime warned that it could not discover a symbolizer in the intentionally empty environment. These failures remain recorded. |
+| Clean baseline plus reviewed probe patch | Rebuilt helper/probe dependencies, ASan/UBSan helper CTest | **1/1 entry, 4/4 native cases PASS, 1.36s**. |
+| Clean baseline plus reviewed probe patch | Rebuilt helper/probe dependencies, TSan helper CTest | **1/1 entry, 4/4 native cases PASS, 1.52s**. |
+| Integrating checkout; original two dirty files excluded from helper target | Rebuilt dependencies and helper CTest in Release, ASan/UBSan and TSan | Each **1/1 entry, 4/4 native cases PASS**, respectively **1.11s / 1.48s / 1.77s**. |
+
+The [probe](../../tests/helpers/reading_process_probe.cpp) now returns `external_symbolizer_path=/usr/bin/atos` through the macOS-only `__asan_default_options` or `__tsan_default_options` hook. The installed compiler's sanitizer headers declare these hooks, and the absolute system executable was checked. The patch leaves error reporting, symbolization, exact stream assertions and the supervisor's empty child environment intact. It adds no filtering, suppression or inherited PATH. The tested probe SHA256 `0b0aea8aab20da9d226c5ce9fe895a2ecdf0f0f54198c186ee476febc6aeb452` matches the pushed blob at `2d739855`.
+
+Generated compile commands confirm instrumentation of the helper implementation, helper tests and child probe in both sanitizer lanes. Final native logs contain no visible sanitizer-report or symbolizer-discovery-warning markers. This is four-case helper coverage per lane, not a full-project sanitizer, leak-detection or Windows claim. The initial failures and the earlier dirty installed-recipe failure are not converted into PASS.
+
+The [verification evidence record](../reviews/RS02_COMPLETION_VERIFICATION_2026-10-11.evidence.json) retains tested source/patch identities, exact command/result scopes and log/executable hashes. Local bytes are retained under ignored `out/evidence/repository-staleness-2026-10-11/rs02-final-verification/`. The temporary checkout is archived after retaining needed ignored files. All original pending edits and the stash remain exact; the supplemental fix is independently committed and remote-verified.
 
 ## Preserved unfinished work
 
