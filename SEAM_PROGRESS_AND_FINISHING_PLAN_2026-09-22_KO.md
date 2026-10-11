@@ -1,5 +1,7 @@
 # SEAM: 진행도 재점검과 제품 완성을 위한 실행 계획
 
+> **Historical evidence availability — checked 2026-10-11.** Referenced local attachments are currently unavailable. The [availability index](docs/reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md) records the five original targets and their six link occurrences. Original observations below remain historical; unavailable attachments do not supply current verification. No replacement file or regenerated PASS is presented as the original evidence.
+
 작성일: 2026-09-22  
 기준: `ed41968dbb4f6b46d30956130e77d225087b2d7f` + 보존된 네이티브 가져오기 미커밋 변경  
 성격: 코드·테스트 기반 분석 및 다음 개발 계획. 이 문서 작성으로 구현, 단위 승인 또는 출시 승인을 추가하지 않는다.

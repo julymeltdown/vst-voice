@@ -301,7 +301,8 @@
         "Lifecycle inventory and routing"
       ],
       "excludedWork": "Historical tool ports require a concrete supported use; no generic experiment framework or training run",
-      "verificationResult": "Static AST/source/hash comparison for five tool sources and fixed receipt pins, 56 inline file links available, diff/source closure; no imports, training or packet generation"
+      "verificationResult": "Static AST/source/hash comparison for five tool sources and fixed receipt pins, 56 inline file links available, diff/source closure; no imports, training or packet generation",
+      "integratedCommit": "bc835c405f3ce10584d021e42ba30b99c299e2b5"
     },
     {
       "id": "RS-08",
@@ -312,7 +313,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
@@ -330,7 +331,8 @@
       ],
       "commitUnits": [
         "Dated availability notes or compact availability index"
-      ]
+      ],
+      "verificationResult": "Rechecked five unavailable originals; bounded 204-link scan retains exactly six historical missing occurrences; report-line/source hashes match availability record; current routes/diff/closure checked"
     },
     {
       "id": "RS-09",

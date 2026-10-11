@@ -1,4 +1,6 @@
 ---
+
+> **Historical evidence availability — checked 2026-10-11.** Referenced local attachments are currently unavailable. The [availability index](docs/reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md) records the five original targets and their six link occurrences. Original observations below remain historical; unavailable attachments do not supply current verification. No replacement file or regenerated PASS is presented as the original evidence.
 title: Project SEAM Full-Scope Virtual Singer Beta GO - Plan
 type: docs
 date: 2026-09-05

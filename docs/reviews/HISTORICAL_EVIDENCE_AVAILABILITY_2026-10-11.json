@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Historical file availability, not release evidence or recovered PASS",
+  "auditBaseline": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+  "checkedAt": "2026-10-11",
+  "timezone": "Asia/Seoul",
+  "uniqueTargets": 5,
+  "linkOccurrences": 6,
+  "entries": [
+    {
+      "originalTarget": "/tmp/seam-progress-interchange-2026-09-22.log",
+      "resolvedTarget": "/private/tmp/seam-progress-interchange-2026-09-22.log",
+      "status": "UNAVAILABLE",
+      "checkedAt": "2026-10-11",
+      "sha256": null,
+      "originalRecordedSha256": null,
+      "authentication": "NO_ORIGINAL_HASH_IN_STARTING_INVENTORY",
+      "references": [
+        {
+          "source": "SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+          "auditLine": 52,
+          "currentLine": 54,
+          "sourceSha256": "b2d4559c6d94f0eb2cb08e48e2d3c368d391c9454016db338c8310359ce9fe4d"
+        }
+      ]
+    },
+    {
+      "originalTarget": "/tmp/seam-progress-capabilities-2026-09-22.log",
+      "resolvedTarget": "/private/tmp/seam-progress-capabilities-2026-09-22.log",
+      "status": "UNAVAILABLE",
+      "checkedAt": "2026-10-11",
+      "sha256": null,
+      "originalRecordedSha256": null,
+      "authentication": "NO_ORIGINAL_HASH_IN_STARTING_INVENTORY",
+      "references": [
+        {
+          "source": "SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+          "auditLine": 52,
+          "currentLine": 54,
+          "sourceSha256": "b2d4559c6d94f0eb2cb08e48e2d3c368d391c9454016db338c8310359ce9fe4d"
+        }
+      ]
+    },
+    {
+      "originalTarget": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json",
+      "resolvedTarget": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json",
+      "status": "UNAVAILABLE",
+      "checkedAt": "2026-10-11",
+      "sha256": null,
+      "originalRecordedSha256": null,
+      "authentication": "NO_ORIGINAL_HASH_IN_STARTING_INVENTORY",
+      "references": [
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "auditLine": 50,
+          "currentLine": 52,
+          "sourceSha256": "54091a82972ec85c5955b3811aa61cc821b11f1b4bb019eb48f1e0f8159e226f"
+        },
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "auditLine": 397,
+          "currentLine": 399,
+          "sourceSha256": "54091a82972ec85c5955b3811aa61cc821b11f1b4bb019eb48f1e0f8159e226f"
+        }
+      ]
+    },
+    {
+      "originalTarget": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/ctest-2026-09-12.txt",
+      "resolvedTarget": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/ctest-2026-09-12.txt",
+      "status": "UNAVAILABLE",
+      "checkedAt": "2026-10-11",
+      "sha256": null,
+      "originalRecordedSha256": null,
+      "authentication": "NO_ORIGINAL_HASH_IN_STARTING_INVENTORY",
+      "references": [
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "auditLine": 396,
+          "currentLine": 398,
+          "sourceSha256": "54091a82972ec85c5955b3811aa61cc821b11f1b4bb019eb48f1e0f8159e226f"
+        }
+      ]
+    },
+    {
+      "originalTarget": "build/dev/u56-final-qa.4KU4f8/u57-inputs/production-brief.json",
+      "resolvedTarget": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/dev/u56-final-qa.4KU4f8/u57-inputs/production-brief.json",
+      "status": "UNAVAILABLE",
+      "checkedAt": "2026-10-11",
+      "sha256": null,
+      "originalRecordedSha256": null,
+      "authentication": "NO_ORIGINAL_HASH_IN_STARTING_INVENTORY",
+      "references": [
+        {
+          "source": "VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+          "auditLine": 289,
+          "currentLine": 291,
+          "sourceSha256": "fad56a95d1d677a643288d6468bca249413a849c55f5601d371f34d547826972"
+        }
+      ]
+    }
+  ],
+  "limits": "Starting inventory enumerates local inline file links only; fragments, reference definitions and code-span paths excluded. Existence does not authenticate a recovered artifact."
+}

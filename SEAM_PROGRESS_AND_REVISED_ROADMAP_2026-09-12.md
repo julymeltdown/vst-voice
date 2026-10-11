@@ -1,5 +1,7 @@
 # SEAM needs complete singer workflows, not another foundation-only milestone
 
+> **Historical evidence availability — checked 2026-10-11.** Referenced local attachments are currently unavailable. The [availability index](docs/reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md) records the five original targets and their six link occurrences. Original observations below remain historical; unavailable attachments do not supply current verification. No replacement file or regenerated PASS is presented as the original evidence.
+
 ## Executive Summary
 
 SEAM has a substantial, reusable engineering foundation. It is not a nearly finished full-scope virtual-singer product. The appropriate next move is to keep the architecture and change the unit of execution: finish a connected, audible creator outcome across several modules before declaring the next milestone complete.
