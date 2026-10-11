@@ -1,0 +1,2413 @@
+{
+  "reportDate": "2026-10-11",
+  "timezone": "Asia/Seoul",
+  "auditBaseline": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+  "workspaceRoot": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+  "sourceClosure": {
+    "command": "python3 -B scripts/verify_tracked_source_closure.py --root .",
+    "exitCode": 0,
+    "output": "SOURCE_CLOSURE=PASS\n"
+  },
+  "phase13a": {
+    "command": "python3 -B scripts/verify_phase13a_contracts.py --root .",
+    "exitCode": 0,
+    "output": "[phase13a-contract] dependencyPins=PASS\n[phase13a-contract] mandatoryValidationDocs=PASS\n[phase13a-contract] packagingSourceChecks=PASS\n[phase13a-contract] githubActions=DEFERRED; pipelineExecution=NOT_CHECKED\n[phase13a-contract] externalRuntimeResults=NOT_RUN\n"
+  },
+  "capturedTeacherTests": {
+    "command": "python3 -B -m unittest tools.voice_model_training.test_prepare_captured_teacher -v",
+    "exitCode": 0,
+    "output": "test_complete_bundle_loads_targets_without_admitting_or_splitting (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_complete_bundle_loads_targets_without_admitting_or_splitting) ... ok\ntest_duplicate_receipt_entry_and_uncommitted_export_are_rejected (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_duplicate_receipt_entry_and_uncommitted_export_are_rejected) ... ok\ntest_existing_capture_refuses_incomplete_or_symlink_directory (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_existing_capture_refuses_incomplete_or_symlink_directory) ... ok\ntest_existing_capture_requires_fresh_exact_derivation (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_existing_capture_requires_fresh_exact_derivation) ... ok\ntest_explicit_pause_has_no_sung_midi_target (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_explicit_pause_has_no_sung_midi_target) ... ok\ntest_extractor_failure_does_not_publish_complete_receipt (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_extractor_failure_does_not_publish_complete_receipt) ... ok\ntest_missing_note_non_japanese_and_duplicate_project_ids_are_rejected (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_missing_note_non_japanese_and_duplicate_project_ids_are_rejected) ... ok\ntest_mutated_project_or_wav_or_metadata_is_rejected (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_mutated_project_or_wav_or_metadata_is_rejected) ... ok\ntest_receipt_bound_notes_are_grouped_not_duplicated_per_phone (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_receipt_bound_notes_are_grouped_not_duplicated_per_phone) ... ok\ntest_recipe_mismatch_and_missing_bound_recipe_rejected (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_recipe_mismatch_and_missing_bound_recipe_rejected) ... ok\ntest_schema_19_keeps_single_recipe_capture_and_refuses_sample_pair (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_schema_19_keeps_single_recipe_capture_and_refuses_sample_pair) ... ok\ntest_symlink_and_noncanonical_candidate_rejected (tools.voice_model_training.test_prepare_captured_teacher.PrepareBundleTest.test_symlink_and_noncanonical_candidate_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 12 tests in 0.143s\n\nOK\n"
+  },
+  "schemaProbe": {
+    "method": "Instantiate existing PrepareBundleTest fixture; set project.schemaVersion; call write_export to recompute receipt hashes; invoke capture. This isolates the version predicate, not a complete native export.",
+    "results": [
+      {
+        "schemaVersion": 19,
+        "outcome": "ACCEPTED"
+      },
+      {
+        "schemaVersion": 20,
+        "outcome": "REFUSED",
+        "message": "Require captured project schema 17/18/19 and candidate metadata"
+      },
+      {
+        "schemaVersion": 21,
+        "outcome": "REFUSED",
+        "message": "Require captured project schema 17/18/19 and candidate metadata"
+      }
+    ]
+  },
+  "gitSync": {
+    "fetch": {
+      "command": "git fetch origin",
+      "exitCode": 0
+    },
+    "pull": {
+      "command": "git pull --ff-only --no-rebase",
+      "exitCode": 0,
+      "result": "Already up to date."
+    }
+  },
+  "limitations": [
+    "Targeted source audit, not every tracked file read line by line",
+    "No native rebuild, CTest, sanitizer, GUI, audio, DAW, screen-reader, signing, Windows, training, or external reviewer acceptance run",
+    "No third-party upstream release/advisory freshness check",
+    "Static CMake extraction combines conditional branches and literal target names; not a fresh resolved build graph",
+    "Compilation database inspected as an existing local artifact, not regenerated",
+    "Historical missing links do not establish missing product source",
+    "All finding source hashes use the audited Git baseline; dirty implementation files are separately preserved",
+    "No product acceptance or progress percentage inferred"
+  ],
+  "staticInventory": {
+    "baseline": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+    "trackedPaths": 3024,
+    "markdownFiles": 500,
+    "cmakeStaticLibraryGraph": {
+      "seam_application": [
+        "seam_core",
+        "seam_domain",
+        "seam_phonemizer"
+      ],
+      "seam_authoring_runtime": [
+        "seam_application",
+        "seam_core",
+        "seam_distribution",
+        "seam_domain",
+        "seam_formats",
+        "seam_interchange",
+        "seam_platform",
+        "seam_rendering",
+        "seam_voicebank",
+        "seam_voicebank_production"
+      ],
+      "seam_candidate_packaging": [
+        "seam_core",
+        "seam_distribution",
+        "seam_formats",
+        "seam_voicebank",
+        "seam_voicebank_production"
+      ],
+      "seam_character": [
+        "seam_core",
+        "seam_domain",
+        "seam_formats"
+      ],
+      "seam_clap": [
+        "seam_core"
+      ],
+      "seam_clap_editor": [
+        "seam_application",
+        "seam_authoring_runtime",
+        "seam_core",
+        "seam_domain",
+        "seam_editor_inspection",
+        "seam_editor_ui",
+        "seam_formats",
+        "seam_live_voice",
+        "seam_native_ui",
+        "seam_phonemizer",
+        "seam_platform",
+        "seam_rendering",
+        "seam_synthesis",
+        "seam_text",
+        "seam_voicebank"
+      ],
+      "seam_clap_editor_plugin": [
+        "seam_clap_editor",
+        "seam_core",
+        "seam_live_voice",
+        "seam_standalone_authoring"
+      ],
+      "seam_clap_plugin": [
+        "seam_clap",
+        "seam_core"
+      ],
+      "seam_core": [],
+      "seam_distribution": [
+        "seam_core",
+        "seam_domain",
+        "seam_formats",
+        "seam_voice_design",
+        "seam_voicebank"
+      ],
+      "seam_domain": [
+        "seam_core"
+      ],
+      "seam_editor_inspection": [
+        "seam_core",
+        "seam_domain",
+        "seam_editor_ui",
+        "seam_phonemizer",
+        "seam_synthesis",
+        "seam_voicebank"
+      ],
+      "seam_editor_ui": [
+        "seam_application",
+        "seam_core",
+        "seam_domain",
+        "seam_phonemizer",
+        "seam_synthesis"
+      ],
+      "seam_formats": [
+        "seam_core",
+        "seam_domain"
+      ],
+      "seam_interchange": [
+        "seam_application",
+        "seam_core",
+        "seam_domain",
+        "seam_formats",
+        "seam_phonemizer"
+      ],
+      "seam_live_voice": [
+        "seam_core",
+        "seam_voicebank"
+      ],
+      "seam_native_ui": [
+        "seam_application",
+        "seam_authoring_runtime",
+        "seam_candidate_packaging",
+        "seam_character",
+        "seam_core",
+        "seam_distribution",
+        "seam_domain",
+        "seam_editor_inspection",
+        "seam_editor_ui",
+        "seam_phonemizer",
+        "seam_platform",
+        "seam_text",
+        "seam_voicebank",
+        "seam_voicebank_production"
+      ],
+      "seam_neural_synthesis": [
+        "seam_core",
+        "seam_distribution",
+        "seam_formats",
+        "seam_neural_worker_protocol",
+        "seam_platform",
+        "seam_synthesis"
+      ],
+      "seam_neural_worker_protocol": [
+        "seam_core",
+        "seam_domain",
+        "seam_formats"
+      ],
+      "seam_phonemizer": [
+        "seam_core",
+        "seam_domain"
+      ],
+      "seam_platform": [
+        "seam_core",
+        "seam_formats",
+        "seam_voicebank"
+      ],
+      "seam_playback_platform": [
+        "seam_core",
+        "seam_platform",
+        "seam_rendering"
+      ],
+      "seam_rendering": [
+        "seam_core",
+        "seam_distribution",
+        "seam_domain",
+        "seam_formats",
+        "seam_neural_synthesis",
+        "seam_phonemizer",
+        "seam_synthesis",
+        "seam_voice_design",
+        "seam_voicebank"
+      ],
+      "seam_standalone_authoring": [
+        "seam_application",
+        "seam_authoring_runtime",
+        "seam_core",
+        "seam_domain",
+        "seam_native_ui",
+        "seam_platform",
+        "seam_playback_platform",
+        "seam_voicebank"
+      ],
+      "seam_synthesis": [
+        "seam_core",
+        "seam_domain",
+        "seam_formats",
+        "seam_phonemizer",
+        "seam_voicebank"
+      ],
+      "seam_text": [
+        "seam_core"
+      ],
+      "seam_voice_design": [
+        "seam_core",
+        "seam_formats",
+        "seam_phonemizer",
+        "seam_synthesis",
+        "seam_text"
+      ],
+      "seam_voicebank": [
+        "seam_core",
+        "seam_domain",
+        "seam_formats"
+      ],
+      "seam_voicebank_production": [
+        "seam_core",
+        "seam_formats",
+        "seam_voice_design",
+        "seam_voicebank"
+      ],
+      "seam_voicebank_studio_app": [
+        "seam_core",
+        "seam_domain",
+        "seam_editor_inspection",
+        "seam_formats",
+        "seam_native_ui",
+        "seam_platform",
+        "seam_voicebank"
+      ]
+    },
+    "cmakeNontrivialScc": [],
+    "highestDirectReverseDependencies": [
+      [
+        "seam_core",
+        29
+      ],
+      [
+        "seam_domain",
+        17
+      ],
+      [
+        "seam_formats",
+        15
+      ],
+      [
+        "seam_voicebank",
+        13
+      ],
+      [
+        "seam_phonemizer",
+        9
+      ],
+      [
+        "seam_platform",
+        7
+      ],
+      [
+        "seam_application",
+        6
+      ],
+      [
+        "seam_synthesis",
+        6
+      ],
+      [
+        "seam_distribution",
+        5
+      ],
+      [
+        "seam_authoring_runtime",
+        3
+      ]
+    ],
+    "largestProductionCppFiles": [
+      {
+        "path": "libs/seam-native-ui/src/design/sing_shell.cpp",
+        "lines": 5842
+      },
+      {
+        "path": "libs/seam-native-ui/src/editor_controller.cpp",
+        "lines": 4117
+      },
+      {
+        "path": "apps/seam-voicebank-studio-native/studio_app.cpp",
+        "lines": 3549
+      },
+      {
+        "path": "libs/seam-native-ui/src/design/shell_overlays.cpp",
+        "lines": 3213
+      },
+      {
+        "path": "libs/seam-standalone/src/application_controller.cpp",
+        "lines": 3028
+      },
+      {
+        "path": "libs/seam-standalone/src/native_editor_app.cpp",
+        "lines": 2476
+      },
+      {
+        "path": "libs/seam-native-ui/src/design/voice_workspace.cpp",
+        "lines": 2076
+      },
+      {
+        "path": "libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm",
+        "lines": 1883
+      },
+      {
+        "path": "libs/seam-native-ui/src/design/mix_workspace.cpp",
+        "lines": 1847
+      },
+      {
+        "path": "libs/seam-native-ui/src/design/tune_workspace.cpp",
+        "lines": 1677
+      },
+      {
+        "path": "libs/seam-authoring-runtime/src/export_service.cpp",
+        "lines": 1652
+      },
+      {
+        "path": "libs/seam-formats/src/project_json.cpp",
+        "lines": 1652
+      },
+      {
+        "path": "libs/seam-rendering/src/render_snapshot.cpp",
+        "lines": 1545
+      },
+      {
+        "path": "libs/seam-clap-editor/src/plugin_entry.cpp",
+        "lines": 1522
+      },
+      {
+        "path": "libs/seam-native-ui/src/editor_semantics.cpp",
+        "lines": 1484
+      }
+    ],
+    "includeEdges": [
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-core",
+        "includeCount": 66,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/audio_settings.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/authoring_runtime.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/automatic_performance_capture.hpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank-production",
+        "to": "seam-core",
+        "includeCount": 54,
+        "exampleFiles": [
+          "libs/seam-voicebank-production/include/seam/voicebank_production/asset_store.hpp",
+          "libs/seam-voicebank-production/include/seam/voicebank_production/draft_inventory.hpp",
+          "libs/seam-voicebank-production/include/seam/voicebank_production/generation_request.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-core",
+        "includeCount": 40,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/arrangement_panel.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/character_performance_binding.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-application",
+        "includeCount": 32,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/arrangement_panel.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/diagnostic_search_job.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-authoring-runtime",
+        "includeCount": 31,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/conversion_review_model.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/diagnostic_ids.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/diagnostic_panel.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-editor-ui",
+        "includeCount": 27,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/design/background_wash.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/design/sing_layout.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/design/tooltip.hpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-core",
+        "includeCount": 26,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/audio_level_envelope.hpp",
+          "libs/seam-rendering/include/seam/rendering/multichannel_playback.hpp",
+          "libs/seam-rendering/include/seam/rendering/multichannel_routing.hpp"
+        ]
+      },
+      {
+        "from": "seam-synthesis",
+        "to": "seam-voicebank",
+        "includeCount": 25,
+        "exampleFiles": [
+          "libs/seam-synthesis/include/seam/synthesis/classic_psola.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/phrase_renderer.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/raw_renderer.hpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-core",
+        "includeCount": 24,
+        "exampleFiles": [
+          "libs/seam-distribution/include/seam/distribution/installer.hpp",
+          "libs/seam-distribution/include/seam/distribution/procedural_review_store.hpp",
+          "libs/seam-distribution/include/seam/distribution/seambank.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-domain",
+        "includeCount": 23,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/arrangement_panel.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/character_presentation.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/diagnostic_search.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-formats",
+        "includeCount": 22,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/autosave_service.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/generation_campaign.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/project_lifecycle.hpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank-production",
+        "to": "seam-voicebank",
+        "includeCount": 22,
+        "exampleFiles": [
+          "libs/seam-voicebank-production/include/seam/voicebank_production/candidate_publication.hpp",
+          "libs/seam-voicebank-production/include/seam/voicebank_production/manifest_draft.hpp",
+          "libs/seam-voicebank-production/include/seam/voicebank_production/operations.hpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank",
+        "to": "seam-core",
+        "includeCount": 22,
+        "exampleFiles": [
+          "libs/seam-voicebank/include/seam/voicebank/acoustic_analysis.hpp",
+          "libs/seam-voicebank/include/seam/voicebank/asset_path.hpp",
+          "libs/seam-voicebank/include/seam/voicebank/catalog.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-ui",
+        "to": "seam-application",
+        "includeCount": 20,
+        "exampleFiles": [
+          "libs/seam-editor-ui/include/seam/ui/dynamics_clear_preview.hpp",
+          "libs/seam-editor-ui/include/seam/ui/dynamics_lane_model.hpp",
+          "libs/seam-editor-ui/include/seam/ui/expression_lane.hpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank-production",
+        "to": "seam-formats",
+        "includeCount": 20,
+        "exampleFiles": [
+          "libs/seam-voicebank-production/include/seam/voicebank_production/resource_candidate.hpp",
+          "libs/seam-voicebank-production/include/seam/voicebank_production/take_inspection_receipt.hpp",
+          "libs/seam-voicebank-production/src/draft_inventory.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-authoring-runtime",
+        "includeCount": 19,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/authoring_session.hpp",
+          "libs/seam-standalone/include/seam/standalone/native_editor_app.hpp"
+        ]
+      },
+      {
+        "from": "seam-domain",
+        "to": "seam-core",
+        "includeCount": 18,
+        "exampleFiles": [
+          "libs/seam-domain/include/seam/domain/airiness_automation.hpp",
+          "libs/seam-domain/include/seam/domain/breathiness_automation.hpp",
+          "libs/seam-domain/include/seam/domain/dynamics_automation.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-voicebank",
+        "includeCount": 18,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/installed_bank_song.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/pitch_contour.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-rendering",
+        "includeCount": 17,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_capture.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/export_service.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/generation_job.hpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-synthesis",
+        "includeCount": 17,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/project_renderer.hpp",
+          "libs/seam-rendering/include/seam/rendering/region_renderer.hpp",
+          "libs/seam-rendering/include/seam/rendering/render_performance.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-application",
+        "includeCount": 16,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_capture.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/automatic_performance_capture.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/interchange_service.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-ui",
+        "to": "seam-domain",
+        "includeCount": 15,
+        "exampleFiles": [
+          "libs/seam-editor-ui/include/seam/ui/dependent_edit_review.hpp",
+          "libs/seam-editor-ui/include/seam/ui/expression_lane.hpp",
+          "libs/seam-editor-ui/include/seam/ui/note_search_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-voicebank-production",
+        "includeCount": 15,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/sample_bank_package.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp",
+          "libs/seam-native-ui/src/voicebank_studio.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-native-ui",
+        "includeCount": 14,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/embedded_view.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_accessibility.cpp"
+        ]
+      },
+      {
+        "from": "seam-platform",
+        "to": "seam-core",
+        "includeCount": 14,
+        "exampleFiles": [
+          "libs/seam-platform/include/seam/platform/application_menu.hpp",
+          "libs/seam-platform/include/seam/platform/application_paths.hpp",
+          "libs/seam-platform/include/seam/platform/audio_device.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-native-ui",
+        "includeCount": 14,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/authoring_session.hpp",
+          "libs/seam-standalone/include/seam/standalone/native_editor_app.hpp"
+        ]
+      },
+      {
+        "from": "seam-synthesis",
+        "to": "seam-core",
+        "includeCount": 14,
+        "exampleFiles": [
+          "libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/classic_psola.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/phrase_backend.hpp"
+        ]
+      },
+      {
+        "from": "seam-synthesis",
+        "to": "seam-domain",
+        "includeCount": 13,
+        "exampleFiles": [
+          "libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/performance_compiler.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/phoneme_timing_plan.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-domain",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/automatic_performance_capture.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/media_import_service.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/neural_resource_registry.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-voicebank",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/bank_reference_registry.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/export_service.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/project_lifecycle.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-voice-design",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/voice_designer_audition.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voice_designer_model.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voice_designer_source_selection.hpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-domain",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/multichannel_routing.hpp",
+          "libs/seam-rendering/include/seam/rendering/pcm_cache.hpp",
+          "libs/seam-rendering/include/seam/rendering/phrase_segmenter.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-platform",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/native_editor_app.hpp",
+          "libs/seam-standalone/include/seam/standalone/production_configuration.hpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-synthesis",
+        "includeCount": 12,
+        "exampleFiles": [
+          "libs/seam-voice-design/include/seam/voice_design/articulation_plan.hpp",
+          "libs/seam-voice-design/include/seam/voice_design/audition_fingerprint.hpp",
+          "libs/seam-voice-design/include/seam/voice_design/frication_source.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-application",
+        "includeCount": 11,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_input.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-core",
+        "includeCount": 11,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/embedded_view.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/host_tempo_map.hpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-core",
+        "includeCount": 11,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/graph_contract.hpp",
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/model_contract.hpp",
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-voice-design",
+        "includeCount": 10,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/src/export_service.cpp",
+          "libs/seam-authoring-runtime/src/generation_campaign.cpp",
+          "libs/seam-authoring-runtime/src/generation_campaign_advance.cpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-formats",
+        "includeCount": 10,
+        "exampleFiles": [
+          "libs/seam-distribution/include/seam/distribution/update_manifest.hpp",
+          "libs/seam-distribution/src/installer.cpp",
+          "libs/seam-distribution/src/procedural_package.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-formats",
+        "includeCount": 10,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/design/shell_evidence.hpp",
+          "libs/seam-native-ui/src/design/shell_strings.cpp",
+          "libs/seam-native-ui/src/installed_bank_song.cpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-voicebank-production",
+        "includeCount": 9,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/generation_campaign.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/generation_job.hpp",
+          "libs/seam-authoring-runtime/src/generation_batch_collection.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-text",
+        "includeCount": 9,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+          "libs/seam-native-ui/src/editor_label_policy.cpp",
+          "libs/seam-native-ui/src/editor_scene.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-phonemizer",
+        "includeCount": 9,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/editor_scene.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voice_designer_source_selection.hpp",
+          "libs/seam-native-ui/src/design/voice_workspace.cpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-phonemizer",
+        "includeCount": 9,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/render_pipeline.hpp",
+          "libs/seam-rendering/include/seam/rendering/render_snapshot.hpp",
+          "libs/seam-rendering/src/phrase_segmenter.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-core",
+        "includeCount": 9,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/authoring_session.hpp",
+          "libs/seam-standalone/include/seam/standalone/eula_acceptance.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-phonemizer",
+        "includeCount": 8,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_resource.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_response.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/technical_edit_controller.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-domain",
+        "includeCount": 8,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/host_timeline.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/offline_render_session.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-rendering",
+        "includeCount": 8,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/include/seam/clap_editor/offline_render_session.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-domain",
+        "includeCount": 8,
+        "exampleFiles": [
+          "libs/seam-voice-design/include/seam/voice_design/transition_plan.hpp",
+          "libs/seam-voice-design/src/audition_fingerprint.cpp",
+          "libs/seam-voice-design/src/excitation_noise.hpp"
+        ]
+      },
+      {
+        "from": "seam-application",
+        "to": "seam-phonemizer",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-application/src/arrangement_commands.cpp",
+          "libs/seam-application/src/lyric_commands.cpp",
+          "libs/seam-application/src/note_commands.cpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-voicebank",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/sample_microscope_model.hpp",
+          "libs/seam-editor-inspection/include/seam/ui/unit_lane_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-interchange",
+        "to": "seam-domain",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-interchange/include/seam/interchange/smf_codec.hpp",
+          "libs/seam-interchange/include/seam/interchange/ustx_codec.hpp",
+          "libs/seam-interchange/src/smf_codec.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-character",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/character_performance_binding.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/character_presentation.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/design/character_surface.hpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-distribution",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/installed_singer_song.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/sample_bank_package.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voice_designer_session.hpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-voice-design",
+        "includeCount": 7,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/render_pipeline.hpp",
+          "libs/seam-rendering/include/seam/rendering/render_scheduler.hpp",
+          "libs/seam-rendering/src/render_pipeline.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-voicebank",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_input.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-platform",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/candidate_audition_session.hpp",
+          "libs/seam-native-ui/src/voicebank_studio.cpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-formats",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/src/bundle_directory.cpp",
+          "libs/seam-neural-synthesis/src/bundle_metadata.cpp",
+          "libs/seam-neural-synthesis/src/deployment_descriptor.cpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-voicebank",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/project_renderer.hpp",
+          "libs/seam-rendering/include/seam/rendering/region_renderer.hpp",
+          "libs/seam-rendering/include/seam/rendering/render_snapshot.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-distribution",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/native_editor_app.hpp",
+          "libs/seam-standalone/include/seam/standalone/production_configuration.hpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-phonemizer",
+        "includeCount": 6,
+        "exampleFiles": [
+          "libs/seam-voice-design/src/articulation_plan.cpp",
+          "libs/seam-voice-design/src/audition_fingerprint.cpp",
+          "libs/seam-voice-design/src/procedural_candidate.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-synthesis",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_input.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-phonemizer",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_input.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_paint.cpp"
+        ]
+      },
+      {
+        "from": "seam-phonemizer",
+        "to": "seam-core",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-phonemizer/include/seam/phonemizer/japanese_reading.hpp",
+          "libs/seam-phonemizer/src/english_resource.cpp",
+          "libs/seam-phonemizer/src/japanese_reading.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-voicebank",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/include/seam/standalone/authoring_session.hpp",
+          "libs/seam-standalone/include/seam/standalone/native_project_dialog.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-application",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-standalone/src/application_controller.cpp",
+          "libs/seam-standalone/src/authoring_session.cpp"
+        ]
+      },
+      {
+        "from": "seam-text",
+        "to": "seam-core",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-text/include/seam/text/text_engine.hpp",
+          "libs/seam-text/include/seam/text/unicode.hpp",
+          "libs/seam-text/src/text_engine.cpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-core",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-voice-design/include/seam/voice_design/recipe_resource.hpp",
+          "libs/seam-voice-design/include/seam/voice_design/voice_recipe.hpp",
+          "libs/seam-voice-design/src/audition_fingerprint.cpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank",
+        "to": "seam-domain",
+        "includeCount": 5,
+        "exampleFiles": [
+          "libs/seam-voicebank/include/seam/voicebank/catalog.hpp",
+          "libs/seam-voicebank/include/seam/voicebank/coverage.hpp",
+          "libs/seam-voicebank/include/seam/voicebank/style_resolution.hpp"
+        ]
+      },
+      {
+        "from": "seam-application",
+        "to": "seam-domain",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-application/include/seam/application/command.hpp",
+          "libs/seam-application/include/seam/application/performance_job_context.hpp",
+          "libs/seam-application/include/seam/application/project_factory.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-synthesis",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/automatic_performance_capture.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/technical_edit_controller.hpp",
+          "libs/seam-authoring-runtime/src/render_coordinator.cpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-neural-synthesis",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/neural_phrase_runner.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/neural_selection.hpp",
+          "libs/seam-authoring-runtime/src/neural_selection.cpp"
+        ]
+      },
+      {
+        "from": "seam-candidate-packaging",
+        "to": "seam-core",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-candidate-packaging/src/candidate_package.cpp",
+          "libs/seam-candidate-packaging/src/installed_candidate.cpp",
+          "libs/seam-candidate-packaging/src/private_stage.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-authoring-runtime",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_interchange.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-platform",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/plugin_entry.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap",
+        "to": "seam-core",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-clap/include/seam/clap/session.hpp",
+          "libs/seam-clap/src/session.cpp",
+          "libs/seam-clap/src/state_codec.cpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-voicebank",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-distribution/include/seam/distribution/seambank.hpp",
+          "libs/seam-distribution/src/installer.cpp",
+          "libs/seam-distribution/src/seambank.cpp"
+        ]
+      },
+      {
+        "from": "seam-editor-ui",
+        "to": "seam-synthesis",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-editor-ui/include/seam/ui/dynamics_lane_model.hpp",
+          "libs/seam-editor-ui/include/seam/ui/expression_lane.hpp",
+          "libs/seam-editor-ui/src/dynamics_lane_model.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-rendering",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/character_performance_binding.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/region_envelope.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/render_status_panel.hpp"
+        ]
+      },
+      {
+        "from": "seam-platform",
+        "to": "seam-domain",
+        "includeCount": 4,
+        "exampleFiles": [
+          "libs/seam-platform/src/coreaudio_audio_device.mm",
+          "libs/seam-platform/src/pulse_audio_device.cpp",
+          "libs/seam-platform/src/threaded_audio_device.cpp"
+        ]
+      },
+      {
+        "from": "seam-application",
+        "to": "seam-core",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-application/include/seam/application/command.hpp",
+          "libs/seam-application/include/seam/application/editor_session.hpp",
+          "libs/seam-application/include/seam/application/project_factory.hpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-distribution",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/neural_selection.hpp",
+          "libs/seam-authoring-runtime/include/seam/authoring/voicebank_installer_service.hpp"
+        ]
+      },
+      {
+        "from": "seam-candidate-packaging",
+        "to": "seam-distribution",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-candidate-packaging/include/seam/candidate_packaging/candidate_package.hpp"
+        ]
+      },
+      {
+        "from": "seam-character",
+        "to": "seam-core",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-character/include/seam/character/character.hpp",
+          "libs/seam-character/include/seam/character/performance.hpp",
+          "libs/seam-character/src/character.cpp"
+        ]
+      },
+      {
+        "from": "seam-character",
+        "to": "seam-domain",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-character/include/seam/character/character.hpp",
+          "libs/seam-character/include/seam/character/performance.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-live-voice",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp",
+          "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
+          "libs/seam-clap-editor/src/plugin_entry.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-text",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-clap-editor/src/embedded_view_appkit.mm",
+          "libs/seam-clap-editor/src/embedded_view_win32.cpp",
+          "libs/seam-clap-editor/src/embedded_view_x11.cpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-voice-design",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-distribution/src/procedural_package.cpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-editor-ui",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/sample_microscope_model.hpp",
+          "libs/seam-editor-inspection/include/seam/ui/unit_lane_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-synthesis",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/unit_lane_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-formats",
+        "to": "seam-domain",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-formats/include/seam/formats/project_json.hpp",
+          "libs/seam-formats/src/project_performance_json.hpp",
+          "libs/seam-formats/src/project_region_performance_json.hpp"
+        ]
+      },
+      {
+        "from": "seam-interchange",
+        "to": "seam-core",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-interchange/include/seam/interchange/smf_codec.hpp",
+          "libs/seam-interchange/include/seam/interchange/ustx_codec.hpp",
+          "libs/seam-interchange/src/ustx_codec.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-editor-inspection",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/editor_scene.hpp",
+          "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-synthesis",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/bundle_metadata.hpp",
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/model_contract.hpp",
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp"
+        ]
+      },
+      {
+        "from": "seam-phonemizer",
+        "to": "seam-domain",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-phonemizer/include/seam/phonemizer/override_reconciliation.hpp",
+          "libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp",
+          "libs/seam-phonemizer/src/japanese_reading.cpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-neural-synthesis",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/render_snapshot.hpp",
+          "libs/seam-rendering/src/render_snapshot.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-rendering",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/application_controller.hpp",
+          "libs/seam-standalone/src/application_controller.cpp",
+          "libs/seam-standalone/src/authoring_session.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-formats",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-standalone/src/eula_acceptance.cpp",
+          "libs/seam-standalone/src/native_editor_app.cpp",
+          "libs/seam-standalone/src/update_controller.cpp"
+        ]
+      },
+      {
+        "from": "seam-synthesis",
+        "to": "seam-phonemizer",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp",
+          "libs/seam-synthesis/include/seam/synthesis/unit_selection.hpp",
+          "libs/seam-synthesis/src/performance_compiler.cpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-formats",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-voice-design/src/audition_fingerprint.cpp",
+          "libs/seam-voice-design/src/procedural_candidate.cpp",
+          "libs/seam-voice-design/src/voice_recipe.cpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank-production",
+        "to": "seam-voice-design",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-voicebank-production/include/seam/voicebank_production/candidate_markers.hpp",
+          "libs/seam-voicebank-production/src/candidate_markers.cpp",
+          "libs/seam-voicebank-production/src/repository_import.cpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank",
+        "to": "seam-formats",
+        "includeCount": 3,
+        "exampleFiles": [
+          "libs/seam-voicebank/src/acoustic_analysis.cpp",
+          "libs/seam-voicebank/src/catalog.cpp",
+          "libs/seam-voicebank/src/manifest_json.cpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-platform",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp",
+          "libs/seam-authoring-runtime/src/japanese_reading_capture.cpp"
+        ]
+      },
+      {
+        "from": "seam-authoring-runtime",
+        "to": "seam-interchange",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-authoring-runtime/include/seam/authoring/interchange_service.hpp"
+        ]
+      },
+      {
+        "from": "seam-candidate-packaging",
+        "to": "seam-formats",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-candidate-packaging/src/candidate_package.cpp",
+          "libs/seam-candidate-packaging/src/installed_candidate.cpp"
+        ]
+      },
+      {
+        "from": "seam-candidate-packaging",
+        "to": "seam-voicebank",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-candidate-packaging/src/candidate_package.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-editor-inspection",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-formats",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-clap-editor/src/editor_runtime_project.cpp",
+          "libs/seam-clap-editor/src/editor_runtime_state.cpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-domain",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-distribution/include/seam/distribution/procedural_package.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-ui",
+        "to": "seam-core",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-editor-ui/include/seam/ui/note_search_model.hpp",
+          "libs/seam-editor-ui/include/seam/ui/text_composition_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-ui",
+        "to": "seam-phonemizer",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-editor-ui/include/seam/ui/phoneme_lane_model.hpp",
+          "libs/seam-editor-ui/src/note_search_model.cpp"
+        ]
+      },
+      {
+        "from": "seam-formats",
+        "to": "seam-core",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-formats/include/seam/formats/json_value.hpp",
+          "libs/seam-formats/src/project_json.cpp"
+        ]
+      },
+      {
+        "from": "seam-interchange",
+        "to": "seam-application",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-interchange/include/seam/interchange/smf_project_conversion.hpp",
+          "libs/seam-interchange/include/seam/interchange/ustx_project_conversion.hpp"
+        ]
+      },
+      {
+        "from": "seam-interchange",
+        "to": "seam-phonemizer",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-interchange/src/smf_project_conversion.cpp",
+          "libs/seam-interchange/src/ustx_project_conversion.cpp"
+        ]
+      },
+      {
+        "from": "seam-live-voice",
+        "to": "seam-core",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-live-voice/include/seam/live_voice/articulation.hpp",
+          "libs/seam-live-voice/include/seam/live_voice/live_resources.hpp"
+        ]
+      },
+      {
+        "from": "seam-live-voice",
+        "to": "seam-voicebank",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-live-voice/include/seam/live_voice/live_resources.hpp",
+          "libs/seam-live-voice/src/live_resources.cpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-domain",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/src/model_contract.cpp",
+          "libs/seam-neural-synthesis/src/worker_protocol.cpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-platform",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/src/neural_phrase_backend.cpp"
+        ]
+      },
+      {
+        "from": "seam-platform",
+        "to": "seam-rendering",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-platform/include/seam/platform/multichannel_ring_buffer_processor.hpp",
+          "libs/seam-platform/include/seam/platform/ring_buffer_processor.hpp"
+        ]
+      },
+      {
+        "from": "seam-platform",
+        "to": "seam-voicebank",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-platform/include/seam/platform/recording_session.hpp",
+          "libs/seam-platform/src/recording_session.cpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-distribution",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-rendering/include/seam/rendering/project_renderer.hpp",
+          "libs/seam-rendering/src/render_snapshot.cpp"
+        ]
+      },
+      {
+        "from": "seam-synthesis",
+        "to": "seam-formats",
+        "includeCount": 2,
+        "exampleFiles": [
+          "libs/seam-synthesis/src/neural_bundle.cpp",
+          "libs/seam-synthesis/src/source_phoneme_alignment.cpp"
+        ]
+      },
+      {
+        "from": "seam-candidate-packaging",
+        "to": "seam-voicebank-production",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-candidate-packaging/include/seam/candidate_packaging/candidate_package.hpp"
+        ]
+      },
+      {
+        "from": "seam-character",
+        "to": "seam-formats",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-character/src/character.cpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-editor-ui",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp"
+        ]
+      },
+      {
+        "from": "seam-clap-editor",
+        "to": "seam-standalone",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-clap-editor/src/plugin_entry.cpp"
+        ]
+      },
+      {
+        "from": "seam-distribution",
+        "to": "seam-synthesis",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-distribution/include/seam/distribution/procedural_package.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-core",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/sample_microscope_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-domain",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/unit_lane_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-editor-inspection",
+        "to": "seam-phonemizer",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-editor-inspection/include/seam/ui/unit_lane_model.hpp"
+        ]
+      },
+      {
+        "from": "seam-interchange",
+        "to": "seam-formats",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-interchange/src/ustx_codec.cpp"
+        ]
+      },
+      {
+        "from": "seam-native-ui",
+        "to": "seam-candidate-packaging",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-native-ui/include/seam/native_ui/sample_bank_package.hpp"
+        ]
+      },
+      {
+        "from": "seam-neural-synthesis",
+        "to": "seam-distribution",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-neural-synthesis/include/seam/neural_synthesis/deployment_descriptor.hpp"
+        ]
+      },
+      {
+        "from": "seam-platform",
+        "to": "seam-formats",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-platform/src/crash_capture.cpp"
+        ]
+      },
+      {
+        "from": "seam-rendering",
+        "to": "seam-formats",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-rendering/src/render_snapshot.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-character",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/authoring_session.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-domain",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-standalone/include/seam/standalone/native_project_dialog.hpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-phonemizer",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-standalone/src/application_controller.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-voice-design",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-standalone/src/application_controller.cpp"
+        ]
+      },
+      {
+        "from": "seam-standalone",
+        "to": "seam-synthesis",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-standalone/src/application_controller.cpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-voicebank",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-voice-design/include/seam/voice_design/procedural_candidate.hpp"
+        ]
+      },
+      {
+        "from": "seam-voice-design",
+        "to": "seam-text",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-voice-design/src/voice_recipe.cpp"
+        ]
+      },
+      {
+        "from": "seam-voicebank-production",
+        "to": "seam-synthesis",
+        "includeCount": 1,
+        "exampleFiles": [
+          "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp"
+        ]
+      }
+    ],
+    "markdownLinkScan": {
+      "examinedLocalInlineLinks": 611,
+      "unresolvedCount": 6,
+      "unresolved": [
+        {
+          "source": "SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+          "line": 52,
+          "target": "/tmp/seam-progress-interchange-2026-09-22.log",
+          "resolved": "/private/tmp/seam-progress-interchange-2026-09-22.log"
+        },
+        {
+          "source": "SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+          "line": 52,
+          "target": "/tmp/seam-progress-capabilities-2026-09-22.log",
+          "resolved": "/private/tmp/seam-progress-capabilities-2026-09-22.log"
+        },
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "line": 50,
+          "target": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json",
+          "resolved": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json"
+        },
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "line": 396,
+          "target": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/ctest-2026-09-12.txt",
+          "resolved": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/ctest-2026-09-12.txt"
+        },
+        {
+          "source": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+          "line": 397,
+          "target": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json",
+          "resolved": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/progress-review-evidence-2026-09-12/audit-snapshot.json"
+        },
+        {
+          "source": "VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+          "line": 289,
+          "target": "build/dev/u56-final-qa.4KU4f8/u57-inputs/production-brief.json",
+          "resolved": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/dev/u56-final-qa.4KU4f8/u57-inputs/production-brief.json"
+        }
+      ],
+      "limits": "Heuristic inventory: local inline Markdown file links only, fragments ignored, no claim that a missing generated/external/historical output is a defect. Reference definitions and code-span paths not enumerated."
+    },
+    "measurementBaseline": "Before adding this report and its companion evidence file",
+    "unresolvedUniqueTargets": 5
+  },
+  "findings": [
+    {
+      "id": "F01",
+      "priority": "P1",
+      "kind": "current producer-consumer incompatibility",
+      "verification": "source and executed fixture probe"
+    },
+    {
+      "id": "F02",
+      "priority": "P2",
+      "kind": "stale executable evidence claim",
+      "verification": "source and checker result"
+    },
+    {
+      "id": "F03",
+      "priority": "P2",
+      "kind": "stale current design authority",
+      "verification": "source"
+    },
+    {
+      "id": "F04",
+      "priority": "P2",
+      "kind": "mixed current and historical guidance",
+      "verification": "source"
+    },
+    {
+      "id": "F05",
+      "priority": "P2",
+      "kind": "neural contract documentation drift",
+      "verification": "source"
+    },
+    {
+      "id": "F06",
+      "priority": "P2",
+      "kind": "lossy helper failure API and weak refusal assertions",
+      "verification": "source; no hidden crash demonstrated"
+    },
+    {
+      "id": "F07",
+      "priority": "P2",
+      "kind": "public API lifecycle discoverability",
+      "verification": "source and textual caller scan"
+    },
+    {
+      "id": "F08",
+      "priority": "P3",
+      "kind": "historical tool portability",
+      "verification": "source"
+    },
+    {
+      "id": "F09",
+      "priority": "P3",
+      "kind": "help option treated as output path",
+      "verification": "source; command not executed"
+    },
+    {
+      "id": "F10",
+      "priority": "P3",
+      "kind": "historical evidence availability",
+      "verification": "heuristic inline-link scan"
+    }
+  ],
+  "structuralRisks": [
+    {
+      "id": "S01",
+      "claim": "Broad library boundaries despite no cycles in the extracted link graph",
+      "measuredCost": false
+    },
+    {
+      "id": "S02",
+      "claim": "UI concentration and classic-to-shell coordinate adaptation",
+      "measuredIncidentRate": false
+    },
+    {
+      "id": "S03",
+      "claim": "Verification blind spots and possible incremental build costs",
+      "freshBuildTiming": false
+    }
+  ],
+  "intentionalBoundaries": [
+    "U45_RECONCILIATION_HOLD and canonical semanticValidation UNAVAILABLE",
+    "Backward project decoding 1 through 21",
+    "Legacy worker framing and probe compatibility",
+    "Windows TODO and GitHub CI deferral"
+  ],
+  "cachedCompilationDatabase": {
+    "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/compile_commands.json",
+    "sha256": "b24b6ab5d4e79ca87f7def858d55a2a3e63c98b48fde46b0d1bd1687e60f6172",
+    "entries": 882,
+    "uniqueFiles": 678,
+    "testFilesInMultipleEntries": 71,
+    "mostRepeated": [
+      [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_main.cpp",
+        124
+      ],
+      [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/phase12c/src/live_fixture.cpp",
+        6
+      ],
+      [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_production_edit_ownership.cpp",
+        3
+      ],
+      [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_production_draft.cpp",
+        3
+      ],
+      [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/realtime-allocation-probe/main.cpp",
+        2
+      ]
+    ],
+    "freshlyRegenerated": false
+  },
+  "preservedImplementationFiles": [
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "sha256": "a136e4b172df503fe68b1fe598a4d93ce6adc57fdb62bb839245b283cde5eb70",
+      "compiledOrVerifiedByThisAudit": false
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_sample_review_cli.cpp",
+      "sha256": "2ac00d98f0d9551a1c99ea34d681be31d8866fd06b14433ed09a1afeb64f461a",
+      "compiledOrVerifiedByThisAudit": false
+    }
+  ],
+  "citedSources": [
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt",
+      "repositoryPath": "CMakeLists.txt",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99",
+      "citedLines": [
+        15,
+        218,
+        460,
+        602,
+        658,
+        821,
+        998
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/DESIGN.md",
+      "repositoryPath": "DESIGN.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "b4e7c3b25134c0ceca3c1e148fa3b789b28567c2be1a449bfd725f5888192ba8",
+      "citedLines": [
+        5
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/README.md",
+      "repositoryPath": "README.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "7411610d706fcb18ce6905caa6e5035394ee783868f363eccab9518b319140ea",
+      "citedLines": [
+        51,
+        74,
+        76,
+        514,
+        601
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SBOM.spdx.json",
+      "repositoryPath": "SBOM.spdx.json",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "e2ec22db2f65e06a832d70fac2198ab42cf890461e476110509719e1173bcce7",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+      "repositoryPath": "SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "6c6a8b8e51bdae73d0531d828e5e6c2d61e38cfc305e75f0a109b9dbf7585c1c",
+      "citedLines": [
+        52
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+      "repositoryPath": "SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "89d15208b149c827ada80b02a79f2adc0b0643cc610165c5be69944ffd2a78eb",
+      "citedLines": [
+        50
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+      "repositoryPath": "VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "635606cfd10be803612dfcb47cf84651796a06860ff34dc8343705eac20c9c01",
+      "citedLines": [
+        289
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-singer-pilot/main.cpp",
+      "repositoryPath": "apps/seam-singer-pilot/main.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "09fe89b62d9e8ffc92310826027627e71ac60a8ccc42650f18be6d49de170f3e",
+      "citedLines": [
+        28
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "repositoryPath": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "be7288036f5f48f00fbfe5bb0dcfb634bdbc4110596cfb28219ee0a022dd6c0f",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-voicebank-studio-native/studio_app.cpp",
+      "repositoryPath": "apps/seam-voicebank-studio-native/studio_app.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "307e93aa6451f8ba4948c4d8e2b63f27ad4bc7c3bc509c0edbb21ef786d9020b",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/REMAINING_TASKS_KO.md",
+      "repositoryPath": "docs/REMAINING_TASKS_KO.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "4c1ae9bfec09a0d73dc47f5a0b7654ffcfd35bb3acd12b0fb7b9b44840116fbb",
+      "citedLines": [
+        30
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/STATUS_KO.md",
+      "repositoryPath": "docs/STATUS_KO.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "e5db526f001433ef7559d58eb068202e6f760bd70eedfbbe068880fd3f41506f",
+      "citedLines": [
+        3
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/NEURAL_PHONETIC_CONDITIONING.md",
+      "repositoryPath": "docs/formats/NEURAL_PHONETIC_CONDITIONING.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "d9544b258b591e27918574ceaf21f8278d183b6496a79d9fd307c69e0f6e45ef",
+      "citedLines": [
+        3,
+        194
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/LISTENING_PACKET_002_GUIDE_2026-10-04.md",
+      "repositoryPath": "docs/implementation/LISTENING_PACKET_002_GUIDE_2026-10-04.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "20b0d99366b5320c91c0e187f7cc0ee655ea4bc5f2f762e2d956dc61d537d4e0",
+      "citedLines": [
+        32
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/U45_TYPED_AUDIT_RECONCILIATION.md",
+      "repositoryPath": "docs/implementation/U45_TYPED_AUDIT_RECONCILIATION.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "df8c4f9281d0dcb12539c2c5c7b49eb7cb0e4799cd0f23433819c19562a5ca40",
+      "citedLines": [
+        28
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/phase13a/mandatory-validation-matrix.json",
+      "repositoryPath": "docs/phase13a/mandatory-validation-matrix.json",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "c0de06d13ea95943b836ccf58bbe65d5c5abf13a8c534bdc505f1b4cf35cb673",
+      "citedLines": [
+        22
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/product/full-product-beta-contract.json",
+      "repositoryPath": "docs/product/full-product-beta-contract.json",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+      "citedLines": [
+        7303
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/include/seam/authoring/generation_campaign.hpp",
+      "repositoryPath": "libs/seam-authoring-runtime/include/seam/authoring/generation_campaign.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "028c774ba5dd7e69e39ddc81cfb5f7457aed4c174de619cf21b9e4b94c834c21",
+      "citedLines": [
+        81,
+        116
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp",
+      "repositoryPath": "libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "df0512b91a5837fb92198b99ef56e6109e20d87fbb566b75c3a86c21a53ba25f",
+      "citedLines": [
+        4
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/export_service.cpp",
+      "repositoryPath": "libs/seam-authoring-runtime/src/export_service.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "26d6d31aa30ef6ac149703c6ac68aca221cc94d27ef9b5432752baf3df043ded",
+      "citedLines": [
+        689
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/generation_campaign_advance.cpp",
+      "repositoryPath": "libs/seam-authoring-runtime/src/generation_campaign_advance.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "84bfd25a4b07768955292657c5c11c512ec057226023ab65aaa6667e774563d9",
+      "citedLines": [
+        331
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+      "repositoryPath": "libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "b5103d08d797bb10ccdb53c5b79de33c27bc759aedbbdf123948a39f27511ec5",
+      "citedLines": [
+        99
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-candidate-packaging/src/candidate_package.cpp",
+      "repositoryPath": "libs/seam-candidate-packaging/src/candidate_package.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "c65183e23c459fe70bbdb0c7d494bdff32a7f54bdd55cbaa252d2452741cac0e",
+      "citedLines": [
+        239
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-clap-editor/src/editor_runtime_paint.cpp",
+      "repositoryPath": "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "f3a6161cf00ca494eee87c15b013fe0ca6a21253d3655caef265c544c7b0b350",
+      "citedLines": [
+        116
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-formats/include/seam/formats/project_json.hpp",
+      "repositoryPath": "libs/seam-formats/include/seam/formats/project_json.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "1e5512815bf0ad318c4330998dbd57ae580d5a053043528b4f136ef387897249",
+      "citedLines": [
+        24
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-formats/src/project_json.cpp",
+      "repositoryPath": "libs/seam-formats/src/project_json.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "5d6227aa78eca5b2358fa66a878278b231aa7eaa1942de8ebb5b842e48d22057",
+      "citedLines": [
+        706,
+        779
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+      "repositoryPath": "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "ad6346cde5ba5b290cebc30c1247fac6ea880354542c27e778522fd431137660",
+      "citedLines": [
+        104
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/design/shell_overlays.cpp",
+      "repositoryPath": "libs/seam-native-ui/src/design/shell_overlays.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "5fa54432e5a1582c8f4429bfdd24816b88643e635eb5e4fe42bc2dcc1a2ff3ea",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/design/sing_shell.cpp",
+      "repositoryPath": "libs/seam-native-ui/src/design/sing_shell.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "42b04c0c181a5905856a38110774eb917270fcf8b072a3993c09711600533833",
+      "citedLines": [
+        872
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/editor_controller.cpp",
+      "repositoryPath": "libs/seam-native-ui/src/editor_controller.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "40b23328f7e43890d09783863113bfec1bcebdfefd6ac34abeb5c682a5bd0ffa",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/editor_scene.cpp",
+      "repositoryPath": "libs/seam-native-ui/src/editor_scene.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "f181037698d56baa7fc6b9d2b5b9698f515313382483360ceb5bd77a60372574",
+      "citedLines": [
+        191
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp",
+      "repositoryPath": "libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "229c197a2e595d86aa393be625d99e836d49b7da55979ece5e9cc24cba3582c3",
+      "citedLines": [
+        14,
+        43
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/neural_phrase_backend.cpp",
+      "repositoryPath": "libs/seam-neural-synthesis/src/neural_phrase_backend.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "da82cadd6942dea025bcc4012c020783233a100df301947a4070ae7802df5389",
+      "citedLines": [
+        125,
+        348,
+        356
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/worker_protocol.cpp",
+      "repositoryPath": "libs/seam-neural-synthesis/src/worker_protocol.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "9f928518705d4fc1453633e923e96f7a7bc0ed7e5cbf04c18cbec5e96369588d",
+      "citedLines": [
+        24,
+        315
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/include/seam/platform/helper_process.hpp",
+      "repositoryPath": "libs/seam-platform/include/seam/platform/helper_process.hpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "8d296aa956b9ab7f51033b2c1821c5d8fe3e1dd16bdfc2efc155ed40f286d6ab",
+      "citedLines": [
+        29
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/src/helper_process.cpp",
+      "repositoryPath": "libs/seam-platform/src/helper_process.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "e814f5e8a8e11f37c2a965de1eeb85365d8af4ad5ddfe74d580c792b7f7de221",
+      "citedLines": [
+        424,
+        460
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-standalone/src/application_controller.cpp",
+      "repositoryPath": "libs/seam-standalone/src/application_controller.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "874d1ff1c5f6e9806f504787efae7840f4c11aa7e7e313c31484608fba23fd59",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-standalone/src/native_editor_app.cpp",
+      "repositoryPath": "libs/seam-standalone/src/native_editor_app.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "21a2b7cffa93aac7e78bcaa5f8680fefbfff2a3419410b808536cebfd9047a79",
+      "citedLines": [
+        2094
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-voicebank-production/src/resource_candidate.cpp",
+      "repositoryPath": "libs/seam-voicebank-production/src/resource_candidate.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "8be00b535a71bcffb64badd74b538d365018486e688454c1cfea91853a8c7b51",
+      "citedLines": [
+        674
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/phase13a/dependency-lock.json",
+      "repositoryPath": "phase13a/dependency-lock.json",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "ba882f23a14a7a4cb3ebe59bd881385460af7fffd5fbfa2c38819da907fde02b",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/generate_phase13a_evidence.py",
+      "repositoryPath": "scripts/generate_phase13a_evidence.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "a015c91b8f13deee75bd3fb753e8216bb7b29c3a407d471bb66421adcd3e8ee3",
+      "citedLines": [
+        80
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_phase13a_contracts.py",
+      "repositoryPath": "scripts/verify_phase13a_contracts.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "144cfd07e39065c60743168d4c985385f858191ad690f076c0479acb4be386d5",
+      "citedLines": [
+        48
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_sample_review_cli.cpp",
+      "repositoryPath": "tests/test_sample_review_cli.cpp",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "d133b345db66be0ebc0464a84b6619732411171244d5cc760e1c2a7556780315",
+      "citedLines": [
+        47
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_singer_pilot_cli.py",
+      "repositoryPath": "tests/test_singer_pilot_cli.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "0f2c812f612f9dab48b85c16334672aa9dcf542e45ded783bc52f1a3db66043b",
+      "citedLines": []
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/external_beta/full_product_gate.py",
+      "repositoryPath": "tools/external_beta/full_product_gate.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "6ca576963eab5c1bbd38a7f6eef185c22dadf143568173337327b146feaea685",
+      "citedLines": [
+        1,
+        65
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/neural_runtime/README.md",
+      "repositoryPath": "tools/neural_runtime/README.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "8945a2f6ac43a8d6e24b81273e079de3585e8346c5834136623bdc5ecbf0c02a",
+      "citedLines": [
+        254,
+        327
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/README.md",
+      "repositoryPath": "tools/singing_quality/README.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "dfa3dc80bc6515f5846ebdbe45ba53785a9364f6c6c653d760f33c5f74d91d43",
+      "citedLines": [
+        149
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/build_listener_packet_002.py",
+      "repositoryPath": "tools/singing_quality/build_listener_packet_002.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "ae943ee4849d24baf9a79fdc56dca744a2614efe9863156e5c41cdb71a61d1ff",
+      "citedLines": [
+        25
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/README.md",
+      "repositoryPath": "tools/voice_model_training/README.md",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "444738c51dc1414315bed1db80ae373c5b84063f66e6a7e602c1a72ccad57d93",
+      "citedLines": [
+        39
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_encoder_denoiser_crossover.py",
+      "repositoryPath": "tools/voice_model_training/acoustic_encoder_denoiser_crossover.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "a53d077fe84649d0df0d03ef3dbbbe10f291d9c67bd2a9f2774dce5b4477d212",
+      "citedLines": [
+        170
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_gradient_probe.py",
+      "repositoryPath": "tools/voice_model_training/acoustic_gradient_probe.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "34e9dee8102d6632681e203cb50fcc39f0d3409f42e03483a0435caaf599c1ed",
+      "citedLines": [
+        201
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_sampler_trace.py",
+      "repositoryPath": "tools/voice_model_training/acoustic_sampler_trace.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "e80e8035d770edd57f8f0a541dfe6ba9a576bc65c8edbf89fc214e6bf535114b",
+      "citedLines": [
+        243
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/prepare_captured_teacher.py",
+      "repositoryPath": "tools/voice_model_training/prepare_captured_teacher.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "b1002a8d0b0b2446b929232d63448334236b5729331b3c6bac801e794cde7cf0",
+      "citedLines": [
+        74
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/render_frozen_evaluation.py",
+      "repositoryPath": "tools/voice_model_training/render_frozen_evaluation.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "59911c32f4554779962d2de6e23aeb361b6a17beab44dc610210ff790d6351d3",
+      "citedLines": [
+        65
+      ]
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/test_prepare_captured_teacher.py",
+      "repositoryPath": "tools/voice_model_training/test_prepare_captured_teacher.py",
+      "gitRevision": "dd20bf1690a23d1d04ecb0d8ce70c44086da3d07",
+      "sha256": "4aa93a1bd00834ef8963b16bd5b79cc5beeaa7d5e0a43cd4d58492ff369cb77e",
+      "citedLines": [
+        109
+      ]
+    }
+  ],
+  "reportSha256": "1ca1dc66227212b2ba93fb7f3fe114bcc393c4d77ad9822d2d55d3a52453179f",
+  "validationMatrixCiConfiguredOccurrences": 14,
+  "documentValidation": {
+    "allAbsoluteLocalLinksExist": true,
+    "allCitedLineNumbersInRange": true,
+    "citedSourceFiles": 55,
+    "sourceHashesBoundToAuditBaseline": true,
+    "workingSourcesMatchBaselineExceptTwoPreservedPreexistingFiles": true,
+    "preservedImplementationHashesMatch": true,
+    "inventoryArithmeticChecked": true,
+    "validationCorrections": [
+      "Initial source-comparison assertion omitted one of the two known dirty files; validator corrected to exempt both and verify their exact original hashes.",
+      "Source closure after document creation refused the two not-yet-indexed report files; both are included in the report-only commit and closure is rerun after staging."
+    ]
+  }
+}
