@@ -15,6 +15,24 @@
 #include <signal.h>
 #include <unistd.h>
 #endif
+
+// The supervisor deliberately supplies an empty environment. Give macOS
+// sanitizer runtimes an absolute system symbolizer so their PATH-discovery
+// warnings do not contaminate the probe's exact stderr contract. Keep error
+// reporting and symbolization enabled; no environment inheritance is needed.
+#if defined(__APPLE__) && defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#include <sanitizer/asan_interface.h>
+extern "C" const char* __asan_default_options() {
+  return "external_symbolizer_path=/usr/bin/atos";
+}
+#elif __has_feature(thread_sanitizer)
+#include <sanitizer/tsan_interface.h>
+extern "C" const char* __tsan_default_options() {
+  return "external_symbolizer_path=/usr/bin/atos";
+}
+#endif
+#endif
 namespace {
 bool hasSecretEnvironment() {
 #if defined(_WIN32)
