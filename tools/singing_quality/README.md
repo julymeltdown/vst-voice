@@ -1,5 +1,14 @@
 # U1 auditory diagnostic baseline
 
+## Tool lifecycle — 2026-10-11
+
+| Command | Current classification | Input/output boundary |
+|---|---|---|
+| `listener_packet_003.py` | Current explicit-input diagnostic, partial | Supplied request and pinned renderer/source/tool identities; new output only. Dry procedural Q1 still refuses; no valid formal packet or human acceptance is claimed. |
+| `build_listener_packet_002.py` | Archived reproduction; not import-safe | Fixed local corpus, recipe and `/tmp` renderer/Q3 inputs; creates temporary output and runs at module top level. Never import it for discovery or substitute newer inputs. |
+
+See [the source/hash and fixed-input inventory](../../docs/implementation/HISTORICAL_TOOL_LIFECYCLE_2026-10-11.md). Preserve captured r2 packet/script bytes; packet 003 is not a reconstruction of missing r2 inputs.
+
 This packet reproduces a narrow technical baseline. It makes no musical approval or release-readiness decision. The existing public-domain bank intentionally gives eight phoneme labels the same 0.55-second spoken recording. Its original source, provenance, notice, README and exact bytes remain part of the corpus. Listen to the dry vocals with those limitations visible.
 
 The checked-in corpus contains an original 40-second melody with a one-second lead-in, plus a short unequal-note/rest case. Each project is rendered twice: the bank's declared renderer choices, then forced raw rendering. Float32 mono dry audio preserves measured amplitudes. Per-phrase reports retain snapshot/ABI/resource hashes, target timing, actual placement timing, requested and actual renderers, fallback explanations, timing issues and waveform statistics. The existing voicebank CLI adds measured pitch frames, a waveform and a spectrogram. Target MIDI notes and measured pitch are separate records; this baseline does not score them against a musical threshold.

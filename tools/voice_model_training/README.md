@@ -1,5 +1,15 @@
 # Original voice model production
 
+## Diagnostic lifecycle — 2026-10-11
+
+| Module | Lifecycle and fixed dependency | Output / current route |
+|---|---|---|
+| `acoustic_encoder_denoiser_crossover` | Archived e9 control/treatment intervention with fixed local checkpoint receipt pins and clean DiffSinger revision | New output required; directory is created before subsequent input admission. No exact portable replacement. |
+| `acoustic_sampler_trace` | Archived e9 pair trajectory with fixed training phrases/seed/steps | Same partial-output boundary; current frozen evaluation is a new evidence route, not reproduction of this experiment. |
+| `acoustic_gradient_probe` | Archived e8 parent plus e9 pair, fixed phrases/timesteps | Teacher-forced read-only diagnostic; not training, sampler or qualification evidence. |
+
+The modules have main guards but hide historical checkpoint choices behind explicit config arguments. Treat them as reproduction tools, not portable defaults. [Exact paths, receipt/source revisions and hashes](../../docs/implementation/HISTORICAL_TOOL_LIFECYCLE_2026-10-11.md) must match before a deliberate reproduction. Do not substitute newer data silently. Current explicit-input preparation/training/frozen-evaluation workflows below retain their admission requirements; a port of an archived experiment is separate work.
+
 Explicit-silence score supervision permits rest-only segments with no sung
 syllables only when silence indices own every acoustic phone. Rest notes must
 still partition the full sample clock without pitch, syllable or slur claims.

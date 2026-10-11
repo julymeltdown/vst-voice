@@ -1,5 +1,7 @@
 # Listening packet 002 — the three questions measurement could not answer
 
+> **Archived reproduction notice — 2026-10-11.** The observations below describe the original packet/revision and remain unchanged. The tracked packet-002 builder uses fixed local inputs and performs work at import time. See [tool lifecycle and exact input/source bindings](HISTORICAL_TOOL_LIFECYCLE_2026-10-11.md). Packet 003 is the current explicit-input diagnostic route, remains partial and refuses current dry-route Q1. No new packet, recovered historical PASS or human judgment is supplied by this notice.
+
 Date: 2026-10-04. **This packet is NOT_REVIEWED.** Nothing here is a musical judgement. It gives a
 reviewer exactly three decisions and explains what each answer unblocks.
 

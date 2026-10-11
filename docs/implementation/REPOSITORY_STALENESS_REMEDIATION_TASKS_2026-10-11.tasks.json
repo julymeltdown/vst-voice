@@ -265,7 +265,8 @@
       "sharedFilesWith": [
         "RS-01"
       ],
-      "verificationResult": "Rebuilt pilot and CTest 1/1 PASS (9.29s), including side-effect-free help/error discovery, native export capture, all retained modes/determinism/no-overwrite"
+      "verificationResult": "Rebuilt pilot and CTest 1/1 PASS (9.29s), including side-effect-free help/error discovery, native export capture, all retained modes/determinism/no-overwrite",
+      "integratedCommit": "432d6bb6563fee53b298d52a86db9316d489a9b2"
     },
     {
       "id": "RS-07",
@@ -276,7 +277,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/build_listener_packet_002.py",
@@ -299,7 +300,8 @@
       "commitUnits": [
         "Lifecycle inventory and routing"
       ],
-      "excludedWork": "Historical tool ports require a concrete supported use; no generic experiment framework or training run"
+      "excludedWork": "Historical tool ports require a concrete supported use; no generic experiment framework or training run",
+      "verificationResult": "Static AST/source/hash comparison for five tool sources and fixed receipt pins, 56 inline file links available, diff/source closure; no imports, training or packet generation"
     },
     {
       "id": "RS-08",
