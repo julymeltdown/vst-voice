@@ -95,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         ids = {item.get("id") for item in matrix.get("targets", [])}
         if not required_ids.issubset(ids):
             errors.append(f"mandatory matrix is missing ids: {sorted(required_ids - ids)}")
+        if any(item.get("implementationState") == "CI_CONFIGURED" for item in matrix.get("targets", [])):
+            errors.append("current matrix must not claim configured GitHub jobs while orchestration is deferred")
         if any(item.get("runtimeResult") == "PASS" for item in matrix.get("targets", [])):
             errors.append("checked-in Phase 13A baseline must not contain fabricated PASS results")
     except (OSError, json.JSONDecodeError) as exc:

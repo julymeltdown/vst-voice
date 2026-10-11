@@ -40,6 +40,37 @@ def find_clap(build_root: Path) -> tuple[Path, Path]:
     raise FileNotFoundError(f"ProjectSEAMEditor.clap and resources not found below {build_root}")
 
 
+def build_evidence(*, package: Path, package_manifest: dict, gate_results: dict,
+                   local_executed: dict) -> dict:
+    """Construct a local summary from completed checks; fixtures are not receipts."""
+    required = {"contractTests", "sourceContract", "dependencyLock",
+                "linuxUnsignedDeveloperPackage", "linuxInstallUninstallSmoke"}
+    if set(local_executed) != required or any(value != "PASS" for value in local_executed.values()):
+        raise Phase13AEvidenceError("Local evidence requires all declared checks to have passed")
+    evidence = {
+        "schemaVersion": 1,
+        "phase": "13A",
+        "implementationState": "SOURCE_READY",
+        "acceptanceStatus": "BLOCKED",
+        "localExecuted": dict(local_executed),
+        "externalMandatory": {
+            "vst3BuildAndValidator": "NOT_RUN",
+            "auv2BuildAndAuval": "NOT_RUN",
+            "windowsAuthenticode": "NOT_RUN",
+            "macosNotarization": "NOT_RUN",
+            "cleanOsInstallers": "NOT_RUN",
+            "commercialDawMatrix": "NOT_RUN",
+            "phase12cExact7200SecondSoak": "NOT_RUN",
+        },
+        "developerPackage": {
+            "path": package.name,
+            "manifest": package_manifest,
+        },
+        "releaseGates": gate_results,
+    }
+    return evidence
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate reproducible local Phase 13A source-ready evidence")
     parser.add_argument("--root", type=Path, default=ROOT)
@@ -79,33 +110,11 @@ def main(argv: list[str] | None = None) -> int:
 
     matrix = release_gate.load_matrix(root / "docs" / "phase13a" / "mandatory-validation-matrix.json")
     gate_results = {gate: release_gate.evaluate_matrix(matrix, gate).as_dict() for gate in ("G2", "G3", "G4", "G5")}
-    evidence = {
-        "schemaVersion": 1,
-        "phase": "13A",
-        "implementationState": "CI_CONFIGURED",
-        "acceptanceStatus": "BLOCKED",
-        "localExecuted": {
-            "contractTests": "PASS",
-            "sourceContract": "PASS",
-            "dependencyLock": "PASS",
-            "linuxUnsignedDeveloperPackage": "PASS",
-            "linuxInstallUninstallSmoke": "PASS",
-        },
-        "externalMandatory": {
-            "vst3BuildAndValidator": "NOT_RUN",
-            "auv2BuildAndAuval": "NOT_RUN",
-            "windowsAuthenticode": "NOT_RUN",
-            "macosNotarization": "NOT_RUN",
-            "cleanOsInstallers": "NOT_RUN",
-            "commercialDawMatrix": "NOT_RUN",
-            "phase12cExact7200SecondSoak": "NOT_RUN",
-        },
-        "developerPackage": {
-            "path": package.name,
-            "manifest": package_manifest,
-        },
-        "releaseGates": gate_results,
-    }
+    evidence = build_evidence(package=package, package_manifest=package_manifest,
+        gate_results=gate_results, local_executed={
+            "contractTests": "PASS", "sourceContract": "PASS", "dependencyLock": "PASS",
+            "linuxUnsignedDeveloperPackage": "PASS", "linuxInstallUninstallSmoke": "PASS",
+        })
     (output / "phase13a-evidence.json").write_text(
         json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(evidence, ensure_ascii=False, indent=2))

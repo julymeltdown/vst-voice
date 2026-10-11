@@ -19,7 +19,7 @@
       "category": "validator",
       "name": "Official CLAP Validator on Linux",
       "platform": "linux",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G2", "G3", "G4", "G5"],
       "evidence": []
@@ -39,7 +39,7 @@
       "category": "runtime",
       "name": "Windows CLAP Runtime",
       "platform": "windows",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G3", "G4", "G5"],
       "evidence": []
@@ -49,7 +49,7 @@
       "category": "runtime",
       "name": "macOS CLAP Runtime",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G3", "G4", "G5"],
       "evidence": []
@@ -59,7 +59,7 @@
       "category": "format",
       "name": "Linux VST3 Build",
       "platform": "linux",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -69,7 +69,7 @@
       "category": "format",
       "name": "Windows VST3 Build",
       "platform": "windows",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -79,7 +79,7 @@
       "category": "format",
       "name": "macOS VST3 Build",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -89,7 +89,7 @@
       "category": "validator",
       "name": "Steinberg VST3 Validator on Linux",
       "platform": "linux",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -99,7 +99,7 @@
       "category": "validator",
       "name": "Steinberg VST3 Validator on Windows",
       "platform": "windows",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -109,7 +109,7 @@
       "category": "validator",
       "name": "Steinberg VST3 Validator on macOS",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -119,7 +119,7 @@
       "category": "format",
       "name": "macOS AUv2 Build",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -129,7 +129,7 @@
       "category": "validator",
       "name": "Apple auval",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -159,7 +159,7 @@
       "category": "installer",
       "name": "Windows Clean OS Install, Update and Uninstall",
       "platform": "windows",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []
@@ -169,7 +169,7 @@
       "category": "installer",
       "name": "macOS Clean OS Install, Update and Uninstall",
       "platform": "macos",
-      "implementationState": "CI_CONFIGURED",
+      "implementationState": "SOURCE_READY",
       "runtimeResult": "NOT_RUN",
       "mandatoryFor": ["G4", "G5"],
       "evidence": []

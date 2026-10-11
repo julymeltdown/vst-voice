@@ -113,7 +113,8 @@
       ],
       "integrationConstraint": "Preserve and reconcile pre-existing uncommitted CLI-test changes; do not count the shell workaround as landed completion",
       "platformLimit": "Windows branch must retain equivalent source semantics; macOS testing is not Windows runtime acceptance",
-      "verificationResult": "Full dependent Release build; 4 focused CTest entries PASS; separately compiled committed CLI test content plus RS-02: 24/24 PASS. Dirty CLI suite retains unrelated pending audio-peak failure (24/25). Windows source review only."
+      "verificationResult": "Full dependent Release build; 4 focused CTest entries PASS; separately compiled committed CLI test content plus RS-02: 24/24 PASS. Dirty CLI suite retains unrelated pending audio-peak failure (24/25). Windows source review only.",
+      "integratedCommit": "e63d5556636a23a3a8d3a1dd8b67042818518c4f"
     },
     {
       "id": "RS-03",
@@ -124,7 +125,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/generate_phase13a_evidence.py",
@@ -146,7 +147,8 @@
       ],
       "commitUnits": [
         "Coordinated generator, matrix, and focused regressions"
-      ]
+      ],
+      "verificationResult": "Phase13A 192 tests: 188 PASS, 4 optional native-input skips; release identity 9/9 PASS; contracts PASS; G2-G5 blocked without schema errors"
     },
     {
       "id": "RS-04",
