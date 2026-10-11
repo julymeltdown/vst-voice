@@ -48,7 +48,7 @@ struct NeuralWorkerRunOptions final {
   // Trusted package launch contract; independent of SNW1 frame version.
   std::uint32_t protocolVersion{1U};
   // Selected by the admitted render snapshot, never by bundle-supplied code.
-  // Protocol-2 execution refuses zero instead of silently running a default.
+  // Protocol-3 bundle execution requires 1..1000; zero never selects a default.
   std::int64_t inferenceSteps{0};
 };
 

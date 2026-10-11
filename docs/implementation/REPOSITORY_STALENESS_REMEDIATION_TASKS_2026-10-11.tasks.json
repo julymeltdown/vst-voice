@@ -148,7 +148,8 @@
       "commitUnits": [
         "Coordinated generator, matrix, and focused regressions"
       ],
-      "verificationResult": "Phase13A 192 tests: 188 PASS, 4 optional native-input skips; release identity 9/9 PASS; contracts PASS; G2-G5 blocked without schema errors"
+      "verificationResult": "Phase13A 192 tests: 188 PASS, 4 optional native-input skips; release identity 9/9 PASS; contracts PASS; G2-G5 blocked without schema errors",
+      "integratedCommit": "4582a7f569e8d1fb616748d23011e727cf837f53"
     },
     {
       "id": "RS-04",
@@ -201,7 +202,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/NEURAL_PHONETIC_CONDITIONING.md",
@@ -228,7 +229,8 @@
       "commitUnits": [
         "Neural documentation and comment correction"
       ],
-      "excludedWork": "No global protocol-default change or mandatory new options factory"
+      "excludedWork": "No global protocol-default change or mandatory new options factory",
+      "verificationResult": "Direct source comparison of codecs/package resolver/launchers/runner; documentation links, diff and tracked closure. No runtime behavior change or new runtime-test claim."
     },
     {
       "id": "RS-06",

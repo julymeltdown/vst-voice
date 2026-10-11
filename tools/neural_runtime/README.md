@@ -328,7 +328,11 @@ The fixture probe accepts legacy conditioned metadata v2 and bundle-conditioned
 v3. V3 explicitly binds `bundleContentHash` to the frozen manifest/model identity
 and returns response v3 with both bundle and canonical request hashes. SNW1 binary
 framing stays version 1. The ordinary legacy worker launcher deliberately refuses
-v3 until the distinct production v2 launch/deployment contract is implemented.
+v3 by design: it serves protocol 1. The distinct `runNeuralBundleWorker`
+production protocol-3 launch is implemented and requires trusted bundle/deployment
+identity, explicit process budgets and 1–1000 admitted inference steps. Parseable
+protocol-2 packages remain diagnostic compatibility inputs, not production renders.
+See the [version matrix](../../docs/formats/NEURAL_PHONETIC_CONDITIONING.md#current-integration-contract--2026-10-11).
 
 `seam_onnx_runtime_probe --paired-request DIRECTORY MODEL_ID VERSION MANIFEST_SHA256`
 accepts one bounded SNW1 request on stdin (EOF required) and emits a binary

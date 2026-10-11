@@ -1,8 +1,39 @@
-# Neural phonetic conditioning — contract groundwork
+# Neural phonetic conditioning and worker contracts
 
-The current worker request v1 transmits F0/dynamics and a pronunciation hash,
+## Current integration contract — 2026-10-11
+
+Production authoring uses bundle-bound request/response metadata v3 and the protocol-3 worker launch. Framing remains SNW1 version 1. Legacy defaults and probe readers intentionally remain available; accepting their bytes does not admit them for a production render. Engineering execution with arithmetic fixtures does not qualify a learned singer or establish U36/U37 product acceptance.
+
+| Version dimension | Supported meaning | Source authority |
+|---|---|---|
+| SNW1 binary framing | Version 1 for all metadata kinds; F0/dynamics payload and bounded frame envelope | `worker_protocol.cpp` frame encoder/decoder |
+| Request/response metadata | v1 legacy, v2 phonetic conditioning, v3 bundle identity and canonical request binding | `decodeRequest` / `decodeResponse` in `worker_protocol.cpp` |
+| Helper package launch protocol | 1/2/3 decode and resolve; parseability is not render admission | `NeuralHelperPackage::decode`, `resolveNeuralHelperPackage` |
+| Legacy `runNeuralWorker` | Protocol 1; rejects bundle-bound requests | `neural_phrase_backend.cpp` |
+| Production `runNeuralBundleWorker` | Protocol 3; metadata v3, explicit 1–1000 inference steps, admitted identity and nonzero process budgets | `neural_phrase_backend.cpp` |
+
+Source files: [worker protocol](../../libs/seam-neural-synthesis/src/worker_protocol.cpp), [launch/resolution](../../libs/seam-neural-synthesis/src/neural_phrase_backend.cpp), and [production authoring runner](../../libs/seam-authoring-runtime/src/neural_phrase_runner.cpp).
+
+Obtain options from the trusted deployment descriptor using `loadNeuralHelperForModule` or typed package resolution. The expected package digest, surface build ID, loaded SEAM module and declared dependencies come from the application deployment owner. Hashing an arbitrary helper locally does not authorize it. Resolution verifies package-relative module/helper/dependency bytes and preserves the package's launch protocol.
+
+The trusted application then selects measured nonzero resident-memory, CPU and timeout ceilings, a bounded canonical bundle directory and its payload limit. `AuthoringNeuralPhraseRunner::create` checks the production protocol/budget combination and retains the selected manifest digest. During `render`, it compares the admitted snapshot's bundle identity, derives request conditioning, and copies `execution.inferenceSteps` into the worker options. `runNeuralBundleWorker` validates the 1–1000 range, budgets and byte-bound bundle metadata again; the child independently reloads/admit-checks the graph bytes before inference. Model/vocabulary/bundle identity and canonical response/request identity are separate checks.
+
+The current child invocation, constructed by the launcher rather than supplied by a bank, is:
+
+```text
+seam_neural_worker --seam-neural-worker-v3 BUNDLE_DIR MODEL_ID MODEL_VERSION \
+    BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS
+```
+
+`NeuralWorkerRunOptions` defaults to protocol 1 and zero resource ceilings/steps for legacy probes. Do not change those defaults or simply set `protocolVersion = 3` without trusted deployment options and admitted budgets. The production runner already refuses that incomplete combination. See [runtime guide](../../tools/neural_runtime/README.md#production-worker).
+
+## Historical integration sequence
+
+The sections below retain earlier implementation observations and their original verification numbers. Statements about gaps, local/uncommitted work and further work describe their stage in that sequence, not the current checkout. The current contract above and linked source take precedence.
+
+The initial worker request v1 transmitted F0/dynamics and a pronunciation hash,
 but no phonetic sequence. A hash cannot condition a model's pronunciation. This
-is a substantive U37 integration gap, separate from the absent qualified U36 model.
+was a U37 integration gap, separate from the absent qualified U36 model.
 
 `PhoneticConditioning` now represents a vocabulary hash and bounded token spans.
 Each span contains a uint32 token ID and uint64 start/end in output PCM frames
@@ -195,8 +226,10 @@ hashing it and treating that result as a trusted expected identity.
 
 `resolveNeuralHelperPackage` accepts an absolute package root, the absolute loaded
 SEAM module path, a typed `NeuralHelperPackage` deployment entry and the expected
-surface build ID. Build IDs must match, protocol version must be 1 (the SNW1
-transport), and at most 64 runtime dependency entries are allowed. The module,
+surface build ID. Build IDs must match and at most 64 runtime dependency entries are allowed.
+The initial resolver admitted launch protocol 1; the current resolver accepts
+1/2/3. This launch dimension is independent of SNW1 framing version 1. Production
+render selection requires protocol 3 and explicit budgets/steps as described above. The module,
 helper and every declared dependency have bounded file sizes and exact digests.
 
 All entry paths are relative, without dot/traversal components; resolved paths
@@ -229,8 +262,9 @@ come from a trusted deployment identity, not from the manifest itself or a bank.
 Schema 1 has exactly seven root fields: `formatId` (the literal
 `com.project-seam.neural-helper-package`), `schemaVersion`, `buildId`,
 `protocolVersion`, `module`, `helper`, and `dependencies`. Each file object has
-exactly `path`, `sha256`, and `maximumBytes`. Protocol version 1 denotes SNW1
-transport, not request metadata v1. Paths are portable UTF-8 slash-separated
+exactly `path`, `sha256`, and `maximumBytes`. `protocolVersion` is the helper
+launch contract (currently 1/2/3 parseable), independent of framing and metadata
+versions. The original manifest work covered protocol 1; current production uses 3. Paths are portable UTF-8 slash-separated
 relative names: empty, control-bearing, drive/ADS, backslash, dot/traversal,
 duplicate, and doubled-separator paths are rejected. Canonical filesystem
 containment and actual file digests are subsequently checked by the resolver.
