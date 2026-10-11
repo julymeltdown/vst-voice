@@ -78,8 +78,9 @@ class PrepareBundleTest(unittest.TestCase):
                 dict(key="0000000000000004:0", phone="a", startFrame=1024, endFrame=2048)])
         self.write_export()
 
-    def write_export(self):
-        files = {"project.seam": encode_report(self.project), self.path: encode_report(self.candidate),
+    def write_export(self, project_bytes=None):
+        files = {"project.seam": encode_report(self.project) if project_bytes is None else project_bytes,
+                 self.path: encode_report(self.candidate),
                  self.path.replace(".json", ".wav"): self.audio, self.recipe_ref["path"]: self.recipe}
         rows = []
         for name, payload in files.items():
@@ -106,24 +107,119 @@ class PrepareBundleTest(unittest.TestCase):
         self.assertEqual(midi, [60, 62])
         self.assertEqual(provenance["exportReceiptSha256"], self.digest)
 
-    def test_schema_19_keeps_single_recipe_capture_and_refuses_sample_pair(self):
-        for schema in (17, 18, 19):
-            self.project["schemaVersion"] = schema
+    def set_schema(self, schema, *, reading_hint=None, installation=None):
+        self.project["schemaVersion"] = schema
+        for lyric in self.project["vocalTracks"][0]["regions"][0]["lyrics"]:
+            if schema >= 20:
+                lyric["readingHint"] = reading_hint
+            else:
+                lyric.pop("readingHint", None)
+        if schema >= 21:
+            self.recipe_ref["installation"] = installation
+        else:
+            self.recipe_ref.pop("installation", None)
+
+    @staticmethod
+    def installed_reference():
+        return dict(distributionId="installed.test", distributionVersion="1",
+                    installedContentHash="a" * 64, engineId="seam.source-filter.v1",
+                    engineRevision=14, recipeEntry="runtime/recipe.json", packageDigest="", signerKeyId="")
+
+    def test_supported_schemas_keep_single_recipe_capture_and_refuse_sample_pair(self):
+        for schema in (17, 18, 19, 20, 21):
+            self.set_schema(schema)
             self.write_export()
-            self.assertEqual(self.capture()[1], self.audio)
-        self.project["schemaVersion"] = 20
-        self.write_export()
-        with self.assertRaisesRegex(ValueError, "schema 17/18/19"):
-            self.capture()
-        self.project["schemaVersion"] = 19
+            with self.subTest(schema=schema):
+                self.assertEqual(self.capture()[1], self.audio)
         self.project["vocalTracks"][0]["styleSelection"] = dict(
             origin="explicit", styleId="neutral", blend=dict(targetStyleId="soft", amount=0.5))
         self.write_export()
         with self.assertRaisesRegex(ValueError, "sample StyleBlend"):
             self.capture()
 
+    def test_unsupported_or_noninteger_schema_refused(self):
+        for schema in (16, 22, True, 20.0):
+            self.project["schemaVersion"] = schema
+            self.write_export()
+            with self.subTest(schema=schema), self.assertRaisesRegex(ValueError, "schema 17 through 21"):
+                self.capture()
+
+    def test_reading_hint_keeps_display_lyric_and_captured_phones(self):
+        for schema in (20, 21):
+            self.set_schema(schema, reading_hint="さ")
+            self.project["vocalTracks"][0]["regions"][0]["lyrics"][0]["surface"] = "差"
+            self.write_export()
+            candidate, _, surfaces, midi, provenance = self.capture()
+            with self.subTest(schema=schema):
+                self.assertEqual(surfaces, ["差", "ー"])
+                self.assertEqual(midi, [60, 62])
+                self.assertEqual([m["phone"] for m in candidate["markers"]], ["s", "a", "a"])
+                self.assertEqual(provenance["projectSha256"], hashlib.sha256(encode_report(self.project)).hexdigest())
+            # The scalar bound is not a UTF-8 byte bound, including supplementary characters.
+            self.set_schema(schema, reading_hint="\U0001f3b5" * 4096)
+            self.write_export()
+            self.assertEqual(self.capture()[1], self.audio)
+
+    def test_malformed_reading_hints_refuse_before_output(self):
+        for schema in (20, 21):
+            for hint in ("", "a" * 4097, False, 12, [], {}, "\ud800", "\udfff"):
+                self.set_schema(schema, reading_hint=hint)
+                self.write_export(project_bytes=json.dumps(self.project, ensure_ascii=True).encode("ascii"))
+                with self.subTest(schema=schema, hint=repr(hint)[:50]), self.assertRaisesRegex(ValueError, "readingHint"):
+                    self.capture()
+            self.set_schema(schema)
+            self.project["vocalTracks"][0]["regions"][0]["lyrics"][0].pop("readingHint")
+            self.write_export()
+            output = self.root / "refused"
+            with self.assertRaisesRegex(ValueError, "requires readingHint"):
+                prepare_bundle(export_root=self.root, receipt_sha256=self.digest, candidate_path=self.path,
+                    extractor="unused", output=output, source_id="source", song_id="song",
+                    session_id="session", lineage_id="lineage")
+            self.assertFalse(output.exists())
+
+    def test_portable_installation_metadata_does_not_require_original_tree(self):
+        for pins in (("", ""), ("b" * 64, "c" * 64)):
+            binding = self.installed_reference()
+            binding["packageDigest"], binding["signerKeyId"] = pins
+            self.set_schema(21, reading_hint="さ", installation=binding)
+            self.write_export()
+            _, payload, surfaces, _, provenance = self.capture()
+            self.assertEqual(payload, self.audio)
+            self.assertEqual(surfaces, ["さ", "ー"])
+            self.assertEqual(provenance["recipeSha256"], self.recipe_hash)
+            self.assertFalse((self.root / binding["recipeEntry"]).exists())
+            self.assertEqual(set(provenance), {"exportReceiptSha256", "projectSha256", "candidateSha256",
+                                              "sourceSha256", "recipeSha256", "candidatePath"})
+
+    def test_invalid_installation_metadata_refused(self):
+        valid = self.installed_reference()
+        invalid = [False, [], {}, {**valid, "unknown": "field"}]
+        invalid.extend({k: v for k, v in valid.items() if k != key} for key in valid)
+        invalid.extend({**valid, "engineRevision": n} for n in (True, 0, -1, 1.5, 0x100000000))
+        for key in ("distributionId", "distributionVersion", "engineId", "recipeEntry"):
+            invalid.extend({**valid, key: v} for v in (None, False, "", "x\n", "\ud800"))
+        invalid.extend({**valid, key: v} for key, v in
+                       (("distributionId", "あ" * 86), ("distributionVersion", "x" * 129),
+                        ("engineId", "x" * 257), ("recipeEntry", "x" * 1025)))
+        for key in ("installedContentHash", "packageDigest", "signerKeyId"):
+            invalid.extend({**valid, key: v} for v in (False, "A" * 64, "a" * 63, "not-a-digest"))
+        invalid.append({**valid, "installedContentHash": ""})
+        invalid.extend({**valid, "recipeEntry": v} for v in
+                       ("/recipe.json", "../recipe.json", "runtime//recipe.json", "./recipe.json",
+                        "runtime/../recipe.json", "runtime\\recipe.json", "C:recipe.json", "runtime/", "manifest.json"))
+        for value in invalid:
+            self.set_schema(21, installation=value)
+            self.write_export(project_bytes=json.dumps(self.project, ensure_ascii=True).encode("ascii"))
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "installation"):
+                self.capture()
+        self.set_schema(21)
+        self.recipe_ref.pop("installation")
+        self.write_export()
+        with self.assertRaisesRegex(ValueError, "requires installation"):
+            self.capture()
+
     def test_mutated_project_or_wav_or_metadata_is_rejected(self):
-        for name in ("project.seam", self.path, self.path.replace(".json", ".wav")):
+        for name in ("project.seam", self.path, self.path.replace(".json", ".wav"), self.recipe_ref["path"]):
             with self.subTest(name=name):
                 file = self.root / name
                 original = file.read_bytes()
@@ -181,6 +277,8 @@ class PrepareBundleTest(unittest.TestCase):
 
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy required")
     def test_complete_bundle_loads_targets_without_admitting_or_splitting(self):
+        self.set_schema(21, reading_hint="さ", installation=self.installed_reference())
+        self.write_export()
         output = self.root / "prepared"
         arguments = dict(export_root=self.root, receipt_sha256=self.digest, candidate_path=self.path,
                          extractor=Path("unused"), output=output, source_id="test", song_id="song",

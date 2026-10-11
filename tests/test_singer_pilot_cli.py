@@ -49,6 +49,30 @@ def _band_distance(left, right):
     return sum(abs(first - second) for first, second in zip(left, right))
 
 
+def _check_current_export_capture(root):
+    # Cross the real native writer/Python reader boundary, without mocking either.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools.voice_model_training.prepare_captured_teacher import capture_inputs
+    project_bytes = (root / "project.seam").read_bytes()
+    project = json.loads(project_bytes)
+    assert project["schemaVersion"] == 21
+    candidates = list((root / "candidates").glob("*.json"))
+    assert len(candidates) == 1
+    selected = candidates[0]
+    digest = hashlib.sha256((root / "receipt.json").read_bytes()).hexdigest()
+    candidate, audio, lyrics, midi, provenance = capture_inputs(
+        root, digest, selected.relative_to(root).as_posix())
+    assert candidate == json.loads(selected.read_bytes())
+    assert audio == selected.with_suffix(".wav").read_bytes()
+    assert provenance["exportReceiptSha256"] == digest
+    assert provenance["projectSha256"] == hashlib.sha256(project_bytes).hexdigest()
+    assert provenance["candidateSha256"] == hashlib.sha256(selected.read_bytes()).hexdigest()
+    assert provenance["sourceSha256"] == candidate["audioSha256"]
+    assert provenance["recipeSha256"] == candidate["recipeHash"]
+    assert len(lyrics) == len(midi) == 6
+    assert candidate["approval"] == "unapproved"
+
+
 def main():
     binary = Path(sys.argv[1]).resolve()
     with tempfile.TemporaryDirectory(prefix="seam-pilot-test-") as directory:
@@ -77,6 +101,8 @@ def main():
                         assert all(n["medianAbsoluteCents"] < 30 for n in pitch["notes"])
                         assert all(n["within50CentsFrames"] == n["analysisFrames"] for n in pitch["notes"])
             reports.append(report)
+            if name == "first":
+                _check_current_export_capture(root / name / "baseline")
         assert [row["sha256"] for row in reports[0]["runs"]] == [row["sha256"] for row in reports[1]["runs"]]
         before = (root / "first" / "pilot.json").read_bytes()
         rejected = subprocess.run([str(binary), str(root / "first")], capture_output=True, timeout=10)

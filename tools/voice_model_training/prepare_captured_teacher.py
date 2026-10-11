@@ -71,6 +71,52 @@ def _index(rows):
     return result
 
 
+def _validate_reading_hint(lyric):
+    # Schema 20/21 pronunciation intent is already reflected in captured phones.
+    # Validate it without replacing display text or deriving a second phone sequence.
+    if "readingHint" not in lyric:
+        raise ValueError("Schema 20/21 lyric requires readingHint")
+    hint = lyric["readingHint"]
+    if hint is not None and (not isinstance(hint, str) or not 1 <= len(hint) <= 4096
+                             or any(0xD800 <= ord(char) <= 0xDFFF for char in hint)):
+        raise ValueError("Lyric readingHint must be null or bounded Unicode scalar text")
+
+
+def _validate_installation(recipe):
+    # Mirror the selected reference's native codec/domain shape, not installed
+    # trust admission. A portable export retains pins without its original tree.
+    if "installation" not in recipe:
+        raise ValueError("Schema 21 recipe requires installation")
+    value = recipe["installation"]
+    if value is None:
+        return
+    fields = {"distributionId", "distributionVersion", "installedContentHash", "engineId",
+              "engineRevision", "recipeEntry", "packageDigest", "signerKeyId"}
+    invalid = "Schema 21 installation reference is invalid"
+    if (not isinstance(value, dict) or set(value) != fields
+            or any(not isinstance(value[key], str) for key in fields - {"engineRevision"})
+            or type(value["engineRevision"]) is not int or not 1 <= value["engineRevision"] <= 0xFFFFFFFF):
+        raise ValueError(invalid)
+    for key, limit in (("distributionId", 256), ("distributionVersion", 128),
+                       ("engineId", 256), ("recipeEntry", 1024)):
+        text = value[key]
+        try:
+            encoded = text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(invalid) from exc
+        if not 1 <= len(encoded) <= limit or any(byte < 32 or byte == 127 for byte in encoded):
+            raise ValueError(invalid)
+    for key in ("installedContentHash", "packageDigest", "signerKeyId"):
+        if key != "installedContentHash" and value[key] == "":
+            continue
+        if not re.fullmatch(r"[0-9a-f]{64}", value[key]):
+            raise ValueError(invalid)
+    entry = value["recipeEntry"]
+    if (entry == "manifest.json" or "\\" in entry or ":" in entry
+            or any(part in ("", ".", "..") for part in entry.split("/"))):
+        raise ValueError(invalid)
+
+
 def capture_inputs(root, receipt_sha256, candidate_path):
     """Capture selected project/metadata/audio/recipe from one committed export."""
     root = Path(root).resolve(strict=True)
@@ -101,9 +147,9 @@ def capture_inputs(root, receipt_sha256, candidate_path):
         return _bytes(path, files[name], limit) if binary else load_config(path, files[name])
     project, candidate = read("project.seam"), read(candidate_path)
     if (not isinstance(project, dict) or project.get("formatId") != "com.project-seam.project"
-            or type(project.get("schemaVersion")) is not int or not 17 <= project["schemaVersion"] <= 19
+            or type(project.get("schemaVersion")) is not int or not 17 <= project["schemaVersion"] <= 21
             or not isinstance(candidate, dict)):
-        raise ValueError("Require captured project schema 17/18/19 and candidate metadata")
+        raise ValueError("Require captured project schema 17 through 21 and candidate metadata")
     if _id(project.get("projectId")) != _id(receipt.get("projectId")):
         raise ValueError("Receipt and project identity differ")
     track = _index(project.get("vocalTracks")).get(int(match[1], 16))
@@ -121,11 +167,16 @@ def capture_inputs(root, receipt_sha256, candidate_path):
             or recipe.get("version") != candidate.get("recipeVersion")
             or recipe.get("style") != candidate.get("style")):
         raise ValueError("Captured track and candidate recipe identity differ")
+    if project["schemaVersion"] >= 21:
+        _validate_installation(recipe)
     recipe_path = recipe.get("path")
     if not isinstance(recipe_path, str) or files.get(recipe_path) != recipe["contentHash"]:
         raise ValueError("Recipe must be byte-bound in the same export receipt")
     read(recipe_path, binary=True)
     notes, lyrics = _index(region.get("notes")), _index(region.get("lyrics"))
+    if project["schemaVersion"] >= 20:
+        for lyric in lyrics.values():
+            _validate_reading_hint(lyric)
     markers = candidate.get("markers")
     if not isinstance(markers, list) or not 1 <= len(markers) <= 4096:
         raise ValueError("Captured markers are missing or exceed bounds")
