@@ -1,0 +1,963 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Planning companion, not a release-admission schema or executed goal",
+  "date": "2026-10-11",
+  "timezone": "Asia/Seoul",
+  "baseline": "6ba6d60998d290e1862e1c37d425a08fde083362",
+  "repositoryRoot": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+  "auditDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/REPOSITORY_STALENESS_AND_STRUCTURE_AUDIT_2026-10-11.md",
+  "taskDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md",
+  "futureExecutionObjective": "Complete RS-01 through RS-08 with their code/document acceptance criteria and verified pushes, preserving compatibility, supervision, provenance, Windows TODO, deferred GitHub CI, and U45 admission holds. Activate RS-09 through RS-11 only when their concrete entry conditions are demonstrated. This planning document does not start implementation or establish product/release acceptance.",
+  "mandatoryTaskIds": [
+    "RS-01",
+    "RS-02",
+    "RS-03",
+    "RS-04",
+    "RS-05",
+    "RS-06",
+    "RS-07",
+    "RS-08"
+  ],
+  "conditionalTaskIds": [
+    "RS-09",
+    "RS-10",
+    "RS-11"
+  ],
+  "recommendedOrder": [
+    "RS-01",
+    "RS-02",
+    "RS-03",
+    "RS-05",
+    "RS-04",
+    "RS-06",
+    "RS-07",
+    "RS-08"
+  ],
+  "tasks": [
+    {
+      "id": "RS-01",
+      "title": "Restore current export-to-capture compatibility",
+      "priority": "P1",
+      "auditFindings": [
+        "F01"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/prepare_captured_teacher.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/test_prepare_captured_teacher.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/prepare_corpus.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/render_frozen_evaluation.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/phrase_fingerprint.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/generated_teacher.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_singer_pilot_cli.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-formats/src/project_json.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/PROJECT_JSON_V20.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/PROJECT_JSON_V21.md"
+      ],
+      "verificationRecipes": [
+        "V00",
+        "V01",
+        "V02"
+      ],
+      "completionCriteria": [
+        "Supported schemas 17-21 capture with schema-specific readingHint and installation validation",
+        "Displayed lyrics, captured phones, note pauses, existing provenance meanings, and approval flags remain correct",
+        "Current native writer export crosses the real capture boundary; unsupported future schemas and tampering refuse",
+        "Old 17-19 verify_existing derivation remains compatible"
+      ],
+      "commitUnits": [
+        "Consumer validation and focused Python cases",
+        "Current native-writer-to-capture integration in existing pilot harness"
+      ],
+      "sharedFilesWith": [
+        "RS-06"
+      ]
+    },
+    {
+      "id": "RS-02",
+      "title": "Preserve child outcomes and strengthen CLI refusal tests",
+      "priority": "P2",
+      "auditFindings": [
+        "F06"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/include/seam/platform/helper_process.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/src/helper_process.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_helper_process.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/helpers/reading_process_probe.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_sample_review_cli.cpp"
+      ],
+      "verificationRecipes": [
+        "V00",
+        "V03"
+      ],
+      "completionCriteria": [
+        "Observed completion distinguishes ordinary exit codes and POSIX signals with bounded output",
+        "Existing success-only API remains compatible and uses one supervisor implementation",
+        "Limits, input delivery, cancellation, descriptor isolation, and process-tree cleanup remain enforced",
+        "Targeted CLI negatives assert expected termination, diagnostic, no sanitizer failure, and filesystem invariants"
+      ],
+      "commitUnits": [
+        "Observed result API plus platform probes/tests",
+        "Targeted CLI test migration"
+      ],
+      "integrationConstraint": "Preserve and reconcile pre-existing uncommitted CLI-test changes; do not count the shell workaround as landed completion",
+      "platformLimit": "Windows branch must retain equivalent source semantics; macOS testing is not Windows runtime acceptance"
+    },
+    {
+      "id": "RS-03",
+      "title": "Reconcile deferred-CI evidence state",
+      "priority": "P2",
+      "auditFindings": [
+        "F02"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/generate_phase13a_evidence.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_phase13a_contracts.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/phase13a/mandatory-validation-matrix.json",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/phase13a/release_gate.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/phase13a/test_release_gate.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/external_beta/test_release_identity.py"
+      ],
+      "verificationRecipes": [
+        "V00",
+        "V04"
+      ],
+      "completionCriteria": [
+        "Current generated evidence and matrix do not claim configured GitHub jobs",
+        "Existing valid state vocabulary remains backward compatible",
+        "Target identities, mandatory gates, runtime evidence, and blocked acceptance are preserved",
+        "Pure evidence construction is tested without running a package build"
+      ],
+      "commitUnits": [
+        "Coordinated generator, matrix, and focused regressions"
+      ]
+    },
+    {
+      "id": "RS-04",
+      "title": "Establish current documentation and API entrypoints",
+      "priority": "P2",
+      "auditFindings": [
+        "F03",
+        "F04",
+        "F07"
+      ],
+      "mandatory": true,
+      "planningState": "READY_TO_DRAFT",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [
+        "RS-03",
+        "RS-05"
+      ],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/README.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/DESIGN.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/STATUS_KO.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/REMAINING_TASKS_KO.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/RELEASE_READINESS_KO.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakePresets.json"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "Root documentation identifies current macOS SING editor and source-checked build/run route",
+        "API index distinguishes production, compatibility, experimental, and admission-blocked surfaces",
+        "Historical status/CI reports are dated without fabricating new acceptance",
+        "Windows TODO, missing vector backend, and U45 hold remain explicit"
+      ],
+      "proposedFiles": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md"
+      ],
+      "commitUnits": [
+        "README/design current routing",
+        "API/lifecycle index and historical notices"
+      ]
+    },
+    {
+      "id": "RS-05",
+      "title": "Correct neural version and launch guidance",
+      "priority": "P2",
+      "auditFindings": [
+        "F05",
+        "F07"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/NEURAL_PHONETIC_CONDITIONING.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/neural_runtime/README.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/neural_phrase_backend.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/worker_protocol.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_neural_worker_protocol.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_neural_phrase_runner.cpp"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "Frame, request, launch, and package versions are documented separately",
+        "Production guidance uses trusted protocol-3 bundle launch with budgets and inference steps",
+        "Legacy defaults/readers/probes are preserved",
+        "Current prose and inference-step comment match source"
+      ],
+      "conditionalVerificationRecipes": [
+        "V05 if runtime behavior changes"
+      ],
+      "commitUnits": [
+        "Neural documentation and comment correction"
+      ],
+      "excludedWork": "No global protocol-default change or mandatory new options factory"
+    },
+    {
+      "id": "RS-06",
+      "title": "Make singer-pilot help side-effect free",
+      "priority": "P3",
+      "auditFindings": [
+        "F09"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-singer-pilot/main.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_singer_pilot_cli.py"
+      ],
+      "verificationRecipes": [
+        "V00",
+        "V02"
+      ],
+      "completionCriteria": [
+        "Sole --help/-h prints usage and exits 0 before rendering or output I/O",
+        "Unknown leading options and malformed help usage return existing error exit 1 without output",
+        "All valid positional modes, determinism, and overwrite refusal remain intact"
+      ],
+      "commitUnits": [
+        "Help parsing plus no-side-effect CLI tests"
+      ],
+      "sharedFilesWith": [
+        "RS-01"
+      ]
+    },
+    {
+      "id": "RS-07",
+      "title": "Classify historical experiment tools and supported replacements",
+      "priority": "P3",
+      "auditFindings": [
+        "F08"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/build_listener_packet_002.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/README.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/LISTENING_PACKET_002_GUIDE_2026-10-04.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/README.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_encoder_denoiser_crossover.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_sampler_trace.py",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_gradient_probe.py"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "Each named tool has a lifecycle, exact input expectations, and output behavior",
+        "Packet 002 is not presented as import-safe or portable",
+        "Current packet 003 guidance retains partial status and Q1 refusal",
+        "Historical snapshots are not replaced or relabeled as new results"
+      ],
+      "commitUnits": [
+        "Lifecycle inventory and routing"
+      ],
+      "excludedWork": "Historical tool ports require a concrete supported use; no generic experiment framework or training run"
+    },
+    {
+      "id": "RS-08",
+      "title": "Expose historical evidence availability",
+      "priority": "P3",
+      "auditFindings": [
+        "F10"
+      ],
+      "mandatory": true,
+      "planningState": "READY",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "Five unique historical targets are rechecked and their availability is recorded",
+        "Recovered evidence is authenticated only when an original independent hash exists",
+        "Current claims do not silently rely on unavailable artifacts",
+        "New outputs are not substituted for historical PASS receipts"
+      ],
+      "commitUnits": [
+        "Dated availability notes or compact availability index"
+      ]
+    },
+    {
+      "id": "RS-09",
+      "title": "Consolidate one demonstrated UI geometry boundary",
+      "priority": "P2",
+      "auditFindings": [
+        "S02"
+      ],
+      "mandatory": false,
+      "planningState": "CONDITIONAL",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/design/sing_shell.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/design/sing_shell.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_shell_input.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_frame_pipeline.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_clap_design_shell.cpp"
+      ],
+      "verificationRecipes": [
+        "V00",
+        "V06"
+      ],
+      "completionCriteria": [
+        "A demonstrated duplicate coordinate rule is removed for one selected field family",
+        "Prepared layout, input, painting, and semantic geometry agree at relevant sizes/scales",
+        "Gesture cancellation, composition, focus, and undo behavior remain intact"
+      ],
+      "entryCondition": "A bounded reproducer or repeated coordinate-maintenance problem; size alone is insufficient",
+      "validInvestigationDisposition": [
+        "IMPLEMENT_BOUNDED_FIX",
+        "NO_CHANGE_RECOMMENDED"
+      ],
+      "commitUnits": [
+        "Bounded geometry unit only after trigger is recorded"
+      ]
+    },
+    {
+      "id": "RS-10",
+      "title": "Assess one runtime dependency boundary",
+      "priority": "P2",
+      "auditFindings": [
+        "S01"
+      ],
+      "mandatory": false,
+      "planningState": "CONDITIONAL",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-distribution/include/seam/distribution/procedural_package.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-rendering/include/seam/rendering/project_renderer.hpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-rendering/src/render_snapshot.cpp",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/PROJECT_JSON_V21.md",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "One source-to-render/export/cache call chain is traced with actual I/O and admission decisions",
+        "Any change reuses existing AdmittedProceduralRecipe rather than duplicating trust tokens",
+        "Before/after trace and relevant focused tests show narrower work without weakening identity/admission"
+      ],
+      "entryCondition": "Concrete repeated cross-layer change; fan-out count alone is insufficient",
+      "validInvestigationDisposition": [
+        "IMPLEMENT_BOUNDED_FIX",
+        "NO_CHANGE_RECOMMENDED"
+      ],
+      "verificationSelection": "Choose actual affected rendering/export test targets after identifying the call chain"
+    },
+    {
+      "id": "RS-11",
+      "title": "Measure build and verification cost before optimization",
+      "priority": "P2",
+      "auditFindings": [
+        "S03"
+      ],
+      "mandatory": false,
+      "planningState": "CONDITIONAL",
+      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "completionDependencies": [],
+      "files": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/cmake/SeamBuildVersion.hpp.in",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_cmake_source_commit.py"
+      ],
+      "verificationRecipes": [
+        "V00"
+      ],
+      "completionCriteria": [
+        "Representative slow feedback loop is measured under recorded comparable conditions",
+        "Experiments preserve shared dirty checkout and exact candidate source identity",
+        "One justified optimization preserves discovery/coverage, or measurement rules out the suspected cause"
+      ],
+      "entryCondition": "A named slow developer feedback loop",
+      "conditionalVerificationRecipes": [
+        "V07 for source-identity changes"
+      ],
+      "validInvestigationDisposition": [
+        "IMPLEMENT_MEASURED_OPTIMIZATION",
+        "NO_CHANGE_RECOMMENDED"
+      ],
+      "excludedWork": "No blind timeout increase, evaluator caching, stale identity override, or deletion of mandatory tests"
+    }
+  ],
+  "verificationStatus": "Recipes are prospective; no runtime suites executed while authoring this plan",
+  "preservedFiles": [
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "sha256": "a136e4b172df503fe68b1fe598a4d93ce6adc57fdb62bb839245b283cde5eb70"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_sample_review_cli.cpp",
+      "sha256": "2ac00d98f0d9551a1c99ea34d681be31d8866fd06b14433ed09a1afeb64f461a"
+    }
+  ],
+  "sourceReferences": [
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/AGENTS.md",
+      "lines": [],
+      "sha256": "e4c027a3c0cbba44ef592e5819ae3fe0883b9bd1966e08bce1815553cd6222e1",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt",
+      "lines": [
+        15,
+        218,
+        998
+      ],
+      "sha256": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakePresets.json",
+      "lines": [],
+      "sha256": "c409b53e28cf27bc26586e22ef12285f380bf0c5fec949cb34243294b5ee4960",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/DESIGN.md",
+      "lines": [
+        5
+      ],
+      "sha256": "b4e7c3b25134c0ceca3c1e148fa3b789b28567c2be1a449bfd725f5888192ba8",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/README.md",
+      "lines": [
+        51
+      ],
+      "sha256": "7411610d706fcb18ce6905caa6e5035394ee783868f363eccab9518b319140ea",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md",
+      "lines": [
+        52
+      ],
+      "sha256": "6c6a8b8e51bdae73d0531d828e5e6c2d61e38cfc305e75f0a109b9dbf7585c1c",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md",
+      "lines": [
+        50
+      ],
+      "sha256": "89d15208b149c827ada80b02a79f2adc0b0643cc610165c5be69944ffd2a78eb",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+      "lines": [
+        289
+      ],
+      "sha256": "635606cfd10be803612dfcb47cf84651796a06860ff34dc8343705eac20c9c01",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-singer-pilot/main.cpp",
+      "lines": [
+        28
+      ],
+      "sha256": "09fe89b62d9e8ffc92310826027627e71ac60a8ccc42650f18be6d49de170f3e",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "lines": [],
+      "sha256": "be7288036f5f48f00fbfe5bb0dcfb634bdbc4110596cfb28219ee0a022dd6c0f",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/RELEASE_READINESS_KO.md",
+      "lines": [],
+      "sha256": "0395ef46eac3915957570b753066a94a80aed0a3f0a8dbe344db1956cc9344de",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/REMAINING_TASKS_KO.md",
+      "lines": [],
+      "sha256": "4c1ae9bfec09a0d73dc47f5a0b7654ffcfd35bb3acd12b0fb7b9b44840116fbb",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/STATUS_KO.md",
+      "lines": [],
+      "sha256": "e5db526f001433ef7559d58eb068202e6f760bd70eedfbbe068880fd3f41506f",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/design/ui-fidelity-contract-v1.json",
+      "lines": [],
+      "sha256": "edb8df98dd9eb54c9a336ce93c2dd35196c74667f2aa7c0e4ad5b75fd62057d7",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/NEURAL_PHONETIC_CONDITIONING.md",
+      "lines": [],
+      "sha256": "d9544b258b591e27918574ceaf21f8278d183b6496a79d9fd307c69e0f6e45ef",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/PROJECT_JSON_V20.md",
+      "lines": [],
+      "sha256": "a4588bd627cd80912aa2830e584bb45c9511cf34c3d51e5f8f08003fa5c3c20e",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/formats/PROJECT_JSON_V21.md",
+      "lines": [],
+      "sha256": "82fb35adbc831a82c6fc20b120bd35f5aee7792652e2d91c1b5951826db31dfe",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/LISTENING_PACKET_002_GUIDE_2026-10-04.md",
+      "lines": [],
+      "sha256": "20b0d99366b5320c91c0e187f7cc0ee655ea4bc5f2f762e2d956dc61d537d4e0",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/U45_TYPED_AUDIT_RECONCILIATION.md",
+      "lines": [
+        28
+      ],
+      "sha256": "df8c4f9281d0dcb12539c2c5c7b49eb7cb0e4799cd0f23433819c19562a5ca40",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/phase13a/mandatory-validation-matrix.json",
+      "lines": [],
+      "sha256": "c0de06d13ea95943b836ccf58bbe65d5c5abf13a8c534bdc505f1b4cf35cb673",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/REPOSITORY_STALENESS_AND_STRUCTURE_AUDIT_2026-10-11.evidence.json",
+      "lines": [],
+      "sha256": "3e027aced027b71dde059c620e9827f3f8c1bacdac1766246dfddf53c82fdd07",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/REPOSITORY_STALENESS_AND_STRUCTURE_AUDIT_2026-10-11.md",
+      "lines": [],
+      "sha256": "1ca1dc66227212b2ba93fb7f3fe114bcc393c4d77ad9822d2d55d3a52453179f",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/include/seam/authoring/generation_campaign.hpp",
+      "lines": [
+        81,
+        116
+      ],
+      "sha256": "028c774ba5dd7e69e39ddc81cfb5f7457aed4c174de619cf21b9e4b94c834c21",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp",
+      "lines": [],
+      "sha256": "df0512b91a5837fb92198b99ef56e6109e20d87fbb566b75c3a86c21a53ba25f",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/export_service.cpp",
+      "lines": [
+        689
+      ],
+      "sha256": "26d6d31aa30ef6ac149703c6ac68aca221cc94d27ef9b5432752baf3df043ded",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+      "lines": [
+        23
+      ],
+      "sha256": "b5103d08d797bb10ccdb53c5b79de33c27bc759aedbbdf123948a39f27511ec5",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-clap-editor/src/editor_runtime_paint.cpp",
+      "lines": [
+        116
+      ],
+      "sha256": "f3a6161cf00ca494eee87c15b013fe0ca6a21253d3655caef265c544c7b0b350",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-distribution/include/seam/distribution/procedural_package.hpp",
+      "lines": [
+        276
+      ],
+      "sha256": "f1018c47b11fc104179d23329511f59bf11f25217b85ebeca17758b4216f0a91",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-formats/include/seam/formats/project_json.hpp",
+      "lines": [
+        22,
+        24
+      ],
+      "sha256": "1e5512815bf0ad318c4330998dbd57ae580d5a053043528b4f136ef387897249",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-formats/src/project_json.cpp",
+      "lines": [
+        32
+      ],
+      "sha256": "5d6227aa78eca5b2358fa66a878278b231aa7eaa1942de8ebb5b842e48d22057",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
+      "lines": [
+        104
+      ],
+      "sha256": "ad6346cde5ba5b290cebc30c1247fac6ea880354542c27e778522fd431137660",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/src/design/sing_shell.cpp",
+      "lines": [
+        872
+      ],
+      "sha256": "42b04c0c181a5905856a38110774eb917270fcf8b072a3993c09711600533833",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp",
+      "lines": [
+        48
+      ],
+      "sha256": "229c197a2e595d86aa393be625d99e836d49b7da55979ece5e9cc24cba3582c3",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/neural_phrase_backend.cpp",
+      "lines": [
+        348
+      ],
+      "sha256": "da82cadd6942dea025bcc4012c020783233a100df301947a4070ae7802df5389",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-neural-synthesis/src/worker_protocol.cpp",
+      "lines": [
+        311
+      ],
+      "sha256": "9f928518705d4fc1453633e923e96f7a7bc0ed7e5cbf04c18cbec5e96369588d",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/include/seam/platform/helper_process.hpp",
+      "lines": [
+        29
+      ],
+      "sha256": "8d296aa956b9ab7f51033b2c1821c5d8fe3e1dd16bdfc2efc155ed40f286d6ab",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/src/helper_process.cpp",
+      "lines": [
+        441,
+        544
+      ],
+      "sha256": "e814f5e8a8e11f37c2a965de1eeb85365d8af4ad5ddfe74d580c792b7f7de221",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-rendering/include/seam/rendering/project_renderer.hpp",
+      "lines": [
+        35
+      ],
+      "sha256": "e36f0f506e6105ae8d31f02f07a2140ebe7663bb6c274e03a11722166fb0ea08",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-rendering/src/render_snapshot.cpp",
+      "lines": [],
+      "sha256": "439217914869fd3079c3e463d4db8cfa3a868ecc74c07a0853233947597a7007",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-standalone/src/native_editor_app.cpp",
+      "lines": [
+        2094
+      ],
+      "sha256": "21a2b7cffa93aac7e78bcaa5f8680fefbfff2a3419410b808536cebfd9047a79",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/generate_phase13a_evidence.py",
+      "lines": [
+        80
+      ],
+      "sha256": "a015c91b8f13deee75bd3fb753e8216bb7b29c3a407d471bb66421adcd3e8ee3",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_phase13a_contracts.py",
+      "lines": [
+        48
+      ],
+      "sha256": "144cfd07e39065c60743168d4c985385f858191ad690f076c0479acb4be386d5",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/external_beta/test_release_identity.py",
+      "lines": [
+        78
+      ],
+      "sha256": "e139e5a13a3b9198c3c1a52f6559b9b264ba0b5a12caff5c8d35ebad2f59c7a4",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/helpers/reading_process_probe.cpp",
+      "lines": [],
+      "sha256": "22571c2b37824bd84548b50640010030f97bb9ccef4159bc3321c02abf961bd0",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/phase13a/test_release_gate.py",
+      "lines": [],
+      "sha256": "a2a9e0dbce1938a66b8de171e452552c90ea4108d9ea52a5239fcaa1da7f89e1",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_clap_design_shell.cpp",
+      "lines": [],
+      "sha256": "62803655ba61bb00790be3a347aea3d89b810f9a89e46ddb96cae9bf6e8ea972",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_cmake_source_commit.py",
+      "lines": [],
+      "sha256": "be23d81ca71961a2a5cb02b83f8ecb7ccedf94aa0020203888ce3fa5e53422a9",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_frame_pipeline.cpp",
+      "lines": [],
+      "sha256": "27fed6ccefcef624243a4ffb143fe23b4d04c642a06a5e0e4b4b2b3a29ceb72b",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_design_shell_input.cpp",
+      "lines": [
+        262
+      ],
+      "sha256": "5c1f921d097be89582104be5d5a76b526586323e479a0406c63e8964a536f4f3",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_helper_process.cpp",
+      "lines": [],
+      "sha256": "65307ed09ad5e49c53a994e379d99a3b96738582ae66ae4a43fa6439a7ab91e1",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_neural_phrase_runner.cpp",
+      "lines": [
+        381
+      ],
+      "sha256": "9469c902f15d7fb515720174743bbe974b7a5704650dfd3b750f5d443de16c8a",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_neural_worker_protocol.cpp",
+      "lines": [
+        929
+      ],
+      "sha256": "f23219172917bb9c919cd7c825c93388d6f74c835103ba330d0f7e1e97891752",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_sample_review_cli.cpp",
+      "lines": [
+        47
+      ],
+      "sha256": "d133b345db66be0ebc0464a84b6619732411171244d5cc760e1c2a7556780315",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_singer_pilot_cli.py",
+      "lines": [
+        52
+      ],
+      "sha256": "0f2c812f612f9dab48b85c16334672aa9dcf542e45ded783bc52f1a3db66043b",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/external_beta/full_product_gate.py",
+      "lines": [
+        1,
+        65
+      ],
+      "sha256": "6ca576963eab5c1bbd38a7f6eef185c22dadf143568173337327b146feaea685",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/neural_runtime/README.md",
+      "lines": [
+        327
+      ],
+      "sha256": "8945a2f6ac43a8d6e24b81273e079de3585e8346c5834136623bdc5ecbf0c02a",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/phase13a/release_gate.py",
+      "lines": [
+        11
+      ],
+      "sha256": "1c154953aae8529d7dc3e58338ddb3d8f9a97009e92e57f80d988ea5e808abe6",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/README.md",
+      "lines": [
+        147
+      ],
+      "sha256": "dfa3dc80bc6515f5846ebdbe45ba53785a9364f6c6c653d760f33c5f74d91d43",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/singing_quality/build_listener_packet_002.py",
+      "lines": [
+        25
+      ],
+      "sha256": "ae943ee4849d24baf9a79fdc56dca744a2614efe9863156e5c41cdb71a61d1ff",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_encoder_denoiser_crossover.py",
+      "lines": [
+        170
+      ],
+      "sha256": "a53d077fe84649d0df0d03ef3dbbbe10f291d9c67bd2a9f2774dce5b4477d212",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_gradient_probe.py",
+      "lines": [
+        201
+      ],
+      "sha256": "34e9dee8102d6632681e203cb50fcc39f0d3409f42e03483a0435caaf599c1ed",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/acoustic_sampler_trace.py",
+      "lines": [
+        243
+      ],
+      "sha256": "e80e8035d770edd57f8f0a541dfe6ba9a576bc65c8edbf89fc214e6bf535114b",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/generated_teacher.py",
+      "lines": [
+        268
+      ],
+      "sha256": "c024e1defc6abbfa6114c1c81e559ed9f4f0ad69da4a8a0c1b04acfc5cbc1a94",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/phrase_fingerprint.py",
+      "lines": [
+        56
+      ],
+      "sha256": "244f8c68044f39a0eb60148274bde9ccbdf9756c97e61b3a8ef118a4356a6a6e",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/prepare_captured_teacher.py",
+      "lines": [
+        74
+      ],
+      "sha256": "b1002a8d0b0b2446b929232d63448334236b5729331b3c6bac801e794cde7cf0",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/prepare_corpus.py",
+      "lines": [],
+      "sha256": "00a31186346bfa3dbc48b772c022b58fab5590a4594b1a6ad5ce7487755fc785",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    },
+    {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tools/voice_model_training/render_frozen_evaluation.py",
+      "lines": [
+        65
+      ],
+      "sha256": "59911c32f4554779962d2de6e23aeb361b6a17beab44dc610210ff790d6351d3",
+      "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
+    }
+  ],
+  "documentSha256": "adb31611b76f341cb482703ab39d20c2fdd81377097de87c6a2afaba10d7221a",
+  "planningValidation": {
+    "taskCount": 11,
+    "mandatoryCount": 8,
+    "conditionalCount": 3,
+    "allAuditFindingsMapped": true,
+    "completionDependenciesAcyclic": true,
+    "sourceLinksAndLineNumbersValid": true,
+    "citedFileCount": 67,
+    "prospectiveCTestNamesFoundInSource": [
+      "seam_singer_pilot_cli",
+      "seam_helper_process_tests",
+      "seam_sample_review_cli_tests",
+      "seam_neural_worker_protocol_tests",
+      "seam_neural_phrase_runner_tests",
+      "seam_neural_render_workflow_tests",
+      "seam_design_shell_input_tests",
+      "seam_design_frame_pipeline_tests",
+      "seam_clap_design_shell_tests",
+      "seam_cmake_source_commit_identity"
+    ],
+    "preservedFileHashesMatch": true,
+    "auditCitedSourceFilesUnchanged": 55,
+    "nativeSuitesRunForThisPlan": false,
+    "recommendedOrderRespectsCompletionDependencies": true,
+    "prospectivePythonModulePathsExist": true
+  }
+}
