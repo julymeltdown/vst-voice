@@ -1,10 +1,12 @@
 #pragma once
 #include "seam/core/result.hpp"
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <stop_token>
 #include <string>
 #include <vector>
+#include <variant>
 
 namespace seam::platform {
 struct HelperProcessRequest final {
@@ -27,11 +29,22 @@ struct HelperProcessRequest final {
   std::chrono::milliseconds maximumCpuTime{0};
 };
 struct HelperProcessOutput final { std::string standardOutput, standardError; };
+struct HelperExited final { std::uint32_t code; };
+struct HelperSignaled final { int signal; }; // POSIX only; Windows retains its unsigned exit code.
+struct CompletedHelperProcess final {
+  HelperProcessOutput output;
+  std::variant<HelperExited, HelperSignaled> termination;
+};
 // Blocking worker-thread primitive for an explicitly selected application helper.
 // No shell/PATH lookup; not binary/resource verification or a security sandbox.
 // POSIX and Windows implementations; unsupported platforms fail explicitly.
 // POSIX requires exclusive ownership of child reaping (no external SIGCHLD
 // handler or waitpid(-1) consumer). Plug-in hosts still need host qualification.
+// A value means supervision completed, including exact required input delivery,
+// not that the child succeeded. Limit, launch, I/O and cancellation errors stay errors.
+[[nodiscard]] core::Result<CompletedHelperProcess> runBoundedHelperProcessObserved(
+    const HelperProcessRequest& request, std::stop_token stop = {});
+// Success-only compatibility API, backed by the same supervisor.
 [[nodiscard]] core::Result<HelperProcessOutput> runBoundedHelperProcess(
     const HelperProcessRequest& request, std::stop_token stop = {});
 }

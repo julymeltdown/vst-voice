@@ -22,6 +22,43 @@
 
 #include <set>
 
+namespace {
+bool expectedCliRefusal(const seam::authoring::CompletedHelperProcess& completed,
+                        std::uint32_t code, std::string_view diagnostic) {
+  const auto* exited = std::get_if<seam::authoring::HelperExited>(&completed.termination);
+  if (exited == nullptr || exited->code != code ||
+      completed.output.standardError.find(diagnostic) == std::string::npos) return false;
+  for (const auto marker : {"runtime error:", "AddressSanitizer", "UndefinedBehaviorSanitizer", "ThreadSanitizer"})
+    if (completed.output.standardOutput.find(marker) != std::string::npos ||
+        completed.output.standardError.find(marker) != std::string::npos) return false;
+  return true;
+}
+void requireCliRefusal(const std::vector<std::string>& arguments, std::uint32_t code,
+                       std::string_view diagnostic) {
+  const auto result = seam::authoring::runBoundedHelperProcessObserved(
+      {.executable=SEAM_TEST_VOICEBANK_CLI, .arguments=arguments});
+  CHECK(result);
+  if (!expectedCliRefusal(result.value(), code, diagnostic))
+    throw seam::test::Failure{"Unexpected CLI termination or diagnostic: " +
+        result.value().output.standardOutput + result.value().output.standardError};
+}
+}
+
+TEST_CASE("observed CLI refusal oracle rejects signals wrong streams and sanitizer reports") {
+  using namespace seam::authoring;
+  CompletedHelperProcess result{{"", "expected reason\n"}, HelperExited{1U}};
+  CHECK(expectedCliRefusal(result, 1U, "expected reason"));
+  result.termination = HelperExited{2U}; CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
+  result.termination = HelperSignaled{11}; CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
+  result.termination = HelperExited{1U};
+  result.output = {"expected reason", "other"}; CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
+  for (const auto marker : {"runtime error:", "AddressSanitizer", "UndefinedBehaviorSanitizer", "ThreadSanitizer"}) {
+    result.output = {marker, "expected reason"}; CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
+    result.output = {"", std::string{marker} + " expected reason"};
+    CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
+  }
+}
+
 TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution") {
 #if defined(SEAM_TEST_VOICEBANK_CLI)
   using namespace seam; using J=formats::JsonValue;
@@ -44,7 +81,7 @@ TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution"
       {"schemaVersion",std::int64_t{1}},{"assets",assets}}});
   const std::vector<std::string> prepareArgs{"prepare-neural-bundle",root.string(),"fixture","1","4096"};
   CHECK(core::durableAtomicWriteText(root/"configuration","{}"));
-  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}));
+  requireCliRefusal(prepareArgs, 1U, "Neural bundle configuration shape or frame bound is invalid");
   CHECK(!std::filesystem::exists(root/"manifest.json"));
   CHECK(core::durableAtomicWriteText(root/"configuration",configuration));
   const auto prepared=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}); CHECK(prepared);
@@ -52,7 +89,7 @@ TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution"
   CHECK(preparedReport.value().find("status")->asString()=="DATA_BUNDLE_PREPARED_UNAPPROVED");
   CHECK(preparedReport.value().find("manifestSha256")->asString()==core::sha256Hex(manifest));
   CHECK(core::readTextFileLimited(root/"manifest.json",32768).value()==manifest);
-  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}));
+  requireCliRefusal(prepareArgs, 1U, "Atomic create-new target already exists");
   CHECK(core::readTextFileLimited(root/"manifest.json",32768).value()==manifest);
   std::vector<std::string> args{"inspect-neural-bundle",root.string(),"fixture","1",core::sha256Hex(manifest),"4096"};
   const auto run=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}); CHECK(run);
@@ -63,10 +100,11 @@ TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution"
   CHECK(report.value().find("manifestSha256")->asString()==args[4]);
   for (const auto* limit:{"0","-1","4096x","536870913"}) {
     auto invalid=args; invalid.back()=limit;
-    CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=invalid}));
+    requireCliRefusal(invalid, 1U, std::string_view{limit} == "536870913" ?
+        "Invalid neural bundle identity or payload limit" : "Invalid payload limit");
   }
   CHECK(core::durableAtomicWriteText(root/"acoustic","modified"));
-  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}));
+  requireCliRefusal(args, 1U, "Bundle asset length mismatch");
 #endif
 }
 
@@ -79,7 +117,7 @@ TEST_CASE("CLI converts hash-bound neural vocabulary without overwriting files o
   CHECK(core::durableAtomicWriteTextNew(source,mapping));
   std::vector<std::string> args{"convert-neural-vocabulary",source.string(),core::sha256Hex(mapping),output.string()};
   auto wrong=args; wrong[2]=std::string(64,'0');
-  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=wrong}));
+  requireCliRefusal(wrong, 1U, "Source vocabulary digest mismatch");
   CHECK(!std::filesystem::exists(output));
   const auto run=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}); CHECK(run);
   const auto report=formats::parseJson(run.value().standardOutput); CHECK(report);
@@ -90,7 +128,7 @@ TEST_CASE("CLI converts hash-bound neural vocabulary without overwriting files o
   const auto vocabulary=formats::parseJson(converted.value()); CHECK(vocabulary);
   CHECK(vocabulary.value().find("tokens")->asArray().size()==3U);
   CHECK(vocabulary.value().find("aliases")->find("ko/a")->asInt64()==2);
-  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}));
+  requireCliRefusal(args, 1U, "Atomic create-new target already exists");
   CHECK(core::readTextFileLimited(output,4096).value()==converted.value());
   CHECK(core::readTextFileLimited(source,4096).value()==mapping);
 #endif

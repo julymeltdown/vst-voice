@@ -6,5 +6,9 @@
 namespace seam::authoring {
 using platform::HelperProcessRequest;
 using platform::HelperProcessOutput;
+using platform::HelperExited;
+using platform::HelperSignaled;
+using platform::CompletedHelperProcess;
+using platform::runBoundedHelperProcessObserved;
 using platform::runBoundedHelperProcess;
 }

@@ -8,8 +8,55 @@
 #endif
 #if defined(__APPLE__) || defined(__linux__)
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 #endif
+
+TEST_CASE("observed helper retains nonzero exit output and distinguishes signals from ordinary exits") {
+#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+  using namespace seam::platform;
+  HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"echo"}};
+  const auto success = runBoundedHelperProcessObserved(request); CHECK(success);
+  CHECK(std::get<HelperExited>(success.value().termination).code == 0U);
+  CHECK(success.value().output.standardOutput == "ok\n");
+  CHECK(success.value().output.standardError == "diagnostic\n");
+  request.arguments = {"fail"};
+  const auto refused = runBoundedHelperProcessObserved(request); CHECK(refused);
+  CHECK(std::get<HelperExited>(refused.value().termination).code == 7U);
+  CHECK(refused.value().output.standardOutput == "partial");
+  CHECK(refused.value().output.standardError == "refused\n");
+  const auto legacy = runBoundedHelperProcess(request); CHECK(!legacy);
+  CHECK(legacy.error().message == "Helper exited unsuccessfully");
+#if defined(_WIN32)
+  CHECK(legacy.error().context == "refused\n");
+  request.arguments = {"wide-exit"};
+  const auto wide = runBoundedHelperProcessObserved(request); CHECK(wide);
+  CHECK(std::get<HelperExited>(wide.value().termination).code == 0xC0000005U);
+#else
+  request.arguments = {"signal"};
+  const auto signaled = runBoundedHelperProcessObserved(request); CHECK(signaled);
+  CHECK(std::get<HelperSignaled>(signaled.value().termination).signal == SIGTERM);
+  CHECK(signaled.value().output.standardOutput.empty());
+  CHECK(signaled.value().output.standardError.empty());
+  CHECK(!runBoundedHelperProcess(request));
+#endif
+  for (const auto* mode : {"flood", "stderr", "sleep", "descendant"}) {
+    request.arguments = {mode}; request.timeout = std::chrono::milliseconds{100};
+    request.maximumStdoutBytes = request.maximumStderrBytes = 8192U;
+    CHECK(!runBoundedHelperProcessObserved(request));
+  }
+  request.arguments = {"fail"}; request.timeout = std::chrono::seconds{5};
+  request.standardInput = std::string(16U * 1024U * 1024U, 'x');
+  request.maximumStdinBytes = request.standardInput.size();
+  CHECK(!runBoundedHelperProcessObserved(request)); // Incomplete input never becomes a completed exit.
+  request.standardInput.clear(); request.arguments = {"echo"};
+  request.maximumResidentBytes = 1U;
+  CHECK(!runBoundedHelperProcessObserved(request));
+  request.maximumResidentBytes = 0U;
+  std::stop_source stop; stop.request_stop();
+  CHECK(!runBoundedHelperProcessObserved(request, stop.get_token()));
+#endif
+}
 
 TEST_CASE("bounded helper captures separate streams and rejects failure overflow timeout and cancellation") {
 #if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)

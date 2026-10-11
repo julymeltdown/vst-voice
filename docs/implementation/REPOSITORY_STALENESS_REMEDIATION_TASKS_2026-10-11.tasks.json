@@ -75,7 +75,8 @@
       "sharedFilesWith": [
         "RS-06"
       ],
-      "verificationResult": "38 Python tests, no skips; rebuilt native singer pilot and CTest 1/1 PASS (8.88s)"
+      "verificationResult": "38 Python tests, no skips; rebuilt native singer pilot and CTest 1/1 PASS (8.88s)",
+      "integratedCommit": "998def4e7185f59a6aa6a430711b12e529741f05"
     },
     {
       "id": "RS-02",
@@ -86,7 +87,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-platform/include/seam/platform/helper_process.hpp",
@@ -111,7 +112,8 @@
         "Targeted CLI test migration"
       ],
       "integrationConstraint": "Preserve and reconcile pre-existing uncommitted CLI-test changes; do not count the shell workaround as landed completion",
-      "platformLimit": "Windows branch must retain equivalent source semantics; macOS testing is not Windows runtime acceptance"
+      "platformLimit": "Windows branch must retain equivalent source semantics; macOS testing is not Windows runtime acceptance",
+      "verificationResult": "Full dependent Release build; 4 focused CTest entries PASS; separately compiled committed CLI test content plus RS-02: 24/24 PASS. Dirty CLI suite retains unrelated pending audio-peak failure (24/25). Windows source review only."
     },
     {
       "id": "RS-03",

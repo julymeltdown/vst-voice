@@ -311,8 +311,8 @@ void writeWindowsPipe(WindowsHandle pipe, std::string_view input, PipeTransferSt
 }
 }
 #endif
-core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessRequest& request, std::stop_token stop) {
-  using Output = HelperProcessOutput;
+core::Result<CompletedHelperProcess> runBoundedHelperProcessObserved(const HelperProcessRequest& request, std::stop_token stop) {
+  using Output = CompletedHelperProcess;
   const auto fail = [](core::ErrorCode code, const char* message) { return core::failure<Output>(code, message); };
   if (stop.stop_requested()) return fail(core::ErrorCode::Conflict, "Helper cancelled before launch");
 #if defined(_WIN32)
@@ -384,7 +384,7 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
   outWrite.close(); errWrite.close(); inRead.close();
   std::size_t inputOffset = 0U;
   if (request.standardInput.empty()) inWrite.close();
-  Output output;
+  HelperProcessOutput output;
   for (;;) {
     if (stop.stop_requested()) return fail(core::ErrorCode::Conflict, "Helper cancelled");
     if (std::chrono::steady_clock::now() >= deadline) return fail(core::ErrorCode::Conflict, "Helper deadline exceeded");
@@ -457,9 +457,11 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
       if (request.maximumCpuTime.count() != 0 && completed.cpuNanoseconds >
           static_cast<std::uint64_t>(request.maximumCpuTime.count()) * 1000000ULL)
         return fail(core::ErrorCode::Conflict, "Helper CPU-time limit exceeded");
-      if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        return fail(core::ErrorCode::Internal, "Helper exited unsuccessfully");
-      return output;
+      if (WIFEXITED(status))
+        return Output{std::move(output), HelperExited{static_cast<std::uint32_t>(WEXITSTATUS(status))}};
+      if (WIFSIGNALED(status))
+        return Output{std::move(output), HelperSignaled{WTERMSIG(status)}};
+      return fail(core::ErrorCode::Internal, "Cannot classify helper exit status");
     }
     std::array<pollfd, 3U> pending{{{outRead.value, POLLIN, 0}, {errRead.value, POLLIN, 0}, {inWrite.value, POLLOUT, 0}}};
     if (::poll(pending.data(), pending.size(), 10) < 0 && errno != EINTR)
@@ -525,7 +527,7 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
   }
   primaryThread.close();
 
-  Output output;
+  HelperProcessOutput output;
   PipeTransferState stdoutState, stderrState, stdinState;
   std::jthread stdoutReader{[pipe = std::move(outRead), &output, &stdoutState, limit = request.maximumStdoutBytes]() mutable {
     readWindowsPipe(std::move(pipe), output.standardOutput, limit, stdoutState);
@@ -589,8 +591,6 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
     } else if (request.maximumCpuTime.count() != 0 && usage && usage->cpuNanoseconds >
         static_cast<std::uint64_t>(request.maximumCpuTime.count()) * 1000000ULL) {
       failureCode = core::ErrorCode::Conflict; failureMessage = "Helper CPU-time limit exceeded";
-    } else {
-      failureMessage = "Helper exited unsuccessfully";
     }
   }
   // The job owns the complete process tree. Terminating it after the direct
@@ -610,9 +610,22 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
   }
   if (failureMessage != nullptr)
     return core::failure<Output>(failureCode, failureMessage, std::move(output.standardError));
-  return output;
+  return Output{std::move(output), HelperExited{static_cast<std::uint32_t>(exitCode)}};
 #else
   return fail(core::ErrorCode::Unsupported, "Bounded helper execution is not implemented on this platform");
+#endif
+}
+core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessRequest& request, std::stop_token stop) {
+  auto observed = runBoundedHelperProcessObserved(request, stop);
+  if (!observed) return observed.error();
+  auto& completed = observed.value();
+  const auto* exited = std::get_if<HelperExited>(&completed.termination);
+  if (exited != nullptr && exited->code == 0U) return std::move(completed.output);
+#if defined(_WIN32)
+  return core::failure<HelperProcessOutput>(core::ErrorCode::Internal,
+      "Helper exited unsuccessfully", std::move(completed.output.standardError));
+#else
+  return core::failure<HelperProcessOutput>(core::ErrorCode::Internal, "Helper exited unsuccessfully");
 #endif
 }
 }

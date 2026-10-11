@@ -12,6 +12,7 @@
 #endif
 #if defined(__APPLE__) || defined(__linux__)
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 #endif
 namespace {
@@ -49,7 +50,13 @@ int main(int argc, char** argv) {
 #endif
   if (argc != 2) return 2;
   if (mode == "echo") { std::fputs("ok\n", stdout); std::fputs("diagnostic\n", stderr); return hasSecretEnvironment() || std::getchar() != EOF ? 3 : 0; }
-  if (mode == "fail") { std::fputs("partial", stdout); return 7; }
+  if (mode == "fail") { std::fputs("partial", stdout); std::fputs("refused\n", stderr); return 7; }
+#if defined(__APPLE__) || defined(__linux__)
+  if (mode == "signal") { ::raise(SIGTERM); return 8; }
+#endif
+#if defined(_WIN32)
+  if (mode == "wide-exit") { ::ExitProcess(0xC0000005U); }
+#endif
   if (mode == "input") {
     std::array<char, 128> buffer{};
     for (;;) {
