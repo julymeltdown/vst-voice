@@ -1,6 +1,6 @@
 # Current engineering entrypoints
 
-Source-reviewed 2026-10-11, after RS-01/02/03/05. This index routes development; it does not establish product or release acceptance. Historical reports retain their original observations. Use the [remediation tasks](REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md) and [integrating ledger](FULL_SCOPE_BETA_EXECUTION.md) for work records, [Usable Alpha contract](../product/USABLE_ALPHA_ACCEPTANCE.md) for the user journey, and [full Beta contract](../product/full-product-beta-contract.json) for release obligations.
+Source-reviewed 2026-10-11, after RS-01/02/03/05. This index routes development; it does not establish product or release acceptance. Historical reports retain their original observations. Use the [remediation tasks](REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md) and [integrating ledger](FULL_SCOPE_BETA_EXECUTION.md) for work records; the [remediation execution report](REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md) records the completed scope and contrary evidence. Use [Usable Alpha contract](../product/USABLE_ALPHA_ACCEPTANCE.md) for the user journey, and [full Beta contract](../product/full-product-beta-contract.json) for release obligations.
 
 ## Build and product surface
 

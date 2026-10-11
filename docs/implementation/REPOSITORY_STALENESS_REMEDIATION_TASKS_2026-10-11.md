@@ -1,5 +1,7 @@
 # Repository staleness remediation: code-level development tasks
 
+> **Execution update — 2026-10-11.** Mandatory RS-01–RS-08 are implemented, locally verified and pushed. See [completion record](REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md) for exact commits/checks, the preserved pending test failure and conditional dispositions. The original planning baseline and criteria below remain historical planning context; no product/Beta acceptance is promoted.
+
 Date: 2026-10-11, Asia/Seoul. Planning baseline: `6ba6d60998d290e1862e1c37d425a08fde083362`, `master`.
 
 Repository root: `/Users/lhs/Downloads/project-seam-usable-alpha-u3-master`.

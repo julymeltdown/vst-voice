@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "purpose": "Planning companion, not a release-admission schema or executed goal",
+  "purpose": "Engineering execution companion, not a release-admission schema",
   "date": "2026-10-11",
   "timezone": "Asia/Seoul",
   "baseline": "6ba6d60998d290e1862e1c37d425a08fde083362",
   "repositoryRoot": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
   "auditDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/REPOSITORY_STALENESS_AND_STRUCTURE_AUDIT_2026-10-11.md",
   "taskDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md",
-  "futureExecutionObjective": "Complete RS-01 through RS-08 with their code/document acceptance criteria and verified pushes, preserving compatibility, supervision, provenance, Windows TODO, deferred GitHub CI, and U45 admission holds. Activate RS-09 through RS-11 only when their concrete entry conditions are demonstrated. This planning document does not start implementation or establish product/release acceptance.",
+  "futureExecutionObjective": "Complete RS-01 through RS-08 with their code/document acceptance criteria and verified pushes, preserving compatibility, supervision, provenance, Windows TODO, deferred GitHub CI, and U45 admission holds. Activate RS-09 through RS-11 only when their concrete entry conditions are demonstrated. Execution is now recorded in the linked completion report; no product/release acceptance is established.",
   "mandatoryTaskIds": [
     "RS-01",
     "RS-02",
@@ -332,7 +332,8 @@
       "commitUnits": [
         "Dated availability notes or compact availability index"
       ],
-      "verificationResult": "Rechecked five unavailable originals; bounded 204-link scan retains exactly six historical missing occurrences; report-line/source hashes match availability record; current routes/diff/closure checked"
+      "verificationResult": "Rechecked five unavailable originals; bounded 204-link scan retains exactly six historical missing occurrences; report-line/source hashes match availability record; current routes/diff/closure checked",
+      "integratedCommit": "3c1ac597da331af86b8ed7d21c5be63b520a9fa5"
     },
     {
       "id": "RS-09",
@@ -343,7 +344,7 @@
       ],
       "mandatory": false,
       "planningState": "CONDITIONAL",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "DEFERRED",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp",
@@ -369,7 +370,8 @@
       ],
       "commitUnits": [
         "Bounded geometry unit only after trigger is recorded"
-      ]
+      ],
+      "disposition": "No reproduced geometry mismatch or repeated coordinate-rule change demonstrated; existing presentation adapter retained."
     },
     {
       "id": "RS-10",
@@ -380,7 +382,7 @@
       ],
       "mandatory": false,
       "planningState": "CONDITIONAL",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "NO_CHANGE_RECOMMENDED",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/libs/seam-distribution/include/seam/distribution/procedural_package.hpp",
@@ -402,7 +404,8 @@
         "IMPLEMENT_BOUNDED_FIX",
         "NO_CHANGE_RECOMMENDED"
       ],
-      "verificationSelection": "Choose actual affected rendering/export test targets after identifying the call chain"
+      "verificationSelection": "Choose actual affected rendering/export test targets after identifying the call chain",
+      "disposition": "Inspected export/render chain already carries restricted admitted immutable resources through snapshots and cache; no second admission token or policy refactor warranted."
     },
     {
       "id": "RS-11",
@@ -413,7 +416,7 @@
       ],
       "mandatory": false,
       "planningState": "CONDITIONAL",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "DEFERRED",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt",
@@ -436,7 +439,8 @@
         "IMPLEMENT_MEASURED_OPTIMIZATION",
         "NO_CHANGE_RECOMMENDED"
       ],
-      "excludedWork": "No blind timeout increase, evaluator caching, stale identity override, or deletion of mandatory tests"
+      "excludedWork": "No blind timeout increase, evaluator caching, stale identity override, or deletion of mandatory tests",
+      "disposition": "No controlled comparable four-case timing; identity regression 17/17 PASS is correctness evidence only. No optimization or identity shortcut introduced."
     }
   ],
   "verificationStatus": "Recipes are prospective; no runtime suites executed while authoring this plan",
@@ -975,5 +979,8 @@
     "recommendedOrderRespectsCompletionDependencies": true,
     "prospectivePythonModulePathsExist": true
   },
-  "executionStarted": "2026-10-11"
+  "executionStarted": "2026-10-11",
+  "executionScope": "RS-01 through RS-08, with evidence-based dispositions for conditional RS-09 through RS-11, as requested on 2026-10-11",
+  "mandatoryExecutionCompleted": "2026-10-11",
+  "executionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md"
 }
