@@ -191,7 +191,8 @@
         "README/design current routing",
         "API/lifecycle index and historical notices"
       ],
-      "verificationResult": "Source-checked CMake macOS route and API lifecycle index; 121 local inline links exist across edited documents (fragments/reference definitions excluded); diff/source closure PASS; no new GUI launch claimed"
+      "verificationResult": "Source-checked CMake macOS route and API lifecycle index; 121 local inline links exist across edited documents (fragments/reference definitions excluded); diff/source closure PASS; no new GUI launch claimed",
+      "integratedCommit": "c7740aabe8cfd1c3b78e7e216d9bbcbae7dc898e"
     },
     {
       "id": "RS-05",
@@ -243,7 +244,7 @@
       ],
       "mandatory": true,
       "planningState": "READY",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/apps/seam-singer-pilot/main.cpp",
@@ -263,7 +264,8 @@
       ],
       "sharedFilesWith": [
         "RS-01"
-      ]
+      ],
+      "verificationResult": "Rebuilt pilot and CTest 1/1 PASS (9.29s), including side-effect-free help/error discovery, native export capture, all retained modes/determinism/no-overwrite"
     },
     {
       "id": "RS-07",

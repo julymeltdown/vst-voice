@@ -18,6 +18,7 @@
 #include <charconv>
 
 namespace {
+constexpr char kUsage[] = "Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates|glides|events] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)";
 template<class T> void require(const seam::core::Result<T>& value) {
   if (!value) throw std::runtime_error(value.error().message);
 }
@@ -27,14 +28,20 @@ template<class T> void require(const seam::core::Result<T>& value) {
 // registration, reviewer decision, trained model, or release approval is created.
 int main(int argc, char** argv) {
   using namespace seam;
+  if (argc == 2 && (std::string_view{argv[1]} == "--help" || std::string_view{argv[1]} == "-h")) {
+    std::cout << kUsage << '\n';
+    return std::cout ? 0 : 1;
+  }
   try {
+    if (argc < 2 || std::string_view{argv[1]}.starts_with("-"))
+      throw std::runtime_error(kUsage);
     const bool custom = argc >= 3 && std::string_view(argv[2]) == "phrase";
     const bool stops = argc == 3 && std::string_view(argv[2]) == "stops";
     const bool affricates = argc == 3 && std::string_view(argv[2]) == "affricates";
     const bool glides = argc == 3 && std::string_view(argv[2]) == "glides";
     const bool events = argc == 3 && std::string_view(argv[2]) == "events";
     if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && !affricates && !glides && !events && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates|glides|events] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
+      throw std::runtime_error(kUsage);
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
     const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";

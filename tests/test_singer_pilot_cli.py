@@ -77,6 +77,24 @@ def main():
     binary = Path(sys.argv[1]).resolve()
     with tempfile.TemporaryDirectory(prefix="seam-pilot-test-") as directory:
         root = Path(directory)
+        discovery = root / "discovery"
+        discovery.mkdir()
+        sentinel = discovery / "retained"
+        sentinel.write_bytes(b"preserve")
+        usage = None
+        for arguments, expected in ((["--help"], 0), (["-h"], 0), (["--unknown"], 1),
+                                    (["--help", "extra"], 1), (["-h", "extra"], 1), ([], 1)):
+            result = subprocess.run([str(binary), *arguments], cwd=discovery, capture_output=True, timeout=10)
+            assert result.returncode == expected, (arguments, result.stderr)
+            if expected == 0:
+                assert not result.stderr and result.stdout.startswith(b"Usage: seam_singer_pilot ")
+                if usage is None:
+                    usage = result.stdout
+                assert result.stdout == usage
+            else:
+                assert not result.stdout and result.stderr == usage
+            assert list(discovery.iterdir()) == [sentinel]
+            assert sentinel.read_bytes() == b"preserve"
         reports = []
         for name in ("first", "repeat"):
             subprocess.run([str(binary), str(root / name)], check=True, capture_output=True, timeout=60)
