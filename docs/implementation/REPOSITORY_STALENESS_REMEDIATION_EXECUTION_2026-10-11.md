@@ -1,5 +1,7 @@
 # Repository staleness remediation execution
 
+> **Historical execution report — superseded for current remaining work on 2026-10-12.** The [current completion report](REPOSITORY_STALENESS_REMEDIATION_COMPLETION_2026-10-12.md) closes all eleven task dispositions and the subsequently authorized installed-recipe operation. Pending-file and deferred-task statements below describe the earlier execution date; original failures and checks remain preserved.
+
 Completed the mandatory scope of the [task document](REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md) on 2026-10-11 (Asia/Seoul): **RS-01–RS-08, 8/8**. This is engineering remediation completion, not project-wide or product/Beta acceptance. Conditional work has the dispositions below; no speculative geometry/runtime/build refactor is represented as completed production work.
 
 ## Source synchronization and publication

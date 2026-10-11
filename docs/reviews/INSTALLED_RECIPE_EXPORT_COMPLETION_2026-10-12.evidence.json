@@ -207,5 +207,12 @@
       "path": "build/sanitize/seam_export_tests",
       "sha256": "797a00b62522255875b0b8fcee34f5944d05b95094102e0997e05d6fa161f7c7"
     }
-  ]
+  ],
+  "integratedCommit": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+  "publicationVerification": {
+    "localHead": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+    "originMaster": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+    "liveRemoteMaster": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+    "scope": "Equality immediately after this unit push on 2026-10-12; subsequent unit pushes advance master"
+  }
 }

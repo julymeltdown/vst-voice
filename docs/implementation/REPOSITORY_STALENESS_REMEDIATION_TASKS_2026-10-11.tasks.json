@@ -7,7 +7,7 @@
   "repositoryRoot": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
   "auditDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/REPOSITORY_STALENESS_AND_STRUCTURE_AUDIT_2026-10-11.md",
   "taskDocument": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_TASKS_2026-10-11.md",
-  "futureExecutionObjective": "Complete RS-01 through RS-08 with their code/document acceptance criteria and verified pushes, preserving compatibility, supervision, provenance, Windows TODO, deferred GitHub CI, and U45 admission holds. Activate RS-09 through RS-11 only when their concrete entry conditions are demonstrated. Execution is now recorded in the linked completion report; no product/release acceptance is established.",
+  "futureExecutionObjective": "Execution closed: RS-01 through RS-09 repairs/documentation complete; RS-10/RS-11 reach accepted evidence-based NO_CHANGE_RECOMMENDED exits. The separately authorized installed-recipe operation is complete. Product/release acceptance remains separate.",
   "mandatoryTaskIds": [
     "RS-01",
     "RS-02",
@@ -381,7 +381,8 @@
       ],
       "disposition": "IMPLEMENT_BOUNDED_FIX: one shared lyric resolver, owner-thread live native geometry and preserved musical-note semantics. Actual Cocoa 2x composition lifecycle verified; logical 1x/2x tests passed.",
       "entryConditionEvidence": "docs/reviews/RS09_LYRIC_GEOMETRY_COMPLETION_2026-10-12.evidence.json",
-      "verificationResult": "Full Release dependent rebuild, V06 3/3 (13.43s), supplemental test-only Cocoa rebuild and actual AppKit 5/5 (physical 2x); pure logical cases 1x/2x. Independent source review approved."
+      "verificationResult": "Full Release dependent rebuild, V06 3/3 (13.43s), supplemental test-only Cocoa rebuild and actual AppKit 5/5 (physical 2x); pure logical cases 1x/2x. Independent source review approved.",
+      "integratedCommit": "6f8da65cf0288b68809b791dafdd7b0202ec918e"
     },
     {
       "id": "RS-10",
@@ -407,7 +408,7 @@
       "completionCriteria": [
         "One source-to-render/export/cache call chain is traced with actual I/O and admission decisions",
         "Any change reuses existing AdmittedProceduralRecipe rather than duplicating trust tokens",
-        "Before/after trace and relevant focused tests show narrower work without weakening identity/admission"
+        "If an implementation boundary changes, before/after trace and relevant focused tests show narrower work without weakening identity/admission; otherwise the explicit NO_CHANGE_RECOMMENDED exit applies."
       ],
       "entryCondition": "Concrete repeated cross-layer change; fan-out count alone is insufficient",
       "validInvestigationDisposition": [
@@ -415,7 +416,10 @@
         "NO_CHANGE_RECOMMENDED"
       ],
       "verificationSelection": "Choose actual affected rendering/export test targets after identifying the call chain",
-      "disposition": "Inspected export/render chain already carries restricted admitted immutable resources through snapshots and cache; no second admission token or policy refactor warranted."
+      "disposition": "NO_CHANGE_RECOMMENDED on 6f8da65c: runtime admission rereads metadata per selected track; subsequent admitted frozen captures are comparison-only and do not reopen installation. Serialization/snapshot validation enforces output/pronunciation/performance contracts. Operation passes no PCM cache. Existing restricted immutable value is sufficient; no unnecessary downstream policy crossing demonstrated.",
+      "investigationState": "COMPLETE",
+      "verificationResult": "Lead and independent worker current source trace; real installed export/whole-project refusal tests and scratch CLI suite pass. See current completion record for actual I/O.",
+      "sourceTrace": "docs/implementation/REPOSITORY_STALENESS_REMEDIATION_COMPLETION_2026-10-12.md"
     },
     {
       "id": "RS-11",
@@ -426,7 +430,7 @@
       ],
       "mandatory": false,
       "planningState": "CONDITIONAL",
-      "implementationState": "DEFERRED",
+      "implementationState": "NO_CHANGE_RECOMMENDED",
       "completionDependencies": [],
       "files": [
         "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/CMakeLists.txt",
@@ -450,7 +454,10 @@
         "NO_CHANGE_RECOMMENDED"
       ],
       "excludedWork": "No blind timeout increase, evaluator caching, stale identity override, or deletion of mandatory tests",
-      "disposition": "No controlled comparable four-case timing; identity regression 17/17 PASS is correctness evidence only. No optimization or identity shortcut introduced."
+      "disposition": "Measured NO_CHANGE_RECOMMENDED for broad generated-source-identity rebuild hypothesis in the named CLI loop. Warmed builds: no-op 0.039s (0 compilations), leaf 2.424s (1), shared header 54.705s (235), actual documentation-only commit 5.656s (4). No production build, identity or test policy changes.",
+      "investigationState": "COMPLETE",
+      "verificationResult": "All four warmed scratch build+CLI CTest cases pass; actual generated and runtime receipt identities equal scratch HEAD. Existing identity CTest 1/1, 17 cases, 7.22s PASS. Full options/load/commands/log hashes recorded.",
+      "measurementRecord": "docs/reviews/RS11_BUILD_COST_MEASUREMENTS_2026-10-12.evidence.json"
     }
   ],
   "verificationStatus": "Recipes are prospective; no runtime suites executed while authoring this plan",
@@ -962,7 +969,7 @@
       "gitRevision": "6ba6d60998d290e1862e1c37d425a08fde083362"
     }
   ],
-  "documentSha256": "b4ca79213dd181de335b24379ba4e6288e3c677289e483ea6ec8701434324806",
+  "documentSha256": "a087b8a5cc9c5ac0ef98c218eb54735bb2d9d7aa3aadae5830c84c6e8f806b58",
   "planningValidation": {
     "taskCount": 11,
     "mandatoryCount": 8,
@@ -990,9 +997,23 @@
     "prospectivePythonModulePathsExist": true
   },
   "executionStarted": "2026-10-11",
-  "executionScope": "RS-01 through RS-08, with evidence-based dispositions for conditional RS-09 through RS-11, as requested on 2026-10-11",
+  "executionScope": "All eleven task dispositions and the additionally authorized installed-recipe export operation, follow-up requested 2026-10-12",
   "mandatoryExecutionCompleted": "2026-10-11",
-  "executionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md",
+  "executionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_COMPLETION_2026-10-12.md",
   "planningDocumentSha256": "adb31611b76f341cb482703ab39d20c2fdd81377097de87c6a2afaba10d7221a",
-  "executionVerificationStatus": "RS-01 through RS-08 complete within the task scope. RS-02 clean committed suite and scoped sanitizer checks passed; preserved pending feature failure remains outside this goal."
+  "executionVerificationStatus": "11/11 accepted task dispositions closed (9 COMPLETE, 2 NO_CHANGE_RECOMMENDED), plus completed installed export. Exact checks/limits recorded; no product/Beta admission promoted.",
+  "historicalExecutionRecord": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/implementation/REPOSITORY_STALENESS_REMEDIATION_EXECUTION_2026-10-11.md",
+  "executionCompleted": "2026-10-12",
+  "preservedFilesContext": "Historical original planning snapshot, preserved as history. Later user authorization completed the pending feature; 2026-10-12 starting bytes/patch retained locally and unrelated stash remains unused.",
+  "historicalDocumentSha256": "b4ca79213dd181de335b24379ba4e6288e3c677289e483ea6ec8701434324806",
+  "pendingOperationCompletion": {
+    "command": "export-installed-recipe-project",
+    "state": "COMPLETE",
+    "integratedCommit": "95d093b15fb5e94729c1c7f68c760f527ce497d6",
+    "evidence": "docs/reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.evidence.json",
+    "thresholdChanged": false
+  },
+  "acceptedTaskCount": 11,
+  "completeRepairTaskCount": 9,
+  "acceptedInvestigationCount": 2
 }

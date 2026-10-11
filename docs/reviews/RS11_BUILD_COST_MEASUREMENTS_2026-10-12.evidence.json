@@ -1,0 +1,782 @@
+{
+  "date": "2026-10-12",
+  "scope": "One macOS development loop; not full build/product performance",
+  "sourceBase": "6f8da65cf0288b68809b791dafdd7b0202ec918e",
+  "scratchRoot": "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master",
+  "jobs": 6,
+  "target": "seam_sample_review_cli_tests",
+  "results": [
+    {
+      "name": "configure",
+      "command": [
+        "cmake",
+        "--preset",
+        "release",
+        "-DSEAM_BUILD_BENCHMARKS:BOOL=ON",
+        "-DSEAM_BUILD_CLAP_EDITOR_PLUGIN:BOOL=ON",
+        "-DSEAM_BUILD_CLAP_PLUGIN:BOOL=ON",
+        "-DSEAM_BUILD_EPOCH:STRING=0",
+        "-DSEAM_BUILD_ID:STRING=0.13.1-local",
+        "-DSEAM_BUILD_NATIVE_DESKTOP:BOOL=ON",
+        "-DSEAM_BUILD_TESTS:BOOL=ON",
+        "-DSEAM_ENABLE_IPLUG2_SKIA:BOOL=OFF",
+        "-DSEAM_ENABLE_SAMPLE_TARGET_VOICING_EXPERIMENT:BOOL=OFF",
+        "-DSEAM_ENABLE_SANITIZERS:BOOL=OFF",
+        "-DSEAM_ENABLE_THREAD_SANITIZER:BOOL=OFF",
+        "-DSEAM_ENABLE_WORLD_REFERENCE_EXPERIMENT:BOOL=OFF",
+        "-DSEAM_INSTALLER_PLATFORM:STRING=macos-arm64",
+        "-DSEAM_NATIVE_ONNX_PYTHON:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/bin/python",
+        "-DSEAM_NATIVE_ONNX_SCHEMA:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/lib/python3.12/site-packages/onnx/onnx.proto",
+        "-DSEAM_ONNXRUNTIME_INCLUDE:PATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0/include",
+        "-DSEAM_ONNXRUNTIME_LIBRARY:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0/lib/libonnxruntime.dylib",
+        "-DSEAM_ONNXRUNTIME_ROOT:PATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0",
+        "-DSEAM_ONNX_SCHEMA:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/lib/python3.12/site-packages/onnx/onnx.proto",
+        "-DSEAM_OPENSSL_SOURCE_COMMIT:STRING=",
+        "-DSEAM_PROTOC_EXECUTABLE:FILEPATH=",
+        "-DSEAM_REQUIRE_STATIC_OPENSSL:BOOL=OFF",
+        "-DSEAM_RUN_NATIVE_GUI_TESTS:BOOL=ON",
+        "-DSEAM_STATIC_PROTOBUF_ROOT:PATH=",
+        "-DSEAM_VOICE_TRAINING_PYTHON:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/training-w03-cache-probe/bin/python",
+        "-DSEAM_WARNINGS_AS_ERRORS:BOOL=ON"
+      ],
+      "returnCode": 0,
+      "seconds": 2.3530657500959933,
+      "loadBefore": [
+        4.46533203125,
+        6.9150390625,
+        8.4375
+      ],
+      "loadAfter": [
+        4.46533203125,
+        6.9150390625,
+        8.4375
+      ],
+      "ninjaCommands": 0,
+      "compileCommands": 0,
+      "explanationLines": 0,
+      "sha256": "f9bcf54b8d3a96e044efe9aff5a222e080e0558fccb5998aef224d07ce5741e6"
+    },
+    {
+      "name": "initial-warm",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 55.180484500015154,
+      "loadBefore": [
+        4.46533203125,
+        6.9150390625,
+        8.4375
+      ],
+      "loadAfter": [
+        7.642578125,
+        7.47998046875,
+        8.5498046875
+      ],
+      "ninjaCommands": 265,
+      "compileCommands": 244,
+      "explanationLines": 535,
+      "sha256": "cd1789977ff28f3716abab4e0bc76be8a813b95d8457142aa3bfa3d450663677"
+    },
+    {
+      "name": "noop",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 0.039123041089624166,
+      "loadBefore": [
+        7.642578125,
+        7.47998046875,
+        8.5498046875
+      ],
+      "loadAfter": [
+        7.642578125,
+        7.47998046875,
+        8.5498046875
+      ],
+      "ninjaCommands": 1,
+      "compileCommands": 0,
+      "explanationLines": 1,
+      "sha256": "33221de0b104d873f2515e5e41601b8e7c3b63363470cca06c8d8fd21b90e5f8",
+      "compiledUnits": [],
+      "generatedHeaderMentions": 0
+    },
+    {
+      "name": "noop-test",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_sample_review_cli_tests$"
+      ],
+      "returnCode": 0,
+      "seconds": 12.64629383396823,
+      "loadBefore": [
+        7.642578125,
+        7.47998046875,
+        8.5498046875
+      ],
+      "loadAfter": [
+        7.45654296875,
+        7.44677734375,
+        8.525390625
+      ],
+      "ninjaCommands": 0,
+      "compileCommands": 0,
+      "explanationLines": 0,
+      "sha256": "4d36a573ca61acd6de68bf249c1ad83eba922ef40e788cc258b78601d52575fe"
+    },
+    {
+      "name": "leaf",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 2.42431958403904,
+      "loadBefore": [
+        7.45654296875,
+        7.44677734375,
+        8.525390625
+      ],
+      "loadAfter": [
+        7.259765625,
+        7.40576171875,
+        8.50439453125
+      ],
+      "ninjaCommands": 3,
+      "compileCommands": 1,
+      "explanationLines": 3,
+      "sha256": "497200038b420870932f7a0cf45c9f9d78b24bc2fedb574e4bf8cd225588d206",
+      "compiledUnits": [
+        "apps/seam-voicebank-cli/candidate_package_commands.cpp"
+      ],
+      "generatedHeaderMentions": 0
+    },
+    {
+      "name": "leaf-test",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_sample_review_cli_tests$"
+      ],
+      "returnCode": 0,
+      "seconds": 11.880290083005093,
+      "loadBefore": [
+        7.259765625,
+        7.40576171875,
+        8.50439453125
+      ],
+      "loadAfter": [
+        6.83837890625,
+        7.31005859375,
+        8.45703125
+      ],
+      "ninjaCommands": 0,
+      "compileCommands": 0,
+      "explanationLines": 0,
+      "sha256": "1aa94bd288d1cbd4becd33f0c2152f61d6df18ed91dba7131b94980b4299289b"
+    },
+    {
+      "name": "leaf-restore-warm",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 2.4034164999611676,
+      "loadBefore": [
+        6.83837890625,
+        7.31005859375,
+        8.45703125
+      ],
+      "loadAfter": [
+        6.83837890625,
+        7.31005859375,
+        8.45703125
+      ],
+      "ninjaCommands": 3,
+      "compileCommands": 1,
+      "explanationLines": 3,
+      "sha256": "132eeca6529b2bbf73f26fa3f2ae6153f173d4de57f87766ca98edae9c74ecef"
+    },
+    {
+      "name": "shared-header",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 54.70506925007794,
+      "loadBefore": [
+        6.83837890625,
+        7.31005859375,
+        8.45703125
+      ],
+      "loadAfter": [
+        8.62548828125,
+        7.73095703125,
+        8.54052734375
+      ],
+      "ninjaCommands": 256,
+      "compileCommands": 235,
+      "explanationLines": 517,
+      "sha256": "377ecf011b03ca0241dc9576a19594022ccbd72585df1f60aafce57f169867c6",
+      "compiledUnits": [
+        "libs/seam-core/src/resample.cpp",
+        "libs/seam-domain/src/meter_map.cpp",
+        "libs/seam-domain/src/tempo_map.cpp",
+        "libs/seam-domain/src/note.cpp",
+        "libs/seam-core/src/sha256.cpp",
+        "libs/seam-domain/src/note_vibrato.cpp",
+        "libs/seam-core/src/file_io.cpp",
+        "libs/seam-domain/src/formant_automation.cpp",
+        "libs/seam-domain/src/dynamics_automation.cpp",
+        "libs/seam-domain/src/breathiness_automation.cpp",
+        "libs/seam-domain/src/tension_automation.cpp",
+        "libs/seam-domain/src/airiness_automation.cpp",
+        "libs/seam-domain/src/gender_automation.cpp",
+        "libs/seam-domain/src/growl_automation.cpp",
+        "libs/seam-domain/src/performance_intent.cpp",
+        "libs/seam-domain/src/voice_style_selection.cpp",
+        "libs/seam-domain/src/phoneme.cpp",
+        "libs/seam-domain/src/render_controls.cpp",
+        "libs/seam-domain/src/routing.cpp",
+        "libs/seam-domain/src/region_performance_state.cpp",
+        "libs/seam-formats/src/json_value.cpp",
+        "libs/seam-domain/src/project.cpp",
+        "libs/seam-formats/src/project_performance_json.cpp",
+        "libs/seam-phonemizer/src/phonemizer.cpp",
+        "libs/seam-phonemizer/src/japanese_reading.cpp",
+        "libs/seam-formats/src/project_region_performance_json.cpp",
+        "libs/seam-phonemizer/src/japanese_phonemizer.cpp",
+        "libs/seam-phonemizer/src/korean_phonemizer.cpp",
+        "libs/seam-phonemizer/src/english_phonemizer.cpp",
+        "libs/seam-formats/src/project_json.cpp",
+        "libs/seam-phonemizer/src/language_resolver.cpp",
+        "libs/seam-phonemizer/src/override_reconciliation.cpp",
+        "libs/seam-phonemizer/src/english_resource.cpp",
+        "libs/seam-voicebank/src/voicebank.cpp",
+        "libs/seam-voicebank/src/asset_path.cpp",
+        "libs/seam-voicebank/src/wav.cpp",
+        "libs/seam-voicebank/src/waveform.cpp",
+        "libs/seam-voicebank/src/spectrogram.cpp",
+        "libs/seam-voicebank/src/pitch.cpp",
+        "libs/seam-phonemizer/src/pronunciation_resolver.cpp",
+        "libs/seam-voicebank/src/pitch_marks.cpp",
+        "libs/seam-voicebank/src/marker_editor.cpp",
+        "libs/seam-voicebank/src/content_identity.cpp",
+        "libs/seam-voicebank/src/validator.cpp",
+        "libs/seam-voicebank/src/style_resolution.cpp",
+        "libs/seam-voicebank/src/manifest_json.cpp",
+        "libs/seam-text/src/unicode.cpp",
+        "libs/seam-voicebank/src/acoustic_analysis.cpp",
+        "libs/seam-voicebank/src/take_inspection.cpp",
+        "libs/seam-voicebank/src/catalog.cpp",
+        "libs/seam-voicebank/src/coverage.cpp",
+        "libs/seam-synthesis/src/phrase_backend.cpp",
+        "libs/seam-synthesis/src/singer_resource.cpp",
+        "libs/seam-text/src/text_engine.cpp",
+        "libs/seam-synthesis/src/unit_join_analysis.cpp",
+        "libs/seam-synthesis/src/neural_bundle.cpp",
+        "libs/seam-synthesis/src/timing_solver.cpp",
+        "libs/seam-synthesis/src/phoneme_timing_plan.cpp",
+        "libs/seam-synthesis/src/unit_selection.cpp",
+        "libs/seam-synthesis/src/source_phoneme_alignment.cpp",
+        "libs/seam-synthesis/src/pitch_curve.cpp",
+        "libs/seam-synthesis/src/raw_renderer.cpp",
+        "libs/seam-synthesis/src/source_target_map.cpp",
+        "libs/seam-synthesis/src/automatic_performance.cpp",
+        "libs/seam-synthesis/src/classic_psola.cpp",
+        "libs/seam-synthesis/src/renderer_capabilities.cpp",
+        "libs/seam-synthesis/src/stretch_renderer.cpp",
+        "libs/seam-synthesis/src/spectral_classic.cpp",
+        "libs/seam-synthesis/src/renderer_dispatcher.cpp",
+        "libs/seam-synthesis/src/seam_composer.cpp",
+        "libs/seam-synthesis/src/performance_compiler.cpp",
+        "libs/seam-voice-design/src/frication_source.cpp",
+        "libs/seam-voice-design/src/vocal_tract.cpp",
+        "libs/seam-synthesis/src/phrase_renderer.cpp",
+        "libs/seam-voice-design/src/phonation_source.cpp",
+        "libs/seam-voice-design/src/plosive_source.cpp",
+        "libs/seam-voice-design/src/frication_gesture_stream.cpp",
+        "libs/seam-voice-design/src/voice_recipe.cpp",
+        "libs/seam-voice-design/src/recipe_resource.cpp",
+        "libs/seam-voice-design/src/articulated_stream.cpp",
+        "libs/seam-voice-design/src/articulation_plan.cpp",
+        "libs/seam-voice-design/src/procedural_candidate.cpp",
+        "libs/seam-voice-design/src/procedural_renderer.cpp",
+        "libs/seam-distribution/src/signing.cpp",
+        "libs/seam-neural-synthesis/src/worker_protocol.cpp",
+        "libs/seam-distribution/src/installer.cpp",
+        "libs/seam-distribution/src/install_transaction.cpp",
+        "libs/seam-voice-design/src/audition_fingerprint.cpp",
+        "libs/seam-distribution/src/seambank.cpp",
+        "libs/seam-distribution/src/trust_policy.cpp",
+        "libs/seam-distribution/src/update_manifest.cpp",
+        "libs/seam-distribution/src/sealed_handoff.cpp",
+        "libs/seam-platform/src/helper_process.cpp",
+        "libs/seam-platform/src/threaded_audio_device.cpp",
+        "libs/seam-distribution/src/procedural_review_store.cpp",
+        "libs/seam-platform/src/system_audio_device_unavailable.cpp",
+        "libs/seam-platform/src/pulse_audio_device.cpp",
+        "libs/seam-distribution/src/procedural_review.cpp",
+        "libs/seam-platform/src/pulse_audio_input_device.cpp",
+        "libs/seam-platform/src/system_audio_input_device_unavailable.cpp",
+        "libs/seam-platform/src/recording_session.cpp",
+        "libs/seam-platform/src/threaded_audio_input_device.cpp",
+        "libs/seam-platform/src/recording_input_session.cpp",
+        "libs/seam-platform/src/audio_device_catalog_unavailable.cpp",
+        "libs/seam-platform/src/application_paths.cpp",
+        "libs/seam-platform/src/audio_device_catalog_appkit.mm",
+        "libs/seam-platform/src/coreaudio_audio_device.mm",
+        "libs/seam-platform/src/crash_capture.cpp",
+        "libs/seam-platform/src/coreaudio_audio_input_device.mm",
+        "libs/seam-distribution/src/procedural_package.cpp",
+        "libs/seam-platform/src/crash_capture_appkit.mm",
+        "libs/seam-application/src/track_commands.cpp",
+        "libs/seam-application/src/region_commands.cpp",
+        "libs/seam-platform/src/file_dialog_appkit.mm",
+        "libs/seam-platform/src/application_menu_appkit.mm",
+        "libs/seam-application/src/command.cpp",
+        "libs/seam-application/src/tempo_commands.cpp",
+        "libs/seam-application/src/view_commands.cpp",
+        "libs/seam-application/src/arrangement_commands.cpp",
+        "libs/seam-application/src/render_commands.cpp",
+        "libs/seam-application/src/lyric_commands.cpp",
+        "libs/seam-application/src/note_commands.cpp",
+        "libs/seam-application/src/performance_job_context.cpp",
+        "libs/seam-application/src/editor_session.cpp",
+        "libs/seam-application/src/performance_commands.cpp",
+        "libs/seam-application/src/project_factory.cpp",
+        "libs/seam-neural-synthesis/src/diffsinger_inputs.cpp",
+        "libs/seam-neural-synthesis/src/bundle_metadata.cpp",
+        "libs/seam-neural-synthesis/src/deployment_descriptor.cpp",
+        "libs/seam-neural-synthesis/src/bundle_directory.cpp",
+        "libs/seam-application/src/harmony_commands.cpp",
+        "libs/seam-neural-synthesis/src/model_bundle.cpp",
+        "libs/seam-neural-synthesis/src/model_contract.cpp",
+        "libs/seam-neural-synthesis/src/graph_contract.cpp",
+        "libs/seam-neural-synthesis/src/neural_phrase_backend.cpp",
+        "libs/seam-interchange/src/smf_project_conversion.cpp",
+        "libs/seam-voicebank-production/src/project.cpp",
+        "libs/seam-interchange/src/smf_codec.cpp",
+        "libs/seam-voicebank-production/src/operations.cpp",
+        "libs/seam-voicebank-production/src/asset_store.cpp",
+        "libs/seam-voicebank-production/src/project_codec_encode.cpp",
+        "libs/seam-interchange/src/ustx_codec.cpp",
+        "libs/seam-voicebank-production/src/project_codec_decode_records.cpp",
+        "libs/seam-voicebank-production/src/project_codec_decode.cpp",
+        "libs/seam-interchange/src/ustx_project_conversion.cpp",
+        "libs/seam-voicebank-production/src/project_codec_validation.cpp",
+        "libs/seam-voicebank-production/src/generation_expectation.cpp",
+        "libs/seam-voicebank-production/src/repository.cpp",
+        "libs/seam-voicebank-production/src/repository_operations.cpp",
+        "libs/seam-voicebank-production/src/operation_staging.cpp",
+        "libs/seam-voicebank-production/src/repository_import.cpp",
+        "libs/seam-voicebank-production/src/candidate_markers.cpp",
+        "libs/seam-voicebank-production/src/repository_generation.cpp",
+        "libs/seam-voicebank-production/src/repository_verify.cpp",
+        "libs/seam-voicebank-production/src/repository_export.cpp",
+        "libs/seam-voicebank-production/src/declared_candidate.cpp",
+        "libs/seam-voicebank-production/src/resource_candidate.cpp",
+        "libs/seam-voicebank-production/src/review_transition.cpp",
+        "libs/seam-voicebank-production/src/manifest_draft.cpp",
+        "libs/seam-voicebank-production/src/repository_review.cpp",
+        "libs/seam-voicebank-production/src/repository_candidate.cpp",
+        "libs/seam-voicebank-production/src/source_registration.cpp",
+        "libs/seam-voicebank-production/src/source_assessment.cpp",
+        "libs/seam-voicebank-production/src/reviewer_registration.cpp",
+        "libs/seam-voicebank-production/src/style_migration.cpp",
+        "libs/seam-voicebank-production/src/draft_inventory.cpp",
+        "libs/seam-rendering/src/phrase_segmenter.cpp",
+        "libs/seam-voicebank-production/src/take_inspection_receipt.cpp",
+        "libs/seam-rendering/src/singer_route.cpp",
+        "libs/seam-rendering/src/style_blend.cpp",
+        "libs/seam-rendering/src/audio_level_envelope.cpp",
+        "libs/seam-rendering/src/render_performance.cpp",
+        "libs/seam-rendering/src/sample_rate_converter.cpp",
+        "libs/seam-rendering/src/streaming_pcm_source.cpp",
+        "libs/seam-rendering/src/render_pipeline.cpp",
+        "libs/seam-rendering/src/region_renderer.cpp",
+        "libs/seam-rendering/src/project_renderer.cpp",
+        "libs/seam-rendering/src/interleaved_audio_ring_buffer.cpp",
+        "libs/seam-rendering/src/pcm_cache.cpp",
+        "libs/seam-rendering/src/multichannel_routing.cpp",
+        "libs/seam-rendering/src/multichannel_playback.cpp",
+        "libs/seam-rendering/src/playback_feeder_service.cpp",
+        "libs/seam-rendering/src/playback_engine.cpp",
+        "libs/seam-rendering/src/stale_audio_store.cpp",
+        "libs/seam-rendering/src/render_snapshot.cpp",
+        "libs/seam-authoring-runtime/src/japanese_reading_job.cpp",
+        "libs/seam-authoring-runtime/src/japanese_reading_stage.cpp",
+        "libs/seam-authoring-runtime/src/japanese_reading_resource.cpp",
+        "libs/seam-authoring-runtime/src/interchange_service.cpp",
+        "libs/seam-authoring-runtime/src/japanese_reading_response.cpp",
+        "libs/seam-authoring-runtime/src/project_document.cpp",
+        "libs/seam-authoring-runtime/src/japanese_reading_capture.cpp",
+        "libs/seam-rendering/src/render_scheduler.cpp",
+        "libs/seam-authoring-runtime/src/project_lifecycle.cpp",
+        "libs/seam-authoring-runtime/src/recent_projects.cpp",
+        "libs/seam-authoring-runtime/src/voicebank_browser.cpp",
+        "libs/seam-authoring-runtime/src/voicebank_session.cpp",
+        "libs/seam-authoring-runtime/src/voicebank_installer_service.cpp",
+        "libs/seam-authoring-runtime/src/autosave_service.cpp",
+        "libs/seam-authoring-runtime/src/diagnostic.cpp",
+        "libs/seam-authoring-runtime/src/bank_reference_registry.cpp",
+        "libs/seam-authoring-runtime/src/transport_controller.cpp",
+        "libs/seam-authoring-runtime/src/technical_edit_controller.cpp",
+        "libs/seam-authoring-runtime/src/render_coordinator.cpp",
+        "libs/seam-authoring-runtime/src/inventory_generation.cpp",
+        "libs/seam-authoring-runtime/src/authoring_runtime.cpp",
+        "libs/seam-authoring-runtime/src/generation_job.cpp",
+        "libs/seam-authoring-runtime/src/generation_campaign.cpp",
+        "libs/seam-authoring-runtime/src/generation_campaign_preparation.cpp",
+        "libs/seam-authoring-runtime/src/generation_campaign_storage.cpp",
+        "libs/seam-authoring-runtime/src/generation_campaign_advance.cpp",
+        "libs/seam-authoring-runtime/src/export_service.cpp",
+        "libs/seam-authoring-runtime/src/inventory_coverage.cpp",
+        "libs/seam-authoring-runtime/src/audio_settings_controller.cpp",
+        "libs/seam-authoring-runtime/src/audio_settings.cpp",
+        "libs/seam-authoring-runtime/src/generation_batch.cpp",
+        "libs/seam-authoring-runtime/src/inventory_preflight.cpp",
+        "libs/seam-authoring-runtime/src/generation_batch_collection.cpp",
+        "libs/seam-authoring-runtime/src/media_import_service.cpp",
+        "libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+        "libs/seam-authoring-runtime/src/neural_resource_registry.cpp",
+        "libs/seam-authoring-runtime/src/automatic_performance_capture.cpp",
+        "libs/seam-authoring-runtime/src/neural_selection.cpp",
+        "libs/seam-candidate-packaging/src/candidate_package.cpp",
+        "libs/seam-authoring-runtime/src/support_bundle.cpp",
+        "libs/seam-candidate-packaging/src/installed_candidate.cpp",
+        "apps/seam-voicebank-cli/coverage_commands.cpp",
+        "apps/seam-voicebank-cli/campaign_commands.cpp",
+        "apps/seam-voicebank-cli/project_binding_commands.cpp",
+        "apps/seam-voicebank-cli/sample_review_commands.cpp",
+        "apps/seam-voicebank-cli/main.cpp",
+        "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+        "apps/seam-voicebank-cli/project_binding_commands.cpp",
+        "tests/test_project_binding_cli.cpp",
+        "tests/test_sample_review_cli.cpp"
+      ],
+      "generatedHeaderMentions": 0
+    },
+    {
+      "name": "shared-header-test",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_sample_review_cli_tests$"
+      ],
+      "returnCode": 0,
+      "seconds": 12.582238915958442,
+      "loadBefore": [
+        8.62548828125,
+        7.73095703125,
+        8.54052734375
+      ],
+      "loadAfter": [
+        8.6025390625,
+        7.76171875,
+        8.5361328125
+      ],
+      "ninjaCommands": 0,
+      "compileCommands": 0,
+      "explanationLines": 0,
+      "sha256": "aff5a21df244b913734f101ccb0c98a2d5df953e1160fc4761dc1aaf0753d6bb"
+    },
+    {
+      "name": "shared-header-restore-warm",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 57.22650504100602,
+      "loadBefore": [
+        8.6025390625,
+        7.76171875,
+        8.5361328125
+      ],
+      "loadAfter": [
+        9.04638671875,
+        8.08935546875,
+        8.61181640625
+      ],
+      "ninjaCommands": 256,
+      "compileCommands": 235,
+      "explanationLines": 517,
+      "sha256": "c8d0118862d98b0407ac0bc8484fd2131e22ab3493baa534fdd777aaa8b473af"
+    },
+    {
+      "name": "identity-only",
+      "command": [
+        "ninja",
+        "-C",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "-v",
+        "-d",
+        "explain",
+        "-j6",
+        "seam_sample_review_cli_tests"
+      ],
+      "returnCode": 0,
+      "seconds": 5.655617707991041,
+      "loadBefore": [
+        9.04638671875,
+        8.08935546875,
+        8.61181640625
+      ],
+      "loadAfter": [
+        8.80224609375,
+        8.05419921875,
+        8.59619140625
+      ],
+      "ninjaCommands": 11,
+      "compileCommands": 4,
+      "explanationLines": 16,
+      "sha256": "fd48c209c9b45cf3ab5af0a07fe1d54e19a03751ccd60ec32cd306556e59ed99",
+      "compiledUnits": [
+        "libs/seam-rendering/src/pcm_cache.cpp",
+        "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+        "libs/seam-authoring-runtime/src/export_service.cpp",
+        "libs/seam-rendering/src/render_snapshot.cpp"
+      ],
+      "generatedHeaderMentions": 4
+    },
+    {
+      "name": "identity-only-test",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master/build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_sample_review_cli_tests$"
+      ],
+      "returnCode": 0,
+      "seconds": 13.48905812506564,
+      "loadBefore": [
+        8.80224609375,
+        8.05419921875,
+        8.59619140625
+      ],
+      "loadAfter": [
+        9.18896484375,
+        8.1806640625,
+        8.63134765625
+      ],
+      "ninjaCommands": 0,
+      "compileCommands": 0,
+      "explanationLines": 0,
+      "sha256": "f494ccbd9a4167eb4cf387647a2d1c1dc515a8fc7026d2c5916494736479e319"
+    }
+  ],
+  "machine": {
+    "hw.model": "Mac15,9",
+    "hw.memsize": "51539607552",
+    "machdep.cpu.brand_string": "Apple M3 Max"
+  },
+  "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.2.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n",
+  "cmake": "cmake version 4.1.1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).\n",
+  "ninja": "1.13.2",
+  "configureArguments": [
+    "-DSEAM_BUILD_BENCHMARKS:BOOL=ON",
+    "-DSEAM_BUILD_CLAP_EDITOR_PLUGIN:BOOL=ON",
+    "-DSEAM_BUILD_CLAP_PLUGIN:BOOL=ON",
+    "-DSEAM_BUILD_EPOCH:STRING=0",
+    "-DSEAM_BUILD_ID:STRING=0.13.1-local",
+    "-DSEAM_BUILD_NATIVE_DESKTOP:BOOL=ON",
+    "-DSEAM_BUILD_TESTS:BOOL=ON",
+    "-DSEAM_ENABLE_IPLUG2_SKIA:BOOL=OFF",
+    "-DSEAM_ENABLE_SAMPLE_TARGET_VOICING_EXPERIMENT:BOOL=OFF",
+    "-DSEAM_ENABLE_SANITIZERS:BOOL=OFF",
+    "-DSEAM_ENABLE_THREAD_SANITIZER:BOOL=OFF",
+    "-DSEAM_ENABLE_WORLD_REFERENCE_EXPERIMENT:BOOL=OFF",
+    "-DSEAM_INSTALLER_PLATFORM:STRING=macos-arm64",
+    "-DSEAM_NATIVE_ONNX_PYTHON:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/bin/python",
+    "-DSEAM_NATIVE_ONNX_SCHEMA:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/lib/python3.12/site-packages/onnx/onnx.proto",
+    "-DSEAM_ONNXRUNTIME_INCLUDE:PATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0/include",
+    "-DSEAM_ONNXRUNTIME_LIBRARY:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0/lib/libonnxruntime.dylib",
+    "-DSEAM_ONNXRUNTIME_ROOT:PATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/onnxruntime-osx-arm64-1.30.0",
+    "-DSEAM_ONNX_SCHEMA:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/fixture-env/lib/python3.12/site-packages/onnx/onnx.proto",
+    "-DSEAM_OPENSSL_SOURCE_COMMIT:STRING=",
+    "-DSEAM_PROTOC_EXECUTABLE:FILEPATH=",
+    "-DSEAM_REQUIRE_STATIC_OPENSSL:BOOL=OFF",
+    "-DSEAM_RUN_NATIVE_GUI_TESTS:BOOL=ON",
+    "-DSEAM_STATIC_PROTOBUF_ROOT:PATH=",
+    "-DSEAM_VOICE_TRAINING_PYTHON:FILEPATH=/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/training-w03-cache-probe/bin/python",
+    "-DSEAM_WARNINGS_AS_ERRORS:BOOL=ON"
+  ],
+  "leafOriginalSha256": "30609b70098d1fc21141b7995a34ed9873aaa31fc0ffd4fcb86dcef36d8cdb5c",
+  "shared-headerOriginalSha256": "b66ff626ab86ca96008f55c86359ebe55501087464d04ddc59d68cd2acdabe07",
+  "identityCommit": "1a9526489257b924711ee31644fb15ca9dd41754",
+  "generatedIdentityMatchesHead": true,
+  "finalStatus": "",
+  "completed": true,
+  "runtimeIdentityProof": {
+    "receiptPath": "out/evidence/rs11-build-cost-2026-10-12/identity-runtime-export/receipt.json",
+    "applicationBuildSha": "1a9526489257b924711ee31644fb15ca9dd41754",
+    "sha256": "2bf45960d04c47bb4c977c8e97c5c7a33be3f0be8a2c6a7ee5ee620ca1c5daf3",
+    "matchesScratchHead": true
+  },
+  "loopBuildPlusTestSeconds": {
+    "noop": 12.685416875057854,
+    "leaf": 14.304609667044133,
+    "shared-header": 67.28730816603638,
+    "identity-only": 19.14467583305668
+  },
+  "mainUnchangedByExperiment": true,
+  "identityRegression": {
+    "command": "ctest --test-dir build/release --output-on-failure -R '^seam_cmake_source_commit_identity$'",
+    "result": "PASS",
+    "entries": 1,
+    "pythonCases": 17,
+    "seconds": 7.22
+  },
+  "disposition": "NO_CHANGE_RECOMMENDED",
+  "retainedArtifacts": [
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/configure-arguments.json",
+      "sha256": "182461c9c6fbc004f07f8051e334e1eb2452a160d87f4bdf9f9b7256b297f136"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/configure.log",
+      "sha256": "f9bcf54b8d3a96e044efe9aff5a222e080e0558fccb5998aef224d07ce5741e6"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-generated-version.hpp",
+      "sha256": "4d82713d3f3f09ef4b142ef758f72b2be2041a12abd08a1394143b1ae5eb4227"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-only-test.log",
+      "sha256": "f494ccbd9a4167eb4cf387647a2d1c1dc515a8fc7026d2c5916494736479e319"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-only.log",
+      "sha256": "fd48c209c9b45cf3ab5af0a07fe1d54e19a03751ccd60ec32cd306556e59ed99"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-regression-ctest.log",
+      "sha256": "04f21b2522a7f9abf80bd280a8bab953e9e960b1fb549c8db60cc4604082ae60"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-regression-native.log",
+      "sha256": "658051e4cdf8c3c09b1f88d569bff297506c434e38e7d2ba09ec2abe17af2a2d"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-runtime-export/master.wav",
+      "sha256": "e27d35f363f44893a543e21b1867938c0bf700c9257287c3f5b26b7e89dc3c3c"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-runtime-export/project.seam",
+      "sha256": "4ac805e8576423dc4c0bf7e5f2f8c1c283306fc1201cc4b7d782a08a32d2331e"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-runtime-export/receipt.json",
+      "sha256": "2bf45960d04c47bb4c977c8e97c5c7a33be3f0be8a2c6a7ee5ee620ca1c5daf3"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-runtime-export/recipes/299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1.json",
+      "sha256": "299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/identity-seam_voicebank_cli",
+      "sha256": "8403b22e135852ec28e10deb8bedc35491cab12f024816324f65158831aeb515"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/initial-warm.log",
+      "sha256": "cd1789977ff28f3716abab4e0bc76be8a813b95d8457142aa3bfa3d450663677"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/leaf-restore-warm.log",
+      "sha256": "132eeca6529b2bbf73f26fa3f2ae6153f173d4de57f87766ca98edae9c74ecef"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/leaf-test.log",
+      "sha256": "1aa94bd288d1cbd4becd33f0c2152f61d6df18ed91dba7131b94980b4299289b"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/leaf.log",
+      "sha256": "497200038b420870932f7a0cf45c9f9d78b24bc2fedb574e4bf8cd225588d206"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/measure.py",
+      "sha256": "d0b8dce42487659f5fb63361a41f80db9809d90251304b141bcf4b85dbe2b7c7"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/measurement-progress.log",
+      "sha256": "74892aa4694d9ebfb777de6bad33981e44f7d86753b151468d9a7e9980f03a3f"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/noop-test.log",
+      "sha256": "4d36a573ca61acd6de68bf249c1ad83eba922ef40e788cc258b78601d52575fe"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/noop.log",
+      "sha256": "33221de0b104d873f2515e5e41601b8e7c3b63363470cca06c8d8fd21b90e5f8"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/shared-header-restore-warm.log",
+      "sha256": "c8d0118862d98b0407ac0bc8484fd2131e22ab3493baa534fdd777aaa8b473af"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/shared-header-test.log",
+      "sha256": "aff5a21df244b913734f101ccb0c98a2d5df953e1160fc4761dc1aaf0753d6bb"
+    },
+    {
+      "path": "out/evidence/rs11-build-cost-2026-10-12/shared-header.log",
+      "sha256": "377ecf011b03ca0241dc9576a19594022ccbd72585df1f60aafce57f169867c6"
+    }
+  ],
+  "mainIdentityLogicSha256": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99",
+  "compiledUnitsRoot": "/Users/lhs/.codex/worktrees/rs11-build-cost/project-seam-usable-alpha-u3-master",
+  "review": "Independent source/method review approved; recorded log digests, compile counts, true docs commit, generated and runtime identity independently matched"
+}

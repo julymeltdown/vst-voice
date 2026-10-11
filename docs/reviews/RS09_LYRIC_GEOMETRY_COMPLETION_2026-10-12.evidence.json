@@ -115,5 +115,12 @@
       "path": "out/evidence/rs09-lyric-geometry-2026-10-12/v06-native.log",
       "sha256": "018e7252638b482d0713093579e245345ac130ea802687dbdc3920939b2b3161"
     }
-  ]
+  ],
+  "integratedCommit": "6f8da65cf0288b68809b791dafdd7b0202ec918e",
+  "publicationVerification": {
+    "localHead": "6f8da65cf0288b68809b791dafdd7b0202ec918e",
+    "originMaster": "6f8da65cf0288b68809b791dafdd7b0202ec918e",
+    "liveRemoteMaster": "6f8da65cf0288b68809b791dafdd7b0202ec918e",
+    "scope": "Equality immediately after this unit push on 2026-10-12; subsequent unit pushes advance master"
+  }
 }
