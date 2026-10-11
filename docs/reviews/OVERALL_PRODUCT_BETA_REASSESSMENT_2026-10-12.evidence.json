@@ -1,0 +1,1013 @@
+{
+  "capturedUtc": "2026-10-11T17:39:25.376414+00:00",
+  "sourceCommit": "ea37cd34dcd879b28610d998a1a28fb9f144a2a6",
+  "sourceClean": true,
+  "alpha": {
+    "gate": {
+      "name": "Usable Alpha",
+      "status": "BLOCKED"
+    },
+    "counts": {
+      "NOT_RUN": 20
+    },
+    "evidenceRecords": 0
+  },
+  "beta": {
+    "status": "BLOCKED",
+    "requirements": 9,
+    "evidenceRecords": 0
+  },
+  "fullProduct": {
+    "requirements": 20,
+    "workPackages": 18,
+    "cases": 83,
+    "scope": {
+      "languages": [
+        "ja",
+        "en",
+        "ko"
+      ],
+      "platforms": [
+        "macos-arm64",
+        "windows-x86_64"
+      ],
+      "hostTuples": [
+        "macos-arm64/reaper/CLAP",
+        "macos-arm64/reaper/VST3",
+        "windows-x86_64/reaper/CLAP",
+        "windows-x86_64/reaper/VST3",
+        "macos-arm64/bitwig/CLAP",
+        "macos-arm64/bitwig/VST3",
+        "windows-x86_64/bitwig/CLAP",
+        "windows-x86_64/bitwig/VST3",
+        "macos-arm64/logic-pro/AUv2"
+      ],
+      "resourceKinds": [
+        "sample-real",
+        "sample-procedural",
+        "recipe-original",
+        "neural-original",
+        "dictionary-original",
+        "character-original"
+      ],
+      "backends": [
+        "classical",
+        "procedural",
+        "neural",
+        "native"
+      ],
+      "resourceCoverage": "All released resources must prove advertised language/range/style/capabilities. Language subsets and backend-specific incompatibilities are allowed only in a frozen matrix with a supported tested combination for every mandatory feature.",
+      "matrixStatus": "UNRESOLVED",
+      "matrixOwnerUnits": [
+        "U14",
+        "U19",
+        "U20",
+        "U35",
+        "U36",
+        "U42"
+      ],
+      "releasedResources": []
+    },
+    "evaluationProfileStatus": "UNRESOLVED",
+    "semanticValidation": {
+      "ownerUnit": "U45",
+      "status": "UNAVAILABLE",
+      "admission": "BLOCKED"
+    },
+    "evidenceStatus": "NOT_RUN",
+    "registry": {
+      "errors": [],
+      "case_ids": [
+        "R1.cross-note-melody",
+        "R1.syllable-order",
+        "R1.melisma-articulation",
+        "R1.timing-tempo",
+        "R2.vibrato",
+        "R2.pitch-portamento",
+        "R2.dynamics-gain",
+        "R2.consonant-attack",
+        "R2.legato-melisma",
+        "R2.style-blend",
+        "R2.breath-release",
+        "R2.breathiness",
+        "R2.tension-power",
+        "R2.formant-timbre",
+        "R2.growl-roughness",
+        "R2.automatic-performance",
+        "R2.takes-harmonies",
+        "R2.persistence-neutral",
+        "R3.original-female-recipe",
+        "R3.phonetic-range",
+        "R3.voice-song-separation",
+        "R4.real-input",
+        "R4.generated-input",
+        "R5.qa-lineage",
+        "R5.versioned-install",
+        "R5.interruption-recovery",
+        "R6.inventory-range",
+        "R6.two-styles",
+        "R6.paired-blend",
+        "R7.ja-pronunciation",
+        "R7.en-pronunciation",
+        "R7.ko-pronunciation",
+        "R7.edit-reconciliation",
+        "R8.classical-range",
+        "R8.independent-transitions",
+        "R8.selection-capabilities",
+        "R9.dataset-model",
+        "R9.installed-inference",
+        "R9.provider-closure",
+        "R10.manual-ownership",
+        "R10.take-harmony-editing",
+        "R10.assisted-benefit",
+        "R11.musical-editing",
+        "R11.dense-accessibility",
+        "R12.ustx-roundtrip",
+        "R12.smf-roundtrip",
+        "R12.hostile-input",
+        "R13.standalone-authoring",
+        "R13.macos-arm64-reaper-clap",
+        "R13.macos-arm64-reaper-vst3",
+        "R13.windows-x86_64-reaper-clap",
+        "R13.windows-x86_64-reaper-vst3",
+        "R13.macos-arm64-bitwig-clap",
+        "R13.macos-arm64-bitwig-vst3",
+        "R13.windows-x86_64-bitwig-clap",
+        "R13.windows-x86_64-bitwig-vst3",
+        "R13.macos-arm64-logic-pro-auv2",
+        "R14.singer-identity",
+        "R14.synchronized-performance",
+        "R14.reduced-motion",
+        "R15.bounded-work",
+        "R15.immutable-publication",
+        "R15.save-recovery",
+        "R15.classical-small-edit",
+        "R15.legacy-preview",
+        "R16.ja-corpus",
+        "R16.en-corpus",
+        "R16.ko-corpus",
+        "R16.finished-songs",
+        "R16.independent-creators",
+        "R16.acoustic-listening",
+        "R17.signed-install",
+        "R17.soak-hosts",
+        "R17.u60-support",
+        "R18.coverage-admission",
+        "R18.content-lineage",
+        "R18.promotion-closure",
+        "R19.sources-transforms",
+        "R19.training-model",
+        "R19.dictionary-character",
+        "R20.shared-actions",
+        "R20.batch-lineage",
+        "R20.installed-song"
+      ]
+    },
+    "profile": {
+      "errors": [],
+      "pending": [
+        "acoustic-boundaries",
+        "expression-tolerances",
+        "pronunciation-scoring",
+        "identity-rubric",
+        "generation-budgets",
+        "neural-budgets",
+        "resource-limits",
+        "cancellation-budgets",
+        "reference-machines",
+        "source-volume",
+        "reproducibility-tolerances",
+        "evaluation-profile-freeze",
+        "resource matrix"
+      ]
+    },
+    "contractErrors": [
+      "full-product unresolved final criteria: acoustic-boundaries, expression-tolerances, pronunciation-scoring, identity-rubric, generation-budgets, neural-budgets, resource-limits, cancellation-budgets, reference-machines, source-volume, reproducibility-tolerances, evaluation-profile-freeze, resource matrix"
+    ]
+  },
+  "statusPage": {
+    "schemaVersion": 1,
+    "states": [
+      "CONTRACT_VALID",
+      "IMPLEMENTED",
+      "TARGET_PASS",
+      "BETA_READY"
+    ],
+    "stateMeanings": {
+      "CONTRACT_VALID": "The requirement is written down and self-consistent.",
+      "IMPLEMENTED": "Code for it exists in this repository.",
+      "TARGET_PASS": "It ran and passed on this machine.",
+      "BETA_READY": "An installed candidate met it with retained immutable evidence."
+    },
+    "counts": {
+      "CONTRACT_VALID": 4,
+      "IMPLEMENTED": 3,
+      "TARGET_PASS": 0,
+      "BETA_READY": 0
+    },
+    "betaReady": false,
+    "betaReadyWhy": "No row is BETA_READY. Every row below it names what is missing, and none of those gaps is closable by a source change alone: they need retained evidence from an installed candidate, real people, or assets this repository does not contain.",
+    "rows": [
+      {
+        "claim": "Full-scope Beta contract is written and self-consistent",
+        "state": "CONTRACT_VALID",
+        "evidence": [
+          "docs/product/full-product-beta-contract.json"
+        ],
+        "blockedOn": "",
+        "notes": "R1-R20 and V01-V18 are enumerated in machine-readable form."
+      },
+      {
+        "claim": "Capability matrix covers every mandatory feature",
+        "state": "CONTRACT_VALID",
+        "evidence": [
+          "docs/product/full-product-beta-contract.json (scope.matrixStatus='UNRESOLVED')",
+          "tools/external_beta/capability_matrix.py"
+        ],
+        "blockedOn": "The contract's resourceCoverage rule turns on a positive supported-and-tested combination. There is no model or vocoder byte in the repository and scope.releasedResources is empty, so no positive cell can be asserted.",
+        "notes": "The refusal half is derived from code and is recorded; the positive half is absent."
+      },
+      {
+        "claim": "Bounded interchange boundary (U29)",
+        "state": "IMPLEMENTED",
+        "evidence": [
+          "libs/seam-interchange/",
+          "docs/implementation/U29_ACCEPTANCE_AUDIT_2026-09-22.md"
+        ],
+        "blockedOn": "Accepted locally on POSIX at 480a5e3. Windows and full-product acceptance are open, and Windows is deferred by user direction on this machine.",
+        "notes": ""
+      },
+      {
+        "claim": "Neural per-request determinism",
+        "state": "IMPLEMENTED",
+        "evidence": [
+          "libs/seam-neural-synthesis/src/graph_contract.cpp",
+          "docs/implementation/NEURAL_DETERMINISM_DEFECT_DIAGNOSIS_2026-10-03.md"
+        ],
+        "blockedOn": "The contract now refuses an unseeded RandomNormalLike or Dropout at admission, but no neural render can be run: there is still no model in the repository.",
+        "notes": ""
+      },
+      {
+        "claim": "Canonical standalone musician journey",
+        "state": "IMPLEMENTED",
+        "evidence": [
+          "docs/product/usable-alpha-acceptance.json",
+          "BETA_READINESS_ISSUES.md (SEAM-BETA-P0-04)"
+        ],
+        "blockedOn": "0 of 20 canonical rows carry a completed physical run. The rows need a person, installed candidate bytes and retained hash-bound evidence; no automated check can produce them.",
+        "notes": "This is the number most often misread as progress on its own."
+      },
+      {
+        "claim": "Target OS and DAW compatibility matrix",
+        "state": "CONTRACT_VALID",
+        "evidence": [
+          "docs/product/full-product-beta-contract.json (scope.hostTuples: 9 required)",
+          "docs/product/external-beta-host-matrix.json",
+          "tools/external_beta/host_evidence.py"
+        ],
+        "blockedOn": "No completed record covers the required tuples. Four of the nine are windows-x86_64 and cannot be run on this macOS machine.",
+        "notes": ""
+      },
+      {
+        "claim": "External Beta promotion",
+        "state": "CONTRACT_VALID",
+        "evidence": [
+          "docs/product/external-beta-acceptance.json"
+        ],
+        "blockedOn": "EB-001..EB-009 all require immutable evidence records that do not exist. Promotion is refused by the release gate, and nothing in this repository can produce signed, notarized, installed-candidate evidence.",
+        "notes": ""
+      }
+    ],
+    "absentMeans": "A row absent from this page is not claimed to pass at any state. A row listed at a lower state is not claimed to reach a higher one."
+  },
+  "u45Hold": "U45_RECONCILIATION_HOLD: native resource, project and measurement replay integration is incomplete",
+  "phase13a": {
+    "G2": {
+      "gate": "G2",
+      "passed": false,
+      "blockedIds": [
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator"
+      ],
+      "errors": []
+    },
+    "G3": {
+      "gate": "G3",
+      "passed": false,
+      "blockedIds": [
+        "bitwig-studio",
+        "logic-pro",
+        "macos-clap-runtime",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "windows-clap-runtime"
+      ],
+      "errors": []
+    },
+    "G4": {
+      "gate": "G4",
+      "passed": false,
+      "blockedIds": [
+        "ableton-live",
+        "bitwig-studio",
+        "cubase",
+        "fl-studio",
+        "garageband",
+        "linux-vst3-build",
+        "linux-vst3-validator",
+        "logic-pro",
+        "macos-auv2-build",
+        "macos-auval",
+        "macos-clap-runtime",
+        "macos-installer-clean-os",
+        "macos-notarization",
+        "macos-vst3-build",
+        "macos-vst3-validator",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "studio-one",
+        "windows-authenticode",
+        "windows-clap-runtime",
+        "windows-installer-clean-os",
+        "windows-vst3-build",
+        "windows-vst3-validator"
+      ],
+      "errors": []
+    },
+    "G5": {
+      "gate": "G5",
+      "passed": false,
+      "blockedIds": [
+        "ableton-live",
+        "bitwig-studio",
+        "cubase",
+        "fl-studio",
+        "garageband",
+        "linux-vst3-build",
+        "linux-vst3-validator",
+        "logic-pro",
+        "macos-auv2-build",
+        "macos-auval",
+        "macos-clap-runtime",
+        "macos-installer-clean-os",
+        "macos-notarization",
+        "macos-vst3-build",
+        "macos-vst3-validator",
+        "official-voicebank-01",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "studio-one",
+        "windows-authenticode",
+        "windows-clap-runtime",
+        "windows-installer-clean-os",
+        "windows-vst3-build",
+        "windows-vst3-validator"
+      ],
+      "errors": []
+    }
+  },
+  "tracked": {
+    "count": 3043,
+    "missing": []
+  },
+  "inputHashes": {
+    "docs/product/usable-alpha-acceptance.json": "735e6dcba0fcd96e904518812e7ffaaf9b24b47efd8e5f442477a9e6e54c4a84",
+    "docs/product/external-beta-acceptance.json": "fbf453566dbe33452d2c217f91521545ecbec787f7497ce4d4240881ef8eba9e",
+    "docs/product/full-product-beta-contract.json": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+    "docs/phase13a/mandatory-validation-matrix.json": "c9666139732b595eb031a4061332bfba5538284e5365781b602254ddaff8751e"
+  },
+  "sourceHashes": {
+    "libs/seam-rendering/src/render_snapshot.cpp": "439217914869fd3079c3e463d4db8cfa3a868ecc74c07a0853233947597a7007",
+    "libs/seam-synthesis/src/performance_compiler.cpp": "98652bf595c952dee830e15f51e12573a5b2673bf29f1228bf8de10e400e0e77",
+    "libs/seam-candidate-packaging/src/candidate_package.cpp": "c65183e23c459fe70bbdb0c7d494bdff32a7f54bdd55cbaa252d2452741cac0e",
+    "apps/seam-voicebank-cli/candidate_package_commands.cpp": "30609b70098d1fc21141b7995a34ed9873aaa31fc0ffd4fcb86dcef36d8cdb5c",
+    "apps/seam-voicebank-cli/project_binding_commands.cpp": "579818ffb28d0c32c3adb6f4d4b04eb5f444020699f65288ee17e421b28a10e7",
+    "libs/seam-interchange/src/ustx_project_conversion.cpp": "5895f4f297fc7544b175c20d53adcb77c27c735370a943df45831d0cc49c7520",
+    "tools/external_beta/full_product_gate.py": "6ca576963eab5c1bbd38a7f6eef185c22dadf143568173337327b146feaea685",
+    "tools/external_beta/full_product_report.py": "f0b147fe00e47a62e6424a98d256ef92af6493b2cbb12528a115e96d5e7ee14c",
+    "tools/external_beta/release_gate.py": "778957d05fa638d48053098dfd78753c84ba7e904dccfdf2fd2d205608424888",
+    "tools/external_beta/release_status.py": "a4e5a9dd29538694d6fb82dc48ff7acbde0b9de2baec85b5ee11588fa8cca1b1",
+    "tools/singing_quality/listener_packet_003.py": "30aef2357ffd1040c2a7c24d4b43da22c2a662a8a5e00e527d50d1afc4f9f4b7",
+    "tests/test_original_singer_song_journey.cpp": "7b0d8eb82bba15e82e52121a0be455f3c4f41f53775043500734cf8b6666b55e",
+    "tests/test_expression_on_song.cpp": "9ba46042f69f376175122d85e4709bcd22208fac48e37bcbe441d06502f631e9",
+    "tests/test_procedural_install_journey.cpp": "493dc3b6600312a23df77f33f522f2fb29013fd595a2761e2031a27e2da1a1f0",
+    "tests/test_sample_review_cli.cpp": "02868348c04a2803163d0c7f3dcd2d31eb0d24311b39047986a7e5d1c2aa5054",
+    "scripts/verify_usable_alpha_contract.py": "1a44414839181cd10718cf8ecbb78f7b5a1fd61788b7126748d488eea41ca5bd",
+    "scripts/verify_phase13a_contracts.py": "6d5bee59d3eee7e541325c0cff0cd9ed80a0484df5ecf9eb0ace2afb6e793df8",
+    "CMakeLists.txt": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99",
+    "README.md": "bcae3dd197881380d16f134f25eac9d33ef5cf657837de80b701168b3d9cea39",
+    "docs/voicebank/beta-voicebank-01-dossier.json": "256dce6d3e89dca424c4e82c0dbdadbfa494b1e70acbf41e30d3ba0c6819938e",
+    "docs/plans/2026-10-08-full-scope-completion-execution-plan.md": "97d4779f460a2a9112bcab4b4400bf9640d9b42b713013344cc5c3693fcb0317",
+    "docs/formats/RESOURCE_CANDIDATE_PACKAGING.md": "df3382a10c94399b5ffadc5e69cc7137797509f58a1a1475c0945c794dd10f7d",
+    "docs/implementation/SINGER_VALIDATION_CAMPAIGN_2026-09-20.md": "5d2273dfb159e09be1c65a5130bb3b5346eaca257625ce2dbd1a64eb9d01afa3"
+  },
+  "freshVerification": {
+    "fullReleaseBuild": {
+      "command": "cmake --build build/release -j6",
+      "exitCode": 0
+    },
+    "focusedCtest": {
+      "command": "ctest --test-dir build/release -V -R '^(seam_original_singer_song_journey_tests|seam_sample_review_cli_tests|seam_expression_on_song_tests|seam_procedural_install_journey_tests)$'",
+      "exitCode": 0,
+      "outerPassed": 4,
+      "nativeCounts": [
+        {
+          "ctestNumber": 106,
+          "nativePassed": 6,
+          "nativeFailed": 0
+        },
+        {
+          "ctestNumber": 107,
+          "nativePassed": 7,
+          "nativeFailed": 0
+        },
+        {
+          "ctestNumber": 108,
+          "nativePassed": 34,
+          "nativeFailed": 0
+        },
+        {
+          "ctestNumber": 172,
+          "nativePassed": 25,
+          "nativeFailed": 0
+        }
+      ],
+      "nativePassed": 72,
+      "seconds": 36.28
+    },
+    "contractCommands": [
+      {
+        "command": "python3 scripts/verify_usable_alpha_contract.py",
+        "exitCode": 0
+      },
+      {
+        "command": "python3 scripts/verify_phase13a_contracts.py --root .",
+        "exitCode": 0
+      }
+    ],
+    "pythonTests": {
+      "command": "python3 -m unittest tests.external_beta.test_full_product_gate tests.external_beta.test_release_status -v",
+      "exitCode": 0,
+      "tests": 22,
+      "seconds": 1.121
+    },
+    "excluded": [
+      "complete CTest matrix",
+      "new sanitizer run",
+      "learned model re-render",
+      "human listening",
+      "unaided physical user session",
+      "DAW/Windows/signing/VoiceOver/release acceptance"
+    ]
+  },
+  "testedBinaries": {
+    "seam_original_singer_song_journey_tests": "c8427705502b6fccff442670db057b506eca39166fd393d3d9afbd74649fe82c",
+    "seam_procedural_install_journey_tests": "6f8f0e805bf18bd24654e41fd934f41d0260992a8a314efa82b8275ab9365e6e",
+    "seam_expression_on_song_tests": "af176efc2fc6fdf0a7aa21482cbed19d86d42a2bc7e270b16a073cc0edc130c2",
+    "seam_sample_review_cli_tests": "6d4faff21b9143b3b4220d7964fce7ff79f6bd823254171dfd6d6963732286bf",
+    "seam_voicebank_cli": "70a98b15c8360e6a3179e7824a4080c51ddf62e5943d7b8cdcbc9befbffe3811"
+  },
+  "historicalLearnedCampaign": {
+    "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/campaign-e13-v512-e1-r1/campaign.json",
+    "sha256": "05dc78a353097739f766e879e618b824d2669b90ecb0e1afc46cf6a9fbb309dc",
+    "sourceOfClaim": "Historical receipt read/rehash only; no new training, inference or quality acceptance",
+    "executionPassed": true,
+    "singerQualified": false,
+    "releaseEligible": false,
+    "selectedCount": 5,
+    "items": [
+      {
+        "sourceId": "procedural-song-00003",
+        "execution": "PASSED",
+        "pitchStatus": "MISMATCH",
+        "comparisonSha256": "a0382f3433a86a4070c5fcb3dc36dec52e81900eb46f8d422dc870774f685498",
+        "verifiedComparisonDigest": true
+      },
+      {
+        "sourceId": "procedural-song-00005",
+        "execution": "PASSED",
+        "pitchStatus": "MISMATCH",
+        "comparisonSha256": "a00a9a5dd782e9d53089daf590f56d2f0fea8543a23f18b5a343f3006884d35b",
+        "verifiedComparisonDigest": true
+      },
+      {
+        "sourceId": "procedural-song-00024",
+        "execution": "PASSED",
+        "pitchStatus": "MISMATCH",
+        "comparisonSha256": "03d71a68e5fe59e508f515fc32ab4f62e5386ed528bea68637d03b37df355425",
+        "verifiedComparisonDigest": true
+      },
+      {
+        "sourceId": "procedural-song-00402",
+        "execution": "PASSED",
+        "pitchStatus": "MISMATCH",
+        "comparisonSha256": "8588e7ab64ad25eea03343447b2d5a30b9ddde0dabab378fb685b090cfbc3084",
+        "verifiedComparisonDigest": true
+      },
+      {
+        "sourceId": "procedural-song-00420",
+        "execution": "PASSED",
+        "pitchStatus": "MISMATCH",
+        "comparisonSha256": "fa11565dbf8946d0e97a66513949c75a1db90a1d08fdf6aacf332f06668835cf",
+        "verifiedComparisonDigest": true
+      }
+    ],
+    "corpus": {
+      "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/corpus.json",
+      "sha256": "ec77cc91df61718f171b83114a26bbe7df0e28d09f52357b2443844c3a9216ca",
+      "formatId": "com.project-seam.captured-teacher-corpus",
+      "state": "PREPARED_UNAPPROVED",
+      "sourceRightsAdmitted": false,
+      "labelsAdmitted": false,
+      "trainingAdmitted": false,
+      "singerQualified": false,
+      "releaseEligible": false,
+      "distinctRecipeCount": 1,
+      "scope": "Generated-teacher historical diagnostic, not a current qualified learned release candidate or latest-private-candidate census"
+    }
+  },
+  "artifactHashes": {
+    "out/evidence/overall-readiness-2026-10-12/usable-alpha-contract.log": "f2a0a9ad1f02bfa2377625ceb4efd84c810ab1147d449f84e6d7af8747040f6b",
+    "out/evidence/overall-readiness-2026-10-12/full-release-build.log": "18672dea5043fcba7614b12fc1d514ec4e9fd540d2d473d20bef8ec322438498",
+    "out/evidence/overall-readiness-2026-10-12/historical-learned-campaign.json": "05dc78a353097739f766e879e618b824d2669b90ecb0e1afc46cf6a9fbb309dc",
+    "out/evidence/overall-readiness-2026-10-12/tested-version.hpp": "7c1a1c891b9747314c19180b57801d37c824a60764418ef88d00e0fae87eb993",
+    "out/evidence/overall-readiness-2026-10-12/focused-release-tests.log": "6d72cea7dd5893f88df8dffdfd2a7ed07a8c27dc150932a32aac61a5a5ed1d7a",
+    "out/evidence/overall-readiness-2026-10-12/phase13a-contract.log": "d3eaadd50533709bc5e0f6c8915e878043cc5261f291c821f85227e4f730f833",
+    "out/evidence/overall-readiness-2026-10-12/full-product-admission-tests.log": "b73fcdbd7972262885ce96be09107a4885a97981a28c1a5d50e285ddfbf99355",
+    "out/evidence/overall-readiness-2026-10-12/retain_verification.py": "29ee8b25a75779e24952453b154c59543385d3513613873be5797a1b4397ca00",
+    "out/evidence/overall-readiness-2026-10-12/LastTest.log": "3b24e85b52bf01dcab2a6b1bd8979a13c446f1841191a4da9fca5d4422ca8e66",
+    "out/evidence/overall-readiness-2026-10-12/canonical-state.json": "6912d7e1fccbb8ee8eca26a4fd4a929660d2904e9efadf32a23fc51b5d8ba366",
+    "out/evidence/overall-readiness-2026-10-12/critical-review-verdict.md": "9828f3a076b0ebbb6c17bd02149c94867aa88a0441a913a3509f486ae5802fd5"
+  },
+  "historicallyBranchOnlyPaths": [
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.hpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-candidate-packaging/include/seam/candidate_packaging/candidate_package.hpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-candidate-packaging/src/candidate_package.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-distribution/src/install_transaction.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-distribution/src/install_transaction_internal.hpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-voicebank-production/include/seam/voicebank_production/resource_candidate.hpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-voicebank-production/src/declared_candidate.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "libs/seam-voicebank-production/src/resource_candidate.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u14-typed-package",
+      "path": "tests/test_install_transaction.cpp",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u45-full-product-gate",
+      "path": "docs/implementation/FULL_PRODUCT_TYPED_AUDIT_2026-09-28.md",
+      "presentNow": false,
+      "trackedNow": false
+    },
+    {
+      "historicalBranch": "codex/u45-full-product-gate",
+      "path": "tests/external_beta/test_full_product_typed_gate.py",
+      "presentNow": true,
+      "trackedNow": true
+    },
+    {
+      "historicalBranch": "codex/u45-full-product-gate",
+      "path": "tools/external_beta/full_product_gate.py",
+      "presentNow": true,
+      "trackedNow": true
+    }
+  ],
+  "schemaVersion": 1,
+  "kind": "seam.overall-readiness-assessment.engineering.v1",
+  "assessmentDate": "2026-10-12",
+  "assessmentTimezone": "Asia/Seoul",
+  "authorizesRelease": false,
+  "report": "docs/reviews/OVERALL_PRODUCT_BETA_REASSESSMENT_2026-10-12.md",
+  "progressInterpretation": {
+    "exactOverallImplementationPercent": null,
+    "reason": "No validated unit-size/effort metric or freshly accepted full 48-unit scoring census; old index is retired as goal success metric",
+    "inheritedPlanningModel": {
+      "A": 6,
+      "I": 7,
+      "P": 32,
+      "N": 3,
+      "weights": {
+        "A": 1,
+        "I": 0.8,
+        "P": 0.45,
+        "N": 0
+      },
+      "denominator": 48,
+      "percent": 54.166666666666664,
+      "sensitivityPercent": [
+        40.833333333333336,
+        67.50000000000001
+      ],
+      "newAcceptancePromotion": false,
+      "status": "HISTORICAL_RETIRED_NOT_CURRENT_PROGRESS"
+    },
+    "canonicalAlphaPass": 0,
+    "canonicalAlphaRows": 20,
+    "canonicalBetaEvidenceRecords": 0,
+    "canonicalBetaCategories": 9
+  },
+  "unitNavigationAnchors": [
+    {
+      "unit": "U1",
+      "path": "CMakeLists.txt",
+      "exists": true,
+      "sha256": "dc4170344de1e350ae2071921842881fbea23a5103a1771dad0bfd59a7069e99",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U2",
+      "path": "docs/product/full-product-beta-contract.json",
+      "exists": true,
+      "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U3",
+      "path": "libs/seam-formats/src/project_json.cpp",
+      "exists": true,
+      "sha256": "5d6227aa78eca5b2358fa66a878278b231aa7eaa1942de8ebb5b842e48d22057",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U4",
+      "path": "libs/seam-phonemizer/src/pronunciation_resolver.cpp",
+      "exists": true,
+      "sha256": "7bd4e6df9ed7d5006b91c2c63aa174fe14a6069f25c1b521672983f2f0a8bba1",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U5",
+      "path": "libs/seam-synthesis/src/timing_solver.cpp",
+      "exists": true,
+      "sha256": "7cf9996413f1291aa4ab98109538deb0b25682f2a36db1db45d538f35dc338ef",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U6",
+      "path": "libs/seam-synthesis/src/performance_compiler.cpp",
+      "exists": true,
+      "sha256": "98652bf595c952dee830e15f51e12573a5b2673bf29f1228bf8de10e400e0e77",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U7",
+      "path": "libs/seam-rendering/src/render_snapshot.cpp",
+      "exists": true,
+      "sha256": "439217914869fd3079c3e463d4db8cfa3a868ecc74c07a0853233947597a7007",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U8",
+      "path": "libs/seam-synthesis/src/renderer_capabilities.cpp",
+      "exists": true,
+      "sha256": "fb09be052675b448c00a83d3a8a80e8772b5d1d722188d315e586335c79acd79",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U9",
+      "path": "libs/seam-voicebank-production/src/repository.cpp",
+      "exists": true,
+      "sha256": "f746a341e63ceb98f351a580f02e4ec4f3e70301fa2bbdca97284b90052ffec4",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U10",
+      "path": "tools/voicebank_script_generator/inventory.py",
+      "exists": true,
+      "sha256": "f033be48df8ad35e0cd479af2559d68a86930207c81bae54b710c61e38a33432",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U11",
+      "path": "libs/seam-voicebank-production/src/repository.cpp",
+      "exists": true,
+      "sha256": "f746a341e63ceb98f351a580f02e4ec4f3e70301fa2bbdca97284b90052ffec4",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U12",
+      "path": "libs/seam-voicebank/src/validator.cpp",
+      "exists": true,
+      "sha256": "1a7f1165037431640d2e3ebe3c18b592ef9687df0f2c34e8c8f38c5ce5d6b0db",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U13",
+      "path": "libs/seam-voicebank-production/src/repository_review.cpp",
+      "exists": true,
+      "sha256": "b0e174be3e8b0ba15270cee047758acfcaab1f99d8239b7e4d693a7da0d3a886",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U14",
+      "path": "libs/seam-candidate-packaging/src/candidate_package.cpp",
+      "exists": true,
+      "sha256": "c65183e23c459fe70bbdb0c7d494bdff32a7f54bdd55cbaa252d2452741cac0e",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U15",
+      "path": "libs/seam-voicebank/src/acoustic_analysis.cpp",
+      "exists": true,
+      "sha256": "2e1f7d3f5953d294a8876e3b534134542115ec917fced328bd2c26a1ad006538",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U16",
+      "path": "libs/seam-rendering/src/render_pipeline.cpp",
+      "exists": true,
+      "sha256": "143cd9182b5450dc9c5e06dd6c7bd9affe9ba5ee9b022f56b8525b533516c515",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U17",
+      "path": "libs/seam-synthesis/src/unit_selection.cpp",
+      "exists": true,
+      "sha256": "dfbb6b92ce5fb8b427ce5a8e322c9bcdfca7cb906350b1cf38d87f4658cea301",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U18",
+      "path": "libs/seam-voice-design/src/voice_recipe.cpp",
+      "exists": true,
+      "sha256": "2357a3bcb65ccb6d49b36480d45479ab491011386744a09f41031152e1a62efc",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U19",
+      "path": "libs/seam-voice-design/src/phonation_source.cpp",
+      "exists": true,
+      "sha256": "4a2fe59ffadf3217465a3cdc8e60d1ab2c32a80934f8510f616af719ddb34700",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U20",
+      "path": "libs/seam-voice-design/src/articulation_plan.cpp",
+      "exists": true,
+      "sha256": "ed895cfddb50e72480fc83af0aa205b3bfee39bc49cfd7175805ca5dff2a84ba",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U21",
+      "path": "libs/seam-authoring-runtime/src/generation_campaign_advance.cpp",
+      "exists": true,
+      "sha256": "84bfd25a4b07768955292657c5c11c512ec057226023ab65aaa6667e774563d9",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U22",
+      "path": "libs/seam-native-ui/src/voicebank_studio_production_support.cpp",
+      "exists": true,
+      "sha256": "7eced44fed5ed95fb21fd3670590944e438e1d6865c1c1eaad58e568aaa925fd",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U23",
+      "path": "libs/seam-application/src/note_commands.cpp",
+      "exists": true,
+      "sha256": "176da5ec58b9354e0a4603afe8fb51f589fcda645a61c5ec9b3352babb2c250d",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U24",
+      "path": "libs/seam-application/src/lyric_commands.cpp",
+      "exists": true,
+      "sha256": "5a093b162d5a16f766d22e89f5a9e5b6e507047401678cd33446ba3a8725b205",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U25",
+      "path": "libs/seam-authoring-runtime/src/technical_edit_controller.cpp",
+      "exists": true,
+      "sha256": "ec03136f36b0605d4b7c888567fc65fa87d764bac6133e9ca7e02b4f1926a418",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U26",
+      "path": "libs/seam-phonemizer/src/japanese_phonemizer.cpp",
+      "exists": true,
+      "sha256": "2fb8298bd6ec6996e4dd09f20e4602b56c1c4eae2ab8255d7aae5ad49840e2d3",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U27",
+      "path": "libs/seam-phonemizer/src/english_phonemizer.cpp",
+      "exists": true,
+      "sha256": "58fade65608f2d193354e5379b08fdb652d2ea6fceea3316f6a0a21a1150ea31",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U28",
+      "path": "libs/seam-phonemizer/src/korean_phonemizer.cpp",
+      "exists": true,
+      "sha256": "40174937b38bda2acf26365f29441aec6476fe52baf7226cf934c2145e2a02fe",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U29",
+      "path": "libs/seam-interchange/src/ustx_codec.cpp",
+      "exists": true,
+      "sha256": "9ca2d4e117f6f819a191e5097f3b9a05bc9ede771f46673889c8af168272a403",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U30",
+      "path": "libs/seam-interchange/src/ustx_project_conversion.cpp",
+      "exists": true,
+      "sha256": "5895f4f297fc7544b175c20d53adcb77c27c735370a943df45831d0cc49c7520",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U31",
+      "path": "libs/seam-interchange/src/smf_project_conversion.cpp",
+      "exists": true,
+      "sha256": "588ee3cf3cee535d1736e59022da53ba97d6cbcb4133c22ed62c778d30b0c32b",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U32",
+      "path": "libs/seam-native-ui/src/conversion_review_model.cpp",
+      "exists": true,
+      "sha256": "48548a1db6a77686b4543f2343d7156f71695b4904f57ddae84052f8ca6a77bf",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U33",
+      "path": "libs/seam-clap-editor/src/plugin_entry.cpp",
+      "exists": true,
+      "sha256": "1171593f30285cc96b5ec892e55b962c2bfde4a857772492a78b002ef942d5ba",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U34",
+      "path": "libs/seam-clap-editor/src/host_timeline.cpp",
+      "exists": true,
+      "sha256": "888a9fe700c4a63092fc59db709a677f2bbcf91522f9bb3656e6659b154eac72",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U35",
+      "path": "tools/voice_model_training/prepare_captured_teacher.py",
+      "exists": true,
+      "sha256": "0b34ac137b9a3cfb3919201f6d3b5aa1a79e5e0233b2e41b599b9e6117d06e5e",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U36",
+      "path": "tools/voice_model_training/validation_campaign.py",
+      "exists": true,
+      "sha256": "508846cb677f7e2aea839d0fc1320a8ea13e3377b3957b570daa0e16e6e31090",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U37",
+      "path": "libs/seam-authoring-runtime/src/neural_phrase_runner.cpp",
+      "exists": true,
+      "sha256": "b5103d08d797bb10ccdb53c5b79de33c27bc759aedbbdf123948a39f27511ec5",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U38",
+      "path": "libs/seam-application/src/performance_commands.cpp",
+      "exists": true,
+      "sha256": "aed2c73eee92e901d9bc79b2d4f3ab7fcc0410d7dd4045178cde04827e3223da",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U39",
+      "path": "libs/seam-synthesis/src/renderer_capabilities.cpp",
+      "exists": true,
+      "sha256": "fb09be052675b448c00a83d3a8a80e8772b5d1d722188d315e586335c79acd79",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U40",
+      "path": "libs/seam-application/src/harmony_commands.cpp",
+      "exists": true,
+      "sha256": "40bc01297e71a516975f6b6d9af85ec63146a11fecbfdc77532fb01b01b0d1de",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U41",
+      "path": "libs/seam-native-ui/src/character_performance_binding.cpp",
+      "exists": true,
+      "sha256": "ec2ad358cfb462649d4e4e0c42f44fa0d602b879d62b2185a65b963e675be3bd",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U42",
+      "path": "docs/product/full-product-beta-contract.json",
+      "exists": true,
+      "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U43",
+      "path": "tools/singing_quality/",
+      "exists": true,
+      "sha256": null,
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U44",
+      "path": "libs/seam-authoring-runtime/src/support_bundle.cpp",
+      "exists": true,
+      "sha256": "1f8e1e20f73353d27e1969b5913b3169b4615e6c5f148ddcc399a2b2b3941bd9",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U45",
+      "path": "tools/external_beta/full_product_gate.py",
+      "exists": true,
+      "sha256": "6ca576963eab5c1bbd38a7f6eef185c22dadf143568173337327b146feaea685",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U46",
+      "path": "tools/external_beta/release_gate.py",
+      "exists": true,
+      "sha256": "778957d05fa638d48053098dfd78753c84ba7e904dccfdf2fd2d205608424888",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U47",
+      "path": "scripts/run_external_beta_host_evidence.py",
+      "exists": true,
+      "sha256": "2c6b4fcd87ee4cd8a25697ad19c21aa949d41f084c2f70aac2fcd052341ce404",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    },
+    {
+      "unit": "U48",
+      "path": "scripts/run_external_beta_release_audit.py",
+      "exists": true,
+      "sha256": "e27462713cf2ae2974ae202f224209bdc0b010723cb190262384b82eb4638be3",
+      "classificationBoundary": "Residual navigation inventory only; no fresh acceptance or scoring promotion"
+    }
+  ],
+  "criticalReview": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a12c14-bcec-7a03-a4ee-98370748d3f4",
+    "status": "APPROVED_AFTER_REQUIRED_CORRECTIONS",
+    "originalVerdict": "REVISE (narrow); approved for publication after two prescribed edits, no further round required",
+    "correctionsApplied": [
+      "U14 dictionary/character installation and packaging/recovery residuals",
+      "Generated-teacher corpus source and W09 execution/qualification boundary",
+      "Optional verifier/Q1 link-line corrections"
+    ],
+    "kind": "AI technical review, not human musical/rights/release acceptance",
+    "reviewerReranLeadTests": false,
+    "independentHistoricalReceiptHashChecks": true
+  },
+  "scopeLimit": "Assessment/documentation only. Source implementation, canonical acceptance states and release authorization unchanged.",
+  "proposedGoal": "Prepare a native exact-development-singer song observation kit and a concrete production-bank decision dossier in parallel; obtain user observation, then repair largest observed blocker; no new goal activated"
+}
