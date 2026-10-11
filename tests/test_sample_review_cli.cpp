@@ -10,6 +10,8 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/rendering/project_renderer.hpp"
+#include "seam/rendering/render_snapshot.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
@@ -17,6 +19,7 @@
 #include "seam/voicebank_production/resource_candidate.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/candidate_packaging/candidate_package.hpp"
+#include <algorithm>
 #include <map>
 #include <stop_token>
 
@@ -535,6 +538,9 @@ formats::JsonValue cliSuccess(std::vector<std::string> arguments) {
   return json.value();
 }
 std::string field(const formats::JsonValue& object, std::string_view key) { return object.find(key)->asString(); }
+void cliRefusal(const std::vector<std::string>& arguments, std::string_view diagnostic) {
+  requireCliRefusal(arguments, 2U, diagnostic);
+}
 #if defined(SEAM_TEST_PYTHON)
 const std::string& nativeVerifierSha() {
   // One immutable test executable selection for this suite; replay re-pins it
@@ -550,7 +556,9 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
   auto project=factory.createProject("Installed binding fixture");
   const auto trackId=factory.addVocalTrack(project,"Voice");
   const auto regionId=factory.addRegion(project,trackId,"Verse",time::Tick{0},time::Tick{960});
-  auto [lyric,note]=factory.makeNote(time::Tick{0},time::Tick{960},60,U"a",domain::Language::Japanese);
+  // A Latin "a" is unsupported Japanese spelling and resolves to a pause.
+  // This fixture must ask for a voiced kana before asserting an audible export.
+  auto [lyric,note]=factory.makeNote(time::Tick{0},time::Tick{960},60,U"あ",domain::Language::Japanese);
   project.findRegion(regionId)->lyrics.push_back(lyric);project.findRegion(regionId)->notes.push_back(note);
   auto* track=project.findVocalTrack(trackId);
   const bool recipe=resource.kind==domain::SingerResourceKind::Procedural;
@@ -646,7 +654,136 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
     track->proceduralRecipe->resource=resource;
     track->proceduralRecipe->resource.contentHash=field(audit,"installedContentHash");restore();CHECK(!runCli(args));
     track->proceduralRecipe->resource=resource;
+    track->proceduralRecipe->installation=expected;
+    track->proceduralRecipe->path=(installed/expected.recipeEntry).string();restore();
+    const auto frozen = rendering::captureProceduralSource(*track,
+        rendering::TrackRecipeFileSource{trackId, *track->proceduralRecipe, root});
+    CHECK(frozen);
+    const auto voicedSnapshot = rendering::RenderSnapshotFactory{}.createProcedural(project,
+        frozen.value().resource, trackId, regionId, 0U, rendering::RenderQuality::Final, 48000U, "neutral");
+    CHECK(voicedSnapshot); CHECK(voicedSnapshot.value().phonemes);
+    CHECK(voicedSnapshot.value().phonemes->warnings.empty());
+    CHECK(voicedSnapshot.value().phonemes->tokens.size() == 1U);
+    CHECK(voicedSnapshot.value().phonemes->tokens.front().symbol == "a");
+    // Preserve the original failure's cause as a production-snapshot regression:
+    // unsupported Latin spelling in Japanese creates a pause, not a bad recipe.
+    auto unsupportedProject = project;
+    unsupportedProject.findRegion(regionId)->lyrics.front().surface = U"a";
+    const auto pauseSnapshot = rendering::RenderSnapshotFactory{}.createProcedural(unsupportedProject,
+        frozen.value().resource, trackId, regionId, 0U, rendering::RenderQuality::Final, 48000U, "neutral");
+    CHECK(pauseSnapshot); CHECK(pauseSnapshot.value().phonemes);
+    CHECK(!pauseSnapshot.value().phonemes->warnings.empty());
+    CHECK(pauseSnapshot.value().phonemes->tokens.size() == 1U);
+    CHECK(pauseSnapshot.value().phonemes->tokens.front().symbol == "pau");
+    const auto output=root/"observed-recipe-export";
+    auto operation=args;operation[0]="export-installed-recipe-project";operation.push_back(output.string());
+    const auto observed=cliSuccess(operation);
+    CHECK(field(observed,"recordType")=="seam.u45.installed-recipe-export.v1");
+    CHECK(field(observed,"result")=="ExportCommittedAndObserved");
+    CHECK(field(observed,"resourceCapture")=="SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE");
+    CHECK(field(observed,"executableIdentity")=="EXTERNAL_PIN_REQUIRED");
+    CHECK(observed.find("projectLanguages")->asArray().size() == 1U);
+    CHECK(observed.find("projectLanguages")->asArray().front().asString() == "ja");
+    CHECK(field(observed,"playback")=="NOT_RUN");CHECK(!observed.find("authorizesRelease")->asBool());
+    CHECK(*observed.find("installed")==audit);
+    CHECK(field(*observed.find("project"),"projectSha256")==args[2]);
+    CHECK(core::sha256File(path).value()==args[2]);
+    CHECK(observed.find("artifacts")->asArray().size()>=3U);
+    for (const auto& artifact:observed.find("artifacts")->asArray())
+      CHECK(core::sha256File(output/field(artifact,"path")).value()==field(artifact,"sha256"));
+    CHECK(core::sha256File(output/"receipt.json").value()==field(observed,"exportReceiptSha256"));
+    const auto master=voicebank::readWav(output/"master.wav");CHECK(master);
+    CHECK(!master.value().interleaved.empty());
+    CHECK(voicebank::analyzeAudio(master.value().interleaved).peak>1e-4F);
+    CHECK_NEAR(observed.find("masterPeakAbs")->asNumber(),
+        voicebank::analyzeAudio(master.value().interleaved).peak, 1e-6);
+    CHECK(!observed.find("masterClipped")->asBool());
+    CHECK(core::sha256File(output/"master.wav").value()==field(observed,"masterSha256"));
+    // An evidence operation must leave an interrupted transaction untouched.
+    // This is deliberately not a valid journal: refusal must precede parsing or
+    // recovery, even when the destination itself is absent.
+    const auto pendingOutput = root / "pending-recipe-export";
+    const auto pendingJournal = root / ".pending-recipe-export-export-journal.json";
+    const auto pendingBackup = root / ".pending-recipe-export-export-backup-canary";
+    CHECK(std::filesystem::create_directory(pendingBackup));
+    CHECK(core::durableAtomicWriteText(pendingBackup / "keep.txt", "previous-output-canary"));
+    CHECK(core::durableAtomicWriteText(pendingJournal, "pending-journal-canary"));
+    const auto journalHash = core::sha256File(pendingJournal).value();
+    const auto backupHash = core::sha256File(pendingBackup / "keep.txt").value();
+    operation.back() = pendingOutput.string();
+    cliRefusal(operation, "automatic recovery is disabled");
+    CHECK(!std::filesystem::exists(pendingOutput));
+    CHECK(core::sha256File(pendingJournal).value() == journalHash);
+    CHECK(core::sha256File(pendingBackup / "keep.txt").value() == backupHash);
+    operation.back() = output.string();
+    for (const auto channels : {std::uint8_t{1U}, std::uint8_t{4U}}) {
+      project.routing().deviceOutputChannels = channels;
+      auto& matrix = project.routing().deviceRoutes.front().matrix;
+      matrix = domain::RoutingMatrix{2U, channels, std::vector<float>(static_cast<std::size_t>(channels) * 2U, 0.0F)};
+      matrix.setGain(0U, 0U, 1.0F);
+      if (channels > 1U) matrix.setGain(1U, 1U, 1.0F);
+      restore(); operation[2] = args[2]; operation.back() = (root / ("observed-channels-" + std::to_string(channels))).string();
+      const auto routed = cliSuccess(operation);
+      const auto routedMaster = voicebank::readWav(std::filesystem::path{operation.back()} / "master.wav");
+      CHECK(routedMaster); CHECK(routedMaster.value().channels == channels);
+      CHECK(voicebank::analyzeAudio(routedMaster.value().interleaved).peak > 1e-4F);
+      const auto& artifacts = routed.find("artifacts")->asArray();
+      const auto masterArtifact = std::find_if(artifacts.begin(), artifacts.end(),
+          [](const auto& artifact) { return field(artifact, "path") == "master.wav"; });
+      CHECK(masterArtifact != artifacts.end());
+      CHECK(masterArtifact->find("channels")->asInt64() == channels);
+    }
+    project.routing() = domain::ProjectRouting{};
+    for (const double rate : {192001.0, 384000.0}) {
+      project.settings().sampleRate = rate; restore(); operation[2] = args[2];
+      const auto noParent = root / ("refused-rate-" + std::to_string(static_cast<std::uint32_t>(rate)));
+      operation.back() = (noParent / "export").string();
+      cliRefusal(operation, "integer sample rate from 8000 to 192000");
+      CHECK(!std::filesystem::exists(noParent));
+    }
+    project.settings().sampleRate = 48000.0; restore(); operation[2] = args[2]; operation.back() = output.string();
+    auto foreignProject = project;
+    const auto foreignTrackId = factory.addVocalTrack(foreignProject, "Foreign installation");
+    auto* foreignTrack = foreignProject.findVocalTrack(foreignTrackId);
+    foreignTrack->proceduralRecipe = track->proceduralRecipe;
+    ++foreignTrack->proceduralRecipe->installation->engineRevision;
+    for (const int mode : {0, 1, 2}) {
+      foreignTrack->muted = mode == 1;
+      foreignProject.findVocalTrack(trackId)->solo = mode == 2;
+      CHECK(formats::ProjectJsonCodec{}.save(foreignProject, path));
+      operation[2] = core::sha256File(path).value();
+      const auto noParent = root / ("refused-second-track-" + std::to_string(mode));
+      operation.back() = (noParent / "export").string();
+      cliRefusal(operation, "Every vocal track must select the verified recipe with all saved installation pins");
+      CHECK(!std::filesystem::exists(noParent));
+    }
+    restore(); operation[2] = args[2]; operation.back() = output.string();
+    cliRefusal(operation,"already contains an export set"); // Existing committed output must not be replaced.
+    CHECK(core::sha256File(output/"master.wav").value()==field(observed,"masterSha256"));
+    operation.back()=(installed/"must-not-export-here").string();
+    cliRefusal(operation,"must not modify the verified installation");
+    CHECK(!std::filesystem::exists(installed/"must-not-export-here"));
+    CHECK(runCli(args)); // Refusal leaves the signed installation verifiable.
+    operation.back()=(root/"refused-recipe-export").string();
+    const auto refusalPath=std::filesystem::path{operation.back()};
+    track->proceduralRecipe->installation.reset();restore();operation[2]=args[2];
+    cliRefusal(operation,"all saved installation pins");CHECK(!std::filesystem::exists(refusalPath));
+    track->proceduralRecipe->installation=expected;
+    track->proceduralRecipe->path=std::filesystem::relative(
+        output/"recipes"/(resource.contentHash+".json"),root).generic_string();restore();operation[2]=args[2];
+    cliRefusal(operation,"does not name the verified installation");CHECK(!std::filesystem::exists(refusalPath));
+    track->proceduralRecipe->path=(installed/expected.recipeEntry).string();
+    const auto extra=factory.addRegion(project,trackId,"Unsigned language",time::Tick{960},time::Tick{960});
+    auto [extraLyric,extraNote]=factory.makeNote(time::Tick{0},time::Tick{960},60,U"a",domain::Language::English);
+    project.findRegion(extra)->lyrics.push_back(extraLyric);project.findRegion(extra)->notes.push_back(extraNote);
+    restore();operation[2]=args[2];CHECK(runCli(args)); // Selected-region binding alone still passes.
+    cliRefusal(operation,"Project note language is absent");CHECK(!std::filesystem::exists(refusalPath));
+    project.findVocalTrack(trackId)->regions.pop_back();
+    track->proceduralRecipe->installation.reset();track->proceduralRecipe->path=originalPath;restore();
   } else {
+    auto operation=args;operation[0]="export-installed-recipe-project";
+    operation.push_back((root/"unsupported-sample-export").string());
+    cliRefusal(operation,"requires a verified installed recipe");CHECK(!std::filesystem::exists(root/"unsupported-sample-export"));
     track->voicebank.version="wrong-version";restore();CHECK(!runCli(args));track->voicebank.version=resource.version;
   }
   // Project binding itself succeeds for en; the signed ja resource declaration must reject linkage.
@@ -700,6 +837,23 @@ void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesy
 #endif
 
 }  // namespace
+
+TEST_CASE("CLI refusal proof requires the expected diagnostic exit code and no sanitizer report") {
+  authoring::CompletedHelperProcess result{{"", "error: expected reason\n"}, authoring::HelperExited{2U}};
+  CHECK(expectedCliRefusal(result, 2U, "expected reason"));
+  for (const std::uint32_t code : {0U, 1U, 139U}) {
+    result.termination = authoring::HelperExited{code};
+    CHECK(!expectedCliRefusal(result, 2U, "expected reason"));
+  }
+  result.termination = authoring::HelperSignaled{11};
+  CHECK(!expectedCliRefusal(result, 2U, "expected reason"));
+  result.termination = authoring::HelperExited{2U};
+  CHECK(!expectedCliRefusal(result, 2U, "different reason"));
+  for (const auto marker : {"runtime error:", "AddressSanitizer", "UndefinedBehaviorSanitizer", "ThreadSanitizer"}) {
+    result.output.standardError = std::string{marker} + " expected reason\n";
+    CHECK(!expectedCliRefusal(result, 2U, "expected reason"));
+  }
+}
 
 TEST_CASE("CLI publishes a typed schema-3 candidate that lists every embedded file and refuses anything else") {
 #if defined(__APPLE__) || defined(__linux__)

@@ -49,6 +49,9 @@ struct ExportSettings final {
   // a package can still include media whose project snapshot already stores an
   // absolute path.
   std::optional<std::filesystem::path> projectDirectory;
+  // Default preserves automatic reconciliation of interrupted exports. Evidence
+  // operations can refuse an existing journal without modifying its outputs.
+  bool recoverInterruptedSet{true};
 };
 
 struct ExportFileReceipt final {
@@ -80,6 +83,9 @@ struct ExportResult final {
   // of a clipped master was that it sounded wrong.
   float masterPeakAbs{0.0F};
   bool masterClipped{false};
+  // Digest of the exact receipt text committed by this writer, before external
+  // callbacks/observation. Recovery alone does not attest the original request.
+  std::string receiptSha256;
 };
 
 enum class ExportSetInspectionState {

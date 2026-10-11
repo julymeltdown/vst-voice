@@ -24,6 +24,7 @@
 #include "seam/voice_design/procedural_candidate.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/core/exclusive_file_lock.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
@@ -44,6 +45,7 @@
 #include <iterator>
 #include <thread>
 #include <limits>
+#include <map>
 #include <utility>
 #include <vector>
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
@@ -117,6 +119,30 @@ seam::authoring::ExportSettings exportSettings(bool stems = true) {
       .includeStems = stems,
       .replaceExisting = true,
   };
+}
+
+std::map<std::string, std::string> exportTreeSnapshot(const std::filesystem::path& root) {
+  std::map<std::string, std::string> snapshot;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator{root}) {
+    const auto name = entry.path().lexically_relative(root).generic_string();
+    const auto status = entry.symlink_status();
+    if (std::filesystem::is_symlink(status))
+      snapshot.emplace(name, "link:" + std::filesystem::read_symlink(entry.path()).generic_string());
+    else if (std::filesystem::is_directory(status)) snapshot.emplace(name, "directory");
+    else {
+      CHECK(std::filesystem::is_regular_file(status));
+      const auto digest = seam::core::sha256File(entry.path()); CHECK(digest);
+      snapshot.emplace(name, digest.value());
+    }
+  }
+  return snapshot;
+}
+
+bool exportTransactionEntriesAbsent(const std::filesystem::path& destination) {
+  const auto prefix = "." + destination.filename().string() + "-export-";
+  for (const auto& entry : std::filesystem::directory_iterator{destination.parent_path()})
+    if (entry.path().filename().string().starts_with(prefix)) return false;
+  return true;
 }
 
 std::int64_t committedRevision(const std::filesystem::path& destination) {
@@ -3003,6 +3029,50 @@ TEST_CASE("an export that reaches full scale reports its peak and the clipping")
   CHECK(receipt.value().find("masterPeakAbs") != std::string::npos);
 }
 
+TEST_CASE("set export reports pre-encoder master peaks independently of quieter stems") {
+  const auto root = seam::test::support::temporaryDirectory("export-set-clip-report");
+  auto project = exportProject(root, 28000U);
+  const auto media = root / "backing.wav";
+  const std::vector<float> controlled(512U, 0.25F);
+  CHECK(seam::voicebank::writeWav(media,
+      seam::voicebank::WavOutputFormat{48000U, 1U, seam::voicebank::WavSampleFormat::Float32}, controlled));
+  const auto source = seam::rendering::StreamingPcmSource::open(media, 4096U); CHECK(source);
+  auto& track = project.audioTracks().front();
+  track.mediaHash = source.value()->info().contentHash;
+  track.sourceFrameCount = source.value()->info().frameCount;
+  track.pan = -1.0F; // Each controlled mono input contributes its full level to the left channel.
+  auto second = track; second.id = seam::domain::TrackId{29000U}; second.name = "Second backing";
+  project.audioTracks().push_back(second);
+  seam::authoring::ExportService service;
+  for (const float gain : {0.0F, 12.0F}) {
+    for (auto& backing : project.audioTracks()) backing.gainDb = gain;
+    CHECK(project.validate());
+    auto settings = exportSettings(true);
+    settings.replaceExisting = false;
+    settings.format = seam::voicebank::WavSampleFormat::Pcm24;
+    const auto result = service.exportSet(project, {}, {}, {}, 1U,
+        root / (gain == 0.0F ? "quiet" : "clipped"), settings);
+    CHECK(result); CHECK(result.value().state == seam::authoring::ExportState::Committed);
+    const auto expectedPeak = 0.5 * std::pow(10.0, static_cast<double>(gain) / 20.0);
+    CHECK_NEAR(result.value().masterPeakAbs, expectedPeak, 1e-5);
+    CHECK(result.value().masterClipped == (gain != 0.0F));
+    const auto master = seam::voicebank::readWav(result.value().masterPath); CHECK(master);
+    CHECK_NEAR(seam::voicebank::analyzeAudio(master.value().interleaved).peak,
+        std::min(expectedPeak, 1.0), 1e-5);
+    CHECK(result.value().files.size() == 3U);
+    for (const auto& file : result.value().files) {
+      if (file.path == result.value().masterPath) continue;
+      const auto stem = seam::voicebank::readWav(file.path); CHECK(stem);
+      const auto peak = seam::voicebank::analyzeAudio(stem.value().interleaved).peak;
+      CHECK(peak < 1.0F); CHECK_NEAR(peak, expectedPeak / 2.0, 1e-5);
+    }
+    const auto text = seam::core::readTextFileLimited(result.value().receiptPath, 4U * 1024U * 1024U); CHECK(text);
+    const auto receipt = seam::formats::parseJson(text.value()); CHECK(receipt);
+    CHECK_NEAR(receipt.value().find("masterPeakAbs")->asNumber(), expectedPeak, 1e-5);
+    CHECK(receipt.value().find("masterClipped")->asBool() == result.value().masterClipped);
+  }
+}
+
 TEST_CASE("single-file export removes rollback backups after a successful replacement") {
   const auto root = seam::test::support::temporaryDirectory("export-repeat");
   const auto destination = root / "master.wav";
@@ -3272,6 +3342,175 @@ TEST_CASE("export replacement never removes an unowned previous sibling") {
   CHECK(service.exportSet(
       project, {}, {}, {}, 2U, destination, exportSettings(true)));
   CHECK(std::filesystem::exists(unowned / "keep.txt"));
+}
+
+TEST_CASE("set export pins writer receipt identity before committed callbacks") {
+  const auto root = seam::test::support::temporaryDirectory("export-receipt-observation");
+  const auto project = exportProject(root, 36000U);
+  const auto destination = root / "song";
+  seam::authoring::ExportService service;
+  std::string writerHash;
+  bool changed = false;
+  const auto result = service.exportSet(project, {}, {}, {}, 1U, destination, exportSettings(false),
+      [&](const seam::authoring::ExportProgress& progress) {
+        if (progress.state != seam::authoring::ExportState::Committed) return;
+        const auto path = destination / "receipt.json";
+        const auto text = seam::core::readTextFileLimited(path, 4U * 1024U * 1024U); CHECK(text);
+        writerHash = seam::core::sha256Hex(text.value());
+        const auto parsed = seam::formats::parseJson(text.value()); CHECK(parsed);
+        auto receipt = parsed.value();
+        receipt.asObject()["projectId"] = "foreign-project-provenance";
+        CHECK(seam::core::durableAtomicWriteText(path, seam::formats::stringifyJson(receipt, true)));
+        changed = true;
+      });
+  CHECK(changed); CHECK(result); CHECK(result.value().state == seam::authoring::ExportState::Committed);
+  CHECK(result.value().receiptSha256 == writerHash);
+  const auto observedHash = seam::core::sha256File(result.value().receiptPath); CHECK(observedHash);
+  CHECK(observedHash.value() != result.value().receiptSha256);
+  // Ownership inspection alone cannot prove provenance/measurement identity.
+  const auto inspected = service.inspectSetReadOnly(destination); CHECK(inspected);
+  CHECK(inspected.value().state == seam::authoring::ExportSetInspectionState::Committed);
+}
+
+TEST_CASE("set export refuses recovery without modifying PreviousMoved transactions") {
+  const auto root = seam::test::support::temporaryDirectory("export-recovery-refusal");
+  const auto project = exportProject(root, 30000U);
+  seam::authoring::ExportService service;
+  for (const bool replace : {false, true}) {
+    const auto destination = root / "exports" / (replace ? "replace" : "create-new");
+    auto initial = exportSettings(true); initial.replaceExisting = false;
+    CHECK(service.exportSet(project, {}, {}, {}, 1U, destination, initial));
+    std::ofstream{destination / "keep.txt"} << "unowned-canary";
+    const auto original = exportTreeSnapshot(destination);
+    auto interrupted = exportSettings(false);
+    interrupted.publicationFaultInjector = [](seam::authoring::ExportPublicationPhase phase) {
+      return phase == seam::authoring::ExportPublicationPhase::PreviousMoved;
+    };
+    const auto pending = service.exportSet(project, {}, {}, {}, 2U, destination, interrupted);
+    CHECK(pending); CHECK(pending.value().state == seam::authoring::ExportState::RollbackRequired);
+    CHECK(!std::filesystem::exists(destination));
+    const auto before = exportTreeSnapshot(root);
+    auto settings = exportSettings(false);
+    settings.replaceExisting = replace; settings.recoverInterruptedSet = false;
+    const auto refused = service.exportSet(project, {}, {}, {}, 3U, destination, settings);
+    CHECK(!refused); CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+    CHECK(refused.error().message.find("automatic recovery is disabled") != std::string::npos);
+    CHECK(exportTreeSnapshot(root) == before); // Includes journal, staged receipt, backup and canary.
+
+    settings.recoverInterruptedSet = true; // The default path still reconciles the interrupted set.
+    const auto resumed = service.exportSet(project, {}, {}, {}, 3U, destination, settings);
+    if (replace) {
+      CHECK(resumed); CHECK(resumed.value().state == seam::authoring::ExportState::Committed);
+      CHECK(committedRevision(destination) == 3);
+      CHECK(!std::filesystem::exists(destination / "stems"));
+      CHECK(exportTreeSnapshot(destination).at("keep.txt") == original.at("keep.txt"));
+    } else {
+      CHECK(!resumed); CHECK(resumed.error().code == seam::core::ErrorCode::Conflict);
+      CHECK(committedRevision(destination) == 1);
+      CHECK(exportTreeSnapshot(destination) == original); // A restored set cannot be replaced.
+    }
+    CHECK(exportTransactionEntriesAbsent(destination));
+  }
+}
+
+TEST_CASE("set export preserves a committed destination appearing during publication") {
+  const auto root = seam::test::support::temporaryDirectory("export-publication-race");
+  const auto project = exportProject(root, 31000U);
+  const auto destination = root / "exports" / "song";
+  const auto competitor = root / "exports" / "competitor";
+  seam::authoring::ExportService service;
+  auto settings = exportSettings(false); settings.replaceExisting = false;
+  CHECK(service.exportSet(project, {}, {}, {}, 77U, competitor, settings));
+  std::ofstream{competitor / "keep.txt"} << "competitor-canary";
+  const auto original = exportTreeSnapshot(competitor);
+  bool raced = false;
+  const auto refused = service.exportSet(project, {}, {}, {}, 1U, destination, settings,
+      [&](const seam::authoring::ExportProgress& progress) {
+        if (progress.state == seam::authoring::ExportState::Publishing) {
+          std::filesystem::rename(competitor, destination); raced = true;
+        }
+      });
+  CHECK(raced); CHECK(!refused); CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(committedRevision(destination) == 77);
+  CHECK(exportTreeSnapshot(destination) == original);
+  CHECK(exportTransactionEntriesAbsent(destination));
+}
+
+TEST_CASE("set export create-new publication atomically preserves a late empty directory") {
+#if defined(__APPLE__) || defined(__linux__)
+  const auto root = seam::test::support::temporaryDirectory("export-exclusive-publication");
+  const auto project = exportProject(root, 32000U);
+  const auto destination = root / "exports" / "song";
+  auto settings = exportSettings(false); settings.replaceExisting = false;
+  bool raced = false;
+  settings.publicationFaultInjector = [&](seam::authoring::ExportPublicationPhase phase) {
+    if (phase == seam::authoring::ExportPublicationPhase::PreviousMoved) {
+      CHECK(std::filesystem::create_directory(destination)); raced = true;
+    }
+    return false; // Continue beyond the last existence check into the atomic rename.
+  };
+  const auto refused = seam::authoring::ExportService{}.exportSet(project, {}, {}, {}, 1U, destination, settings);
+  CHECK(raced); CHECK(!refused); CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(std::filesystem::is_directory(destination)); CHECK(std::filesystem::is_empty(destination));
+  CHECK(exportTransactionEntriesAbsent(destination));
+#endif
+}
+
+TEST_CASE("set export no-replacement preflight preserves dangling symlinks") {
+#if defined(__APPLE__) || defined(__linux__)
+  const auto root = seam::test::support::temporaryDirectory("export-dangling-destination");
+  const auto project = exportProject(root, 33000U);
+  const auto destination = root / "song";
+  const auto target = root / "absent-target";
+  std::filesystem::create_symlink(target, destination);
+  const auto before = exportTreeSnapshot(root);
+  auto settings = exportSettings(false); settings.replaceExisting = false;
+  const auto refused = seam::authoring::ExportService{}.exportSet(project, {}, {}, {}, 1U, destination, settings);
+  CHECK(!refused); CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(exportTreeSnapshot(root) == before); CHECK(!std::filesystem::exists(target));
+#endif
+}
+
+TEST_CASE("set export cannot overwrite a foreign journal appearing after preflight") {
+  const auto root = seam::test::support::temporaryDirectory("export-journal-race");
+  const auto project = exportProject(root, 34000U);
+  const auto destination = root / "exports" / "song";
+  const auto journal = destination.parent_path() / ".song-export-journal.json";
+  auto settings = exportSettings(false); settings.replaceExisting = false; settings.recoverInterruptedSet = false;
+  bool raced = false;
+  const auto refused = seam::authoring::ExportService{}.exportSet(project, {}, {}, {}, 1U, destination, settings,
+      [&](const seam::authoring::ExportProgress& progress) {
+        if (progress.state == seam::authoring::ExportState::Prepared) {
+          CHECK(seam::core::durableAtomicWriteTextNew(journal, "foreign-journal-canary")); raced = true;
+        }
+      });
+  CHECK(raced); CHECK(!refused); CHECK(!std::filesystem::exists(destination));
+  CHECK(seam::core::readTextFileLimited(journal, 1024U).value() == "foreign-journal-canary");
+  for (const auto& entry : std::filesystem::directory_iterator{destination.parent_path()})
+    CHECK(entry.path() == journal); // Only this run's staging was removed.
+}
+
+TEST_CASE("set export recovery refuses to reconcile a live writer journal") {
+#if defined(__APPLE__) || defined(__linux__)
+  const auto root = seam::test::support::temporaryDirectory("export-live-recovery");
+  const auto project = exportProject(root, 35000U);
+  const auto destination = root / "exports" / "song";
+  seam::authoring::ExportService service;
+  auto settings = exportSettings(false); settings.replaceExisting = false;
+  bool attempted = false;
+  settings.publicationFaultInjector = [&](seam::authoring::ExportPublicationPhase phase) {
+    if (phase == seam::authoring::ExportPublicationPhase::JournalPrepared) {
+      const auto before = exportTreeSnapshot(root);
+      const auto recovery = service.recoverSet(destination);
+      attempted = true; CHECK(!recovery); CHECK(recovery.error().code == seam::core::ErrorCode::Conflict);
+      CHECK(exportTreeSnapshot(root) == before);
+    }
+    return false;
+  };
+  const auto result = service.exportSet(project, {}, {}, {}, 1U, destination, settings);
+  CHECK(attempted); CHECK(result); CHECK(result.value().state == seam::authoring::ExportState::Committed);
+  CHECK(exportTransactionEntriesAbsent(destination));
+#endif
 }
 
 TEST_CASE("export recovery reconciles every journalled publication phase") {

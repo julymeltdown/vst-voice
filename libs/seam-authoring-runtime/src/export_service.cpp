@@ -19,11 +19,113 @@
 #include <iterator>
 #include <memory>
 #include <system_error>
+#if defined(__APPLE__) || defined(__linux__)
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
+#endif
 
 namespace seam::authoring {
 namespace {
 
 constexpr std::uint64_t kMaximumPackagedMediaBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
+
+core::Result<ExportResult> recoverExportSet(const std::filesystem::path& destination);
+
+// Lock the existing parent inode, so cooperating publication/recovery cannot
+// reconcile a live journal. No persistent lock file is added to the output tree.
+class ExportParentLock final {
+public:
+  ExportParentLock() = default;
+  ExportParentLock(const ExportParentLock&) = delete;
+  ExportParentLock& operator=(const ExportParentLock&) = delete;
+  ~ExportParentLock() {
+#if defined(__APPLE__) || defined(__linux__)
+    if (descriptor_ >= 0) ::close(descriptor_);
+#endif
+  }
+  core::Result<void> acquire(const std::filesystem::path& destination) {
+#if defined(__APPLE__) || defined(__linux__)
+    parent_ = destination.has_parent_path() ? destination.parent_path() : std::filesystem::path{"."};
+    descriptor_ = ::open(parent_.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (descriptor_ < 0 || ::fstat(descriptor_, &identity_) != 0 ||
+        ::flock(descriptor_, LOCK_EX | LOCK_NB) != 0 || !unchanged())
+      return core::failure(core::ErrorCode::Conflict, "Export transaction parent is busy or changed", parent_.string());
+#else
+    // Windows transaction support remains TODO; retain its existing behavior.
+    (void)destination;
+#endif
+    return core::success();
+  }
+  bool unchanged() const {
+#if defined(__APPLE__) || defined(__linux__)
+    struct stat named{};
+    return descriptor_ >= 0 && ::stat(parent_.c_str(), &named) == 0 && S_ISDIR(named.st_mode) &&
+        named.st_dev == identity_.st_dev && named.st_ino == identity_.st_ino;
+#else
+    return true;
+#endif
+  }
+#if defined(__APPLE__) || defined(__linux__)
+  int descriptor() const { return descriptor_; }
+#endif
+private:
+#if defined(__APPLE__) || defined(__linux__)
+  int descriptor_{-1};
+  std::filesystem::path parent_;
+  struct stat identity_{};
+#endif
+};
+
+core::Result<bool> entryExists(const std::filesystem::path& path) {
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      (!error && status.type() == std::filesystem::file_type::not_found)) return false;
+  if (error) return core::failure<bool>(core::ErrorCode::IoError, "Unable to inspect export transaction entry", path.string());
+  return true; // A dangling symlink is an existing entry, never an empty slot.
+}
+
+core::Result<void> publishSetNew(const std::filesystem::path& staging,
+                               const std::filesystem::path& destination,
+                               const ExportParentLock& parentLock) {
+  // Use the same exclusive rename primitives as signed candidate publication.
+#if defined(__APPLE__)
+  const int renamed = ::renameatx_np(parentLock.descriptor(), staging.filename().c_str(),
+      parentLock.descriptor(), destination.filename().c_str(), RENAME_EXCL);
+#elif defined(__linux__)
+  const auto renamed = ::syscall(SYS_renameat2, parentLock.descriptor(), staging.filename().c_str(),
+      parentLock.descriptor(), destination.filename().c_str(), 1U);
+#else
+  (void)parentLock;
+  std::error_code error;
+  std::filesystem::rename(staging, destination, error);
+  if (!error) return core::success();
+  return core::failure(core::ErrorCode::IoError, "Unable to publish new export set", error.message());
+#endif
+#if defined(__APPLE__) || defined(__linux__)
+  if (renamed == 0) return core::success();
+  const auto error = std::error_code{errno, std::generic_category()};
+  return core::failure(error == std::errc::file_exists || error == std::errc::directory_not_empty
+          ? core::ErrorCode::Conflict : core::ErrorCode::IoError,
+      "Unable to publish new export set without replacing an existing entry", error.message());
+#endif
+}
+
+void observeMasterBeforeEncoding(std::span<const float> samples, ExportResult& result) {
+  result.masterPeakAbs = 0.0F;
+  for (const auto sample : samples) {
+    const auto magnitude = std::isfinite(sample) ? std::abs(sample) : 1.0F;
+    result.masterPeakAbs = std::max(result.masterPeakAbs, magnitude);
+  }
+  result.masterClipped = result.masterPeakAbs >= 1.0F;
+}
 
 struct PackagedMedia final {
   std::filesystem::path sourcePath;
@@ -297,10 +399,8 @@ core::Result<void> copyUnownedFiles(
 
 core::Result<void> writeJournal(
     const std::filesystem::path& path, const ExportJournal& journal,
-    std::string phase) {
-  return core::durableAtomicWriteText(
-      path,
-      formats::stringifyJson(
+    std::string phase, bool createNew = false) {
+  const auto text = formats::stringifyJson(
           formats::JsonValue{formats::JsonValue::Object{
               {"schemaVersion", formats::JsonValue{std::int64_t{1}}},
               {"phase", formats::JsonValue{std::move(phase)}},
@@ -308,7 +408,9 @@ core::Result<void> writeJournal(
               {"staging", formats::JsonValue{journal.staging.filename().string()}},
               {"backup", formats::JsonValue{journal.backup.filename().string()}},
           }},
-          true));
+          true);
+  return createNew ? core::durableAtomicWriteTextNew(path, text)
+                   : core::durableAtomicWriteText(path, text);
 }
 
 core::Result<ExportJournal> readJournal(
@@ -450,11 +552,7 @@ core::Result<ExportResult> ExportService::commitRendered(
   result.state = ExportState::Staging;
   // Measure before writing. The encoder clamps to the quantizer range without reporting, so a
   // master driven past full scale would otherwise be indistinguishable from one that fit.
-  for (const auto sample : rendered.interleaved) {
-    const auto magnitude = std::isfinite(sample) ? std::abs(sample) : 1.0F;
-    if (magnitude > result.masterPeakAbs) result.masterPeakAbs = magnitude;
-  }
-  result.masterClipped = result.masterPeakAbs >= 1.0F;
+  observeMasterBeforeEncoding(rendered.interleaved, result);
   const auto stagedMaster = staging / "master.wav";
   auto writer = voicebank::WavStreamWriter::create(
       stagedMaster,
@@ -633,6 +731,7 @@ core::Result<ExportResult> ExportService::commitRendered(
   static_cast<void>(removeTree(staging));
   result.state = ExportState::Committed;
   result.receiptPath = receiptPath;
+  result.receiptSha256 = core::sha256Hex(receiptText);
   return result;
 }
 
@@ -692,12 +791,19 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     return core::Result<ExportResult>{encodedProject.error()};
   }
   const auto projectContentHash = core::sha256Hex(encodedProject.value());
-  if (std::filesystem::exists(destination) && !settings.replaceExisting) {
+  const auto destinationEntry = entryExists(destination);
+  if (!destinationEntry) return core::Result<ExportResult>{destinationEntry.error()};
+  if (destinationEntry.value() && !settings.replaceExisting) {
     return core::failure<ExportResult>(
         core::ErrorCode::Conflict,
         "Export destination already contains an export set",
         destination.string());
   }
+  const auto existingJournal = entryExists(journalPath(destination));
+  if (!existingJournal) return core::Result<ExportResult>{existingJournal.error()};
+  if (existingJournal.value() && !settings.recoverInterruptedSet)
+    return core::failure<ExportResult>(core::ErrorCode::Conflict,
+        "Export transaction journal exists; automatic recovery is disabled", destination.string());
   if (project.routing().deviceOutputChannels != settings.channels) {
     return core::failure<ExportResult>(
         core::ErrorCode::InvalidArgument,
@@ -880,13 +986,29 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
                                        "Unable to create export parent",
                                        error.message());
   }
-  if (std::filesystem::exists(transactionJournal, error)) {
-    auto recovered = recoverSet(destination);
+  ExportParentLock parentLock;
+  const auto locked = parentLock.acquire(destination);
+  if (!locked) return core::Result<ExportResult>{locked.error()};
+  const auto journalEntry = entryExists(transactionJournal);
+  if (!journalEntry) return core::Result<ExportResult>{journalEntry.error()};
+  if (journalEntry.value()) {
+    if (!settings.recoverInterruptedSet)
+      return core::failure<ExportResult>(core::ErrorCode::Conflict,
+          "Export transaction journal exists; automatic recovery is disabled", destination.string());
+    auto recovered = recoverExportSet(destination);
     if (!recovered) return core::Result<ExportResult>{recovered.error()};
   }
-  error.clear();
-  if (std::filesystem::exists(staging, error) ||
-      std::filesystem::exists(backup, error)) {
+  // Recovery can restore the previous set into a destination that was absent at
+  // preflight. That restored set still belongs to the caller's no-replace policy.
+  const auto recoveredDestination = entryExists(destination);
+  if (!recoveredDestination) return core::Result<ExportResult>{recoveredDestination.error()};
+  if (recoveredDestination.value() && !settings.replaceExisting)
+    return core::failure<ExportResult>(core::ErrorCode::Conflict,
+        "Export destination already contains an export set", destination.string());
+  const auto stagingEntry = entryExists(staging), backupEntry = entryExists(backup);
+  if (!stagingEntry) return core::Result<ExportResult>{stagingEntry.error()};
+  if (!backupEntry) return core::Result<ExportResult>{backupEntry.error()};
+  if (stagingEntry.value() || backupEntry.value()) {
     return core::failure<ExportResult>(
         core::ErrorCode::Conflict,
         "Export transaction path already exists and is not owned by this run");
@@ -951,6 +1073,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         settings.sampleRate, rendering::RenderQuality::Final, {}, nullptr,
         stopToken);
     if (!rendered) return core::Result<ExportFileReceipt>{rendered.error()};
+    if (relative == std::filesystem::path{"master.wav"})
+      observeMasterBeforeEncoding(rendered.value().interleaved, result);
     const auto target = staging / relative;
     std::filesystem::create_directories(target.parent_path(), error);
     if (error) {
@@ -1187,6 +1311,10 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
           {"includesProceduralCandidates", formats::JsonValue{settings.includeProceduralCandidates}},
           {"files", formats::JsonValue{std::move(files)}},
       }};
+  if (settings.includeMaster) {
+    receiptValue.asObject().emplace("masterPeakAbs", static_cast<double>(result.masterPeakAbs));
+    receiptValue.asObject().emplace("masterClipped", result.masterClipped);
+  }
   const auto receiptText = formats::stringifyJson(receiptValue, true);
   const auto stagedReceipt = staging / "receipt.json";
   auto receiptWrite = core::durableAtomicWriteText(stagedReceipt, receiptText);
@@ -1197,12 +1325,16 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
 
   result.state = ExportState::Publishing;
   notifyProgress(progress, result.state, {}, completed, totalFiles);
-  const auto previousExists = std::filesystem::exists(destination, error);
-  if (error) {
+  const auto previousEntry = entryExists(destination);
+  if (!previousEntry) {
     static_cast<void>(removeTree(staging));
-    return core::failure<ExportResult>(core::ErrorCode::IoError,
-                                       "Unable to inspect export destination",
-                                       error.message());
+    return core::Result<ExportResult>{previousEntry.error()};
+  }
+  const bool previousExists = previousEntry.value();
+  if (previousExists && !settings.replaceExisting) {
+    static_cast<void>(removeTree(staging));
+    return core::failure<ExportResult>(core::ErrorCode::Conflict,
+        "Export destination already contains an export set", destination.string());
   }
   if (previousExists) {
     const auto destinationStatus =
@@ -1235,8 +1367,9 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
       .staging = staging,
       .backup = backup,
   };
-  auto journalWrite = writeJournal(
-      transactionJournal, journal, "JOURNAL_PREPARED");
+  // The initial journal is create-new. Never overwrite a foreign transaction
+  // that appeared after preflight; later phase updates belong to this writer.
+  auto journalWrite = writeJournal(transactionJournal, journal, "JOURNAL_PREPARED", true);
   if (!journalWrite) {
     static_cast<void>(removeTree(staging));
     return core::Result<ExportResult>{journalWrite.error()};
@@ -1253,7 +1386,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   if (interrupted(ExportPublicationPhase::JournalPrepared)) return result;
   const auto recoverFailure = [&](std::string diagnostic)
       -> core::Result<ExportResult> {
-    auto recovered = recoverSet(destination);
+    auto recovered = recoverExportSet(destination);
     if (!recovered) {
       result.state = ExportState::RollbackRequired;
       result.diagnostic = std::move(diagnostic) + "; recovery failed: " +
@@ -1278,10 +1411,41 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   for (auto& file : result.files) {
     file.path = destination / file.path.lexically_relative(staging);
   }
-  std::filesystem::rename(staging, destination, error);
-  if (error) {
-    return recoverFailure("Unable to publish prepared export set: " +
-                          error.message());
+  if (!parentLock.unchanged()) {
+    result.state = ExportState::RollbackRequired;
+    result.diagnostic = "Export parent changed before publication; provisional output retained";
+    return result;
+  }
+  if (!settings.replaceExisting) {
+    const auto published = publishSetNew(staging, destination, parentLock);
+    if (!published) {
+      // Nothing was published by this transaction. Do not run recovery against
+      // a foreign destination that won the create-new race (even an empty dir).
+      const auto currentJournal = readJournal(destination);
+      if (!currentJournal || currentJournal.value().transactionId != transactionId) {
+        result.state = ExportState::RollbackRequired;
+        result.diagnostic = "Unpublished export journal changed; provisional output retained";
+        return result;
+      }
+      const auto removed = removeTree(staging);
+      if (!removed) {
+        result.state = ExportState::RollbackRequired;
+        result.diagnostic = removed.error().message;
+        return result;
+      }
+      std::filesystem::remove(transactionJournal, error);
+      if (error) {
+        result.state = ExportState::RollbackRequired;
+        result.diagnostic = "Unpublished export journal requires cleanup: " + error.message();
+        return result;
+      }
+      return core::Result<ExportResult>{published.error()};
+    }
+  } else {
+    std::filesystem::rename(staging, destination, error);
+    if (error) {
+      return recoverFailure("Unable to publish prepared export set: " + error.message());
+    }
   }
   journalWrite = writeJournal(
       transactionJournal, journal, "DESTINATION_PUBLISHED");
@@ -1294,8 +1458,9 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     return recoverFailure("Prepared export receipt lost its state");
   }
   *receiptState = formats::JsonValue{"COMMITTED"};
+  const auto committedReceiptText = formats::stringifyJson(receiptValue, true);
   receiptWrite = core::durableAtomicWriteText(
-      destination / "receipt.json", formats::stringifyJson(receiptValue, true));
+      destination / "receipt.json", committedReceiptText);
   if (!receiptWrite) {
     return recoverFailure("Unable to commit the published export receipt");
   }
@@ -1328,6 +1493,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     return result;
   }
   result.receiptPath = destination / "receipt.json";
+  result.receiptSha256 = core::sha256Hex(committedReceiptText);
   result.masterPath = destination / "master.wav";
   result.state = ExportState::Committed;
   notifyProgress(progress, result.state, {}, completed, totalFiles);
@@ -1471,8 +1637,9 @@ core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
                     .diagnostic = "Committed receipt and all receipt-owned file hashes are valid."};
 }
 
-core::Result<ExportResult> ExportService::recoverSet(
-    const std::filesystem::path& destination) const {
+namespace {
+core::Result<ExportResult> recoverExportSet(
+    const std::filesystem::path& destination) {
   if (destination.empty()) {
     return core::failure<ExportResult>(core::ErrorCode::InvalidArgument,
                                        "Export recovery destination is empty");
@@ -1647,6 +1814,23 @@ core::Result<ExportResult> ExportService::recoverSet(
     }
   }
   return recoveredResult();
+}
+
+} // namespace
+
+core::Result<ExportResult> ExportService::recoverSet(
+    const std::filesystem::path& destination) const {
+  // Keep the absent-parent/error behavior of recovery without creating any
+  // directory. Internal recovery already runs under the exporting writer's lock.
+  const auto parent = destination.has_parent_path() ? destination.parent_path() : std::filesystem::path{"."};
+  std::error_code error;
+  if (!destination.empty() && std::filesystem::is_directory(parent, error)) {
+    ExportParentLock parentLock;
+    const auto locked = parentLock.acquire(destination);
+    if (!locked) return core::Result<ExportResult>{locked.error()};
+    return recoverExportSet(destination);
+  }
+  return recoverExportSet(destination);
 }
 
 }

@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "scope": "ENGINEERING_ONLY",
+  "date": "2026-10-12",
+  "sourceBase": "c1a17861ef7df83a3d5a707fea6de85bdb4a785f",
+  "originalAssertion": "decoded master peak > 1e-4",
+  "thresholdChanged": false,
+  "originalFailure": {
+    "surface": "a",
+    "language": "ja",
+    "readingHint": null,
+    "resolvedPhone": "pau",
+    "decodedPcmPeak": 0.0
+  },
+  "correctedFixture": {
+    "surface": "あ",
+    "language": "ja",
+    "resolvedPhone": "a",
+    "decodedPcm24Peak": 0.0075130462646484375,
+    "receiptPreEncoderPeak": 0.007513029966503382,
+    "frames": 24000,
+    "channels": 2
+  },
+  "releaseEligible": false,
+  "localEvidenceRoot": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/installed-recipe-export-2026-10-12",
+  "checks": [
+    {
+      "command": "cmake --build build/release -j6",
+      "result": "PASS"
+    },
+    {
+      "command": "ctest --test-dir build/release --output-on-failure -R '^(seam_export_tests|seam_export_transaction_process_recovery|seam_sample_review_cli_tests|seam_helper_process_tests|seam_neural_worker_protocol_tests|seam_neural_phrase_runner_tests|seam_japanese_reading_native_tests)$'",
+      "result": "PASS",
+      "entries": 7,
+      "seconds": 21.71
+    },
+    {
+      "command": "cmake --build build/sanitize --target seam_export_tests -j6",
+      "result": "PASS"
+    },
+    {
+      "command": "ASAN_OPTIONS=external_symbolizer_path=/usr/bin/atos UBSAN_OPTIONS=print_stacktrace=1 build/sanitize/seam_export_tests 'set export'",
+      "result": "PASS",
+      "nativeCases": 8,
+      "scope": "Scoped ASan/UBSan; not the full export or project suite"
+    }
+  ],
+  "review": {
+    "agent": "Faraday",
+    "verdict": "APPROVED_ON_SOURCE_REVIEW",
+    "execution": "Lead validation only"
+  },
+  "executedSources": [
+    {
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "sha256": "30609b70098d1fc21141b7995a34ed9873aaa31fc0ffd4fcb86dcef36d8cdb5c"
+    },
+    {
+      "path": "libs/seam-authoring-runtime/include/seam/authoring/export_service.hpp",
+      "sha256": "5928b85c24b2b3c6b628cc1231f7615226374b8430aa125ef913737def74d119"
+    },
+    {
+      "path": "libs/seam-authoring-runtime/src/export_service.cpp",
+      "sha256": "16829d8f4e375f63c8ca96e9457a8e09cad5133d367128bb72484937c8e62252"
+    },
+    {
+      "path": "tests/test_export_service.cpp",
+      "sha256": "432cf6d57df2c5f226ef37ff33346075c481cd805395931579890f292376cf94"
+    },
+    {
+      "path": "tests/test_sample_review_cli.cpp",
+      "sha256": "02868348c04a2803163d0c7f3dcd2d31eb0d24311b39047986a7e5d1c2aa5054"
+    }
+  ],
+  "retainedArtifacts": [
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-evidence.json",
+      "sha256": "ed10ae35c36235f7a6b9cc442f448ff7453ec11de36b4db1cf461eed6946f044"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-export/master.wav",
+      "sha256": "ae9ce28fd0f9b1bfa5c16bbe060248cf4db6a5f27f64c2fb5eca1c8674c2e0ab"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-export/original-installed-binding.seam",
+      "sha256": "9a6f704f5a22fed7350dbae88fd29205043f8693b4aa0044de26e748829e4c35"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-export/project.seam",
+      "sha256": "8f1f9f4554ed29fa527523b6b420350204cf6c1ff4d793540a261ceb36d911ee"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-export/receipt.json",
+      "sha256": "0175f653e8bc327faeca37d1ce7549e16cca735a334fce8be6bb4bc95e9c2759"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/before-export/recipes/299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1.json",
+      "sha256": "299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/candidate_package_commands.cpp",
+      "sha256": "a136e4b172df503fe68b1fe598a4d93ce6adc57fdb62bb839245b283cde5eb70"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/final-export/master.wav",
+      "sha256": "e27d35f363f44893a543e21b1867938c0bf700c9257287c3f5b26b7e89dc3c3c"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/final-export/project.seam",
+      "sha256": "07b40dfec11d874e94e935b804ff2bdf7e966d7c0b475063b18a3f10f5ea0bd1"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/final-export/receipt.json",
+      "sha256": "684b81420ce8d2e7e63e091f10474c855b9e2612f804c7f76241434b38fb76a6"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/final-export/recipes/299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1.json",
+      "sha256": "299690aab9c5f0cfe8894a98c57e7e5c86a2ccf66b85752457148a0b28666ba1"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/final-release-native.log",
+      "sha256": "60299048fda2854d3aacf14964bd41b569cf8a9ac36ff9340c8caad22d4efef4"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-asan-build.log",
+      "sha256": "aa130a4ad3c314812178f512d8c90bc9ca2cbe3126e07c5fea6f1d98aa7d3d1b"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-asan.log",
+      "sha256": "e04314955060897c7fadc573e2cfc57839d2f5e9df8364e0df3bc2979351a824"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-before.log",
+      "sha256": "9adaa47005b6abf6b47f21d3abce99f9894ecd4eca4489ad01c41041d8fa8d4b"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-ctest.log",
+      "sha256": "8a7dc77f7528a9a0c6ae2d5b4c5b4b567f53a3e1e5edb22ea76cf679956322c4"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-expanded-build-2.log",
+      "sha256": "8fe583b408583cd0418fa62ade534f3d677fbf61bff0cce968f80f4746a4bacc"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-expanded-build.log",
+      "sha256": "70d4e7148be474f6cff4e1e1fe0830b716113f729670e9916d9427dd4cb9c86a"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-final-asan-build.log",
+      "sha256": "588bac5ebdd275fad5b01906aa98412b68daecd879108d9bfc1836c181db1952"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-final-asan.log",
+      "sha256": "44345740eae8bc5146d9f35de5d4337d9b4ef767399df77cf0b78629abc15631"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-final-build.log",
+      "sha256": "7aa7fc9a34ac77d1d21685e24b1c2138c136ff81df9537ae291d099a03c55953"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-final-ctest.log",
+      "sha256": "bdd4c3537d866e11103bd89a4932fc4f56929bbf1a8a3181891dc826bdf9c50c"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-full-build.log",
+      "sha256": "506185e2f0613bff28979cb0c2bca2ad74d5f1723c16886a26c71ee3f48307fc"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-initial-build.log",
+      "sha256": "3e75c4f2a823e350eff5fa7fa1752a221b15fe8876230089a74af870ebc8f6a7"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-kana-build.log",
+      "sha256": "8fe583b408583cd0418fa62ade534f3d677fbf61bff0cce968f80f4746a4bacc"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-kana.log",
+      "sha256": "07a58c12c324476ac9dc75560817440572d8646c071a82825f2d5a3ce6bbd3bd"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/seam-installed-recipe-metadata-red.log",
+      "sha256": "645255f6a5ac9a838db860c7830e53fe3a4693b0718c8dfaea9dbbf0711e3f00"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/starting.patch",
+      "sha256": "bcc0c9bb0d93df52b02f7c1c70b779da7c132997836374c249cb09e953dda1cd"
+    },
+    {
+      "path": "out/evidence/installed-recipe-export-2026-10-12/test_sample_review_cli.cpp",
+      "sha256": "72d5f2914dd791bc1cdea7fd9495ca83d70127f15ae4808ee281940d4e4a4713"
+    }
+  ],
+  "testedExecutables": [
+    {
+      "path": "build/release/seam_voicebank_cli",
+      "sha256": "c8d78641585fbaeea96efe33fd17d13cd4e63bca9b8b3a847adaff52868e496d"
+    },
+    {
+      "path": "build/release/seam_sample_review_cli_tests",
+      "sha256": "9d977dc73e3a7f90cea8a0be50067fa69136fddf6c9933cc8c8acc1fee50195c"
+    },
+    {
+      "path": "build/release/seam_export_tests",
+      "sha256": "4d3310530cbcba808b371fedc41841c6f9bb193c4380734bfe39c76d0f9b6027"
+    },
+    {
+      "path": "build/sanitize/seam_export_tests",
+      "sha256": "797a00b62522255875b0b8fcee34f5944d05b95094102e0997e05d6fa161f7c7"
+    }
+  ]
+}
