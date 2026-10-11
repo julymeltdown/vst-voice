@@ -1,5 +1,7 @@
 # Project SEAM 현재 개발 상태
 
+> **Historical report — notice added 2026-10-11.** The statements and gate/CI observations below describe an earlier phase snapshot. They are preserved as history, not current checkout or acceptance evidence. GitHub orchestration is deferred. Use [current engineering entrypoints](implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md), [full-scope ledger](implementation/FULL_SCOPE_BETA_EXECUTION.md) and the canonical product contracts for current work.
+
 **기준일:** 2026-08-25
 **브랜치 정책:** `master` 단일 브랜치
 **현재 제품 단계:** **G1 Feature Alpha**

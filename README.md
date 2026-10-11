@@ -1,10 +1,10 @@
 # Project SEAM
 
-Project SEAM is a C++20 sample-concatenative singing-voice editor.
-> **Usable Alpha gate:** [`docs/product/USABLE_ALPHA_ACCEPTANCE.md`](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is the canonical product-usability contract. U1 connects the visible standalone project to the production voicebank renderer, U2 adds the complete project lifecycle, and U3 adds signed voicebank installation, trust-aware browsing, exact selection/relink/replacement, and coverage diagnostics. The product is still below Usable Alpha because production playback/status UI, final export, a genuinely usable rights-cleared demo bank, Apple Silicon `.app` acceptance, and real-song E2E evidence remain incomplete.
+Project SEAM is a C++20 native singing-voice editor with sample and procedural rendering and an admitted neural execution path.
+> **Current engineering route:** [Current engineering entrypoints](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md) identifies the macOS SING editor, supported build route, production APIs, compatibility surfaces and admission holds. [Usable Alpha acceptance](docs/product/USABLE_ALPHA_ACCEPTANCE.md) remains the canonical product-usability contract. Implemented playback, lifecycle, installation and export paths do not establish the unaided user journey, resource rights or human acceptance. Full Beta remains held by the original platform, host, qualification and evidence requirements.
  Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
-This repository contains:
+Historical phase summary (implementation scope, not current acceptance evidence):
 
 - Phase 1 editor/domain foundation;
 - Phase 2 phoneme, voicebank, and Raw synthesis vertical slice;
@@ -48,21 +48,19 @@ What this means in practice:
   still requires two platforms and nine host tuples including Windows, so **Beta GO is not reachable
   while Windows is deferred.** This is a schedule decision, not a scope reduction. No requirement is
   being deleted or relaxed to make the gate easier.
-- **The Windows jobs in `phase13a-plugin-formats.yml` are not green.** `windows-2025 VST3 build and
-  vst3-validator` passes. `windows-installer-smoke` has never produced a result: it was skipped for as
-  long as the VST3 job was red, and its first real runs hang in the signing-identity step.
+- **GitHub orchestration is deferred.** Workflow observations below are a retained pre-removal snapshot, not current jobs or new execution evidence. Current local source checks report `SOURCE_READY`; target runtime, signing and clean-OS evidence remain separate obligations.
 
 ### Windows TODO
 
 | # | Item | State |
 |---|---|---|
-| 1 | `windows-installer-smoke` hangs in "Create development-only uninstaller signing identity" | Open. Import-Certificate, .NET `X509Store`, and `certutil -addstore` (without `-f`) were each observed hanging for the full 20-minute job timeout at the same statement. The step is instrumented and the job carries `timeout-minutes: 20`, so any recurrence localizes in under 20 minutes. Next candidate is `certutil -addstore -f`, currently unverified. |
+| 1 | Historical `windows-installer-smoke` certificate-trust hang | Open Windows follow-up. Before workflow removal, Import-Certificate, .NET `X509Store`, and `certutil -addstore` without `-f` were reported hanging at the signing-identity step. Those observations are historical, not a current configured job. Reproduce on an actual Windows host before selecting a repair; `certutil -addstore -f` remains unverified. |
 | 2 | Windows clean-install / same-version reinstall / uninstall lifecycle | Never executed. Blocked by item 1. |
 | 3 | Windows REAPER and Bitwig host tuples (CLAP and VST3) | Never executed. Needs a Windows host, not just CI. |
 | 4 | Windows x64 native pitch and acoustic acceptance | Not measured. All current measurements are macOS. |
 | 5 | Windows (and Linux) editor surface | Not implemented. The only editor is the SING shell, which draws with the macOS CoreGraphics/CoreText vector backend. The classic raster editor painter was removed, so a build without that backend keeps compiling (source contracts, Win32/X11 windows and accessibility bridges) but its standalone window and CLAP view show only a notice (`paintEditorUnavailable`) that the editor needs the macOS renderer; pointer input does nothing and keys do not edit the score. Resuming needs a vector backend for the platform. |
 
-Previously repaired and verified, so not open work: `windows-2025 VST3 build` compiles the static
+Historical repair record, not current installed-product acceptance: `windows-2025 VST3 build` compiles the static
 OpenSSL from source with native Perl, links with `NOMINMAX`, and passes both the dependency closure and
 the payload-shape gates.
 
@@ -71,7 +69,21 @@ lifecycle and a DAW, plus interactive-session capability for the certificate-tru
 Windows items cannot be closed by engineering in this repository.
 
 
-> **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
+> **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. Current work routes through [the engineering index](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md), [full-scope execution ledger](docs/implementation/FULL_SCOPE_BETA_EXECUTION.md) and canonical acceptance contracts. [`STATUS_KO.md`](docs/STATUS_KO.md), [`REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md) are historical phase reports.
+
+## Build and open the macOS editor
+
+Prerequisites: CMake 3.25+, Ninja, a C++20-capable Apple toolchain/macOS SDK, and discoverable OpenSSL 3 Crypto. The `release` preset enables native desktop and test targets. Optional production neural-worker builds also require ONNX Runtime and native ONNX schema inputs; see [the runtime guide](tools/neural_runtime/README.md).
+
+From the repository root:
+
+```sh
+cmake --preset release
+cmake --build --preset release --target seam_editor_native -j6
+open "build/release/Project SEAM.app"
+```
+
+The bundle path and commands are checked against `CMakePresets.json` and the macOS target in `CMakeLists.txt`. This documentation unit does not claim a new GUI launch or unaided acceptance session. When shared library source changes, rebuild the full dependent tree before trusting focused CTest results: `cmake --build --preset release -j6`.
 
 ## EMO / SCENE design shell (in progress)
 
@@ -606,13 +618,13 @@ Headless deterministic vertical slice:
 ./build/dev/seam_phase5_demo --output out/phase5
 ```
 
-Native X11 editor:
+Historical Phase 5 X11 route (platform-specific; the current editor requires a non-macOS vector backend before interactive use):
 
 ```bash
 ./build/dev/seam_editor_native
 ```
 
-CI/headless native smoke:
+Historical Linux headless smoke command (local tooling, not configured GitHub orchestration):
 
 ```bash
 xvfb-run -a ./build/dev/seam_editor_native \

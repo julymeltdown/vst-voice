@@ -1,5 +1,7 @@
 # Project SEAM 출시 준비 Gate
 
+> **Historical report — notice added 2026-10-11.** The statements and gate/CI observations below describe an earlier phase snapshot. They are preserved as history, not current checkout or acceptance evidence. GitHub orchestration is deferred. Use [current engineering entrypoints](implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md), [full-scope ledger](implementation/FULL_SCOPE_BETA_EXECUTION.md) and the canonical product contracts for current work.
+
 현재 판정은 **G1 FEATURE_ALPHA**다.
 
 Public Production 계약은 구현되었지만 현재 상태는 `BLOCKED`이며

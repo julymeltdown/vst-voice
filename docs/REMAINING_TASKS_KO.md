@@ -1,5 +1,7 @@
 # Project SEAM 잔여 작업 백로그
 
+> **Historical report — notice added 2026-10-11.** The statements and gate/CI observations below describe an earlier phase snapshot. They are preserved as history, not current checkout or acceptance evidence. GitHub orchestration is deferred. Use [current engineering entrypoints](implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md), [full-scope ledger](implementation/FULL_SCOPE_BETA_EXECUTION.md) and the canonical product contracts for current work.
+
 상태 값:
 
 ```text

@@ -162,7 +162,7 @@
       ],
       "mandatory": true,
       "planningState": "READY_TO_DRAFT",
-      "implementationState": "NOT_STARTED_BY_THIS_PLAN",
+      "implementationState": "COMPLETE",
       "completionDependencies": [
         "RS-03",
         "RS-05"
@@ -190,7 +190,8 @@
       "commitUnits": [
         "README/design current routing",
         "API/lifecycle index and historical notices"
-      ]
+      ],
+      "verificationResult": "Source-checked CMake macOS route and API lifecycle index; 121 local inline links exist across edited documents (fragments/reference definitions excluded); diff/source closure PASS; no new GUI launch claimed"
     },
     {
       "id": "RS-05",
@@ -230,7 +231,8 @@
         "Neural documentation and comment correction"
       ],
       "excludedWork": "No global protocol-default change or mandatory new options factory",
-      "verificationResult": "Direct source comparison of codecs/package resolver/launchers/runner; documentation links, diff and tracked closure. No runtime behavior change or new runtime-test claim."
+      "verificationResult": "Direct source comparison of codecs/package resolver/launchers/runner; documentation links, diff and tracked closure. No runtime behavior change or new runtime-test claim.",
+      "integratedCommit": "bc4b69b9cc89ef4c92c84638ab79997303abe4b9"
     },
     {
       "id": "RS-06",

@@ -1,5 +1,19 @@
 # Project SEAM Design System
 
+## Current main-editor authority — 2026-10-11
+
+The standalone and CLAP main editor is the SING shell with EMO and SCENE looks. Its design authority is [the UI fidelity contract](docs/design/ui-fidelity-contract-v1.json) and [September 25 fidelity review](docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md). The contract describes the canonical 1600×900 logical layout, 1×/2× device scales, shared time axis, typography and region ownership; it is a specification, not visual or human acceptance.
+
+Implementation starts at [SingShell](libs/seam-native-ui/src/design/sing_shell.cpp), shared [tokens](libs/seam-native-ui/include/seam/native_ui/design/design_tokens.hpp) and the macOS CoreGraphics/CoreText paint backend. `prepareFrame` establishes hosted controller geometry before scene derivation. Native field placement and the shell accessibility tree must use the same presented logical coordinates; backing-scale conversion belongs at the platform boundary. Preserve composition ownership, focus, resize/hide gesture cancellation and undo behavior.
+
+Do not use the retained plum/teal raster palette or 720×520 geometry below as the current main-editor specification. `ClassicSurface` remains an adapter for controller coordinates; it is not a selectable fallback editor. Windows/Linux lack the vector backend and present the unavailable-editor notice. Windows support remains TODO. Voicebank Studio and reusable raster/inspection utilities retain their separately applicable contracts; do not remove them merely because the main-editor authority changed.
+
+See [current engineering entrypoints](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md) for source owners and lifecycle boundaries. Native source/geometry tests do not establish VoiceOver, DAW or human visual acceptance.
+
+## Retained Studio and raster design reference
+
+The following earlier rules describe Studio/raster surfaces and historical editor styling. They are preserved for those consumers; the current main-editor authority above takes precedence.
+
 ## 1. Atmosphere & Identity
 
 Project SEAM is a dark native audio workstation: compact, precise, and calm under technical load. Its signature is a plum-and-teal signal language over layered charcoal surfaces. Plum marks selection and editable vocal data; teal marks time, pitch, and live system truth. The UI favors persistent context over decorative framing.
