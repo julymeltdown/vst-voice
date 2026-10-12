@@ -33,6 +33,26 @@
       "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-subset-download.log",
       "bytes": 955,
       "sha256": "1e7a6b524f5b79d0cda46f39a86a39737272b187dd8e4ae8f6178195ff893b81"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-exercise/DataSetVocalises.pdf",
+      "bytes": 94078,
+      "sha256": "b7d65b803369963136df03bec03e6d5e29eaed2098dbc3b9440e1cc2a0da25c7"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-exercise/page-1.png",
+      "bytes": 171188,
+      "sha256": "4ffcca4da643ee6c5ef3dcf50674181c0bd0cd480ecf1dc45d2bb342fb2dd22b"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-exercise/extracted-text.txt",
+      "bytes": 1355,
+      "sha256": "b9c8c633ff25f9c915ef57107418915f11943b93f48314f9152615fcf0be0679"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-exercise-receipt.json",
+      "bytes": 427,
+      "sha256": "4a0b86f5fc2156ddd6ff2564bd295e5c55224febcf03e85c86d1e5b029f5f91c"
     }
   ],
   "originalUrls": [
@@ -55,12 +75,16 @@
     "seamPitchAnalyses": 15,
     "fullVocalSetArchiveMd5Verified": false,
     "fullOrksZipCrc": "PASS",
-    "reproduction": "PASS"
+    "reproduction": "PASS",
+    "additionalExercisePdf": "One original ZIP member; CRC/size PASS; score visually reviewed; full archive MD5 NOT_CHECKED"
   },
   "technicalReview": {
-    "status": "PENDING",
+    "status": "REVISE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "independentApprovalClaimed": false
+    "independentApprovalClaimed": false,
+    "reviewedCommit": "06bb2ec1e4b5c39870eaa09102dce947494d9692",
+    "conditionalFollowupApproval": "After narrow document/index/ledger correction is pushed with triple master equality",
+    "corrections": "Licensor-owned rights only; singer performer/personality evidence open; segmented notes and named Japanese sustain-only target"
   },
   "holds": {
     "ownerRightsPolicy": "PENDING",
@@ -70,6 +94,8 @@
     "nativeImport": "NOT_RUN",
     "humanListening": "NOT_RUN",
     "ae1": "NOT_SATISFIED",
-    "beta": "BLOCKED"
+    "beta": "BLOCKED",
+    "singerRightsEvidence": "NOT_ESTABLISHED",
+    "historicalInspectorBinaryIdentity": "NOT_RETAINED"
   }
 }
