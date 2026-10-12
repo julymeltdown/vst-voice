@@ -15,11 +15,12 @@
     "toastControlOverlap": "1/1 PASS; paged/unpaged at three sizes; retained before failure"
   },
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "originalVerdict": "REVISE (narrow)",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
     "scope": "Technical code integration only; lead-run checks",
-    "conditions": "Original and follow-up P2 findings repaired and post-build checks pass; independent final source review pending"
+    "conditions": "Final independent read-only verdict approves reason/visibility, toast/control separation and final-binary evidence; no human or Beta approval",
+    "reviewedCommit": "d4626fb3f41b84de2ee6e0f43c115b35af5534df"
   },
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false

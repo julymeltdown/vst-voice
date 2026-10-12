@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-vocalset-unassigned-sustain-cohort",
+  "sourceBase": "d4626fb3f41b84de2ee6e0f43c115b35af5534df",
+  "evidenceRoot": "out/evidence/female-vocal-sources-2026-10-13/cohort-preparation",
+  "manifestSha256": "82599890953c9c2854499b3121f7b02e00a8b37b1d0489d255f25bd9435669f9",
+  "reproduction": {
+    "path": "out/evidence/female-vocal-sources-2026-10-13/cohort-preparation/reproduction.log",
+    "sizeBytes": 81,
+    "sha256": "07458447fbfb56d8081240656d8759da6e9905e6f0ed30107444f2312f5789bc"
+  },
+  "checks": {
+    "freshNativeAnalysis": "5/5 exit 0; exact executable retained",
+    "cuts": "15;12.474921 seconds; observed 60/72/77",
+    "nativeFinalCutReader": "15/15 finite/non-silent/unclipped",
+    "exactSourcePcmAndRepeat": "PASS; originals unchanged; final output byte-identical",
+    "noOverwrite": "exit 2; prior outputs unchanged",
+    "unitTests": "7/7 PASS",
+    "pythonCTest": "2/2 PASS;0.41 seconds",
+    "readOnlyReproduction": "PASS"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Technical source/preparation only; no actor, phonetic, rights or bank acceptance"
+  },
+  "assignment": "NOT_ASSIGNED",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

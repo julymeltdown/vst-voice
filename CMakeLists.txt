@@ -2625,6 +2625,11 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_draft_inventory_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    add_test(NAME seam_vocal_source_intake_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_voicebank_source_intake)
+    set_tests_properties(seam_vocal_source_intake_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
     add_test(NAME seam_platform_identity_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_platform_identity)
     set_tests_properties(seam_platform_identity_tests PROPERTIES
