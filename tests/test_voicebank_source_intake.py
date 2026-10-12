@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -15,7 +16,8 @@ from unittest.mock import patch
 
 from tools.voicebank_source_intake.prepare_sustain_cuts import prepare, ANALYSIS_CONTRACT, PITCH_ANALYSIS
 
-CLI = Path(__file__).resolve().parents[1] / "build/release/seam_voicebank_cli"
+CLI_OVERRIDE = os.environ.get("SEAM_SOURCE_INTAKE_CLI")
+CLI = Path(CLI_OVERRIDE) if CLI_OVERRIDE is not None else Path(__file__).resolve().parents[1] / "build/release/seam_voicebank_cli"
 
 
 class SustainIntakeTests(unittest.TestCase):
@@ -128,8 +130,9 @@ class SustainIntakeTests(unittest.TestCase):
             prepare(self.plan_path, target)
         self.assertFalse(target.exists())
 
-    @unittest.skipUnless(CLI.is_file(), "Build the actual CLI for analysis/cut integration")
+    @unittest.skipUnless(CLI_OVERRIDE is not None or CLI.is_file(), "Build the actual CLI for analysis/cut integration")
     def test_native_analysis_binds_decoded_source_and_current_cut_contract(self) -> None:
+        self.assertTrue(CLI.is_file(), f"Configured source intake CLI does not exist: {CLI}")
         captured = self.audio.read_bytes()
         native = self.root / "native-analysis"
         result = subprocess.run([str(CLI), "analyze", str(self.audio), str(native)],
@@ -137,7 +140,7 @@ class SustainIntakeTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         analysis_path = native / "analysis.json"
         analysis = json.loads(analysis_path.read_bytes())
-        self.assertEqual("com.project-seam.voicebank-analysis", analysis["formatId"])
+        self.assertEqual("com.project-seam.voicebank-analysis", analysis.get("formatId"))
         self.assertEqual(2, analysis["schemaVersion"])
         self.assertEqual(hashlib.sha256(captured).hexdigest(), analysis["sourceSha256"])
         self.assertEqual(PITCH_ANALYSIS, analysis["pitchAnalysis"])

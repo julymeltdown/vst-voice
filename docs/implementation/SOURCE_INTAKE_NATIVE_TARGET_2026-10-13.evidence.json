@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "unit": "source-intake-native-target",
+  "sourceHead": "59ddc63effb48bc671024f93f86047d9d0da5d36",
+  "manifest": {
+    "path": "out/evidence/source-intake-native-target-2026-10-13/manifest.json",
+    "sizeBytes": 5239,
+    "sha256": "77966d4cbfeca98fed5f574182b7701b425202428adbde12eb808b68eb42bcde"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/source-intake-native-target-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/source-intake-native-target-2026-10-13/verification.log",
+      "sizeBytes": 133,
+      "sha256": "2ca544f13dea4ca1c425ab05612aae5a7e36a79e7183594e31d24ce6e11a9251"
+    }
+  },
+  "configuredNativeEnvironment": "SEAM_SOURCE_INTAKE_CLI=$<TARGET_FILE:seam_voicebank_cli>",
+  "focusedCTestEntriesPassed": 1,
+  "pythonMethodsPassed": 15,
+  "pythonSkippedTests": 0,
+  "expectedNegativeControls": {
+    "missingExplicitTarget": "FAIL_WITHOUT_SKIP_OR_FALLBACK",
+    "legacyExplicitTarget": "FAIL_CURRENT_ANALYSIS_IDENTITY"
+  },
+  "beforeProbes": "Proposed explicit setting was ignored; two probes passed with hardcoded Release CLI. Not an existing supported API.",
+  "currentNativeCli": {
+    "path": "out/evidence/source-intake-native-target-2026-10-13/binaries/seam_voicebank_cli",
+    "sizeBytes": 9718128,
+    "sha256": "31c5fdfef4d3722360a13fdd087cf990aa96582832b6090fc91146e4eaa64d09"
+  },
+  "retainedArtifacts": 19,
+  "preservedBindings": 4,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Configured target and native integration test routing only"
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}
