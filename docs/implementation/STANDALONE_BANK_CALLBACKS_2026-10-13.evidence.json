@@ -3,15 +3,18 @@
   "unit": "standalone-bank-callbacks",
   "sourceBase": "8a0308a6a8cd51bfe66ab1ba24832d7b6340dcab",
   "evidenceRoot": "out/evidence/standalone-bank-callbacks-2026-10-13",
-  "manifestSha256": "5ca4e75ad2a3a73abfd51ef1aa9b11e869b3a5e4094553da3e0d9bf4980708b3",
+  "manifestSha256": "61ac8ff0bfdb4a4be9c46bedf927f01ea8ae799c11a2c9657bff6cbaa82435c0",
   "checks": {
     "fullDependentBuild": "PASS",
     "songShell": "10/10 PASS",
     "standaloneCTest": "1/1 PASS; 0.68 seconds"
   },
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "reviewedCommit": "e3f2c7e00575c1779e001675a3407c726a3fdc39",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Technical source integration only; required scripted-dialog wording correction applied",
+    "reviewerReranBuildOrTests": false
   },
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false
