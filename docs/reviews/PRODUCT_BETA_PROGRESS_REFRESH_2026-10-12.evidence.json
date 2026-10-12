@@ -1,0 +1,311 @@
+{
+  "capturedUtc": "2026-10-12T14:05:02.821532+00:00",
+  "sourceHead": "257a2c4698f7db039ade7ea061af6f507f448ba0",
+  "sourceClean": false,
+  "worktreeStatus": " M tests/test_sing_shell_journey.cpp\n",
+  "worktreeDiffSha256": "34d2a1415a3f5761c1ff9097fe83a70d8fcc73c958895aa2b35224770c391058",
+  "alpha": {
+    "gate": {
+      "name": "Usable Alpha",
+      "status": "BLOCKED"
+    },
+    "counts": {
+      "NOT_RUN": 20
+    },
+    "evidenceRecords": 0
+  },
+  "beta": {
+    "status": "BLOCKED",
+    "requirements": 9,
+    "evidenceRecords": 0
+  },
+  "fullProduct": {
+    "requirements": 20,
+    "workPackages": 18,
+    "cases": 83,
+    "registryErrors": [],
+    "profileErrors": [],
+    "pendingProfile": [
+      "acoustic-boundaries",
+      "expression-tolerances",
+      "pronunciation-scoring",
+      "identity-rubric",
+      "generation-budgets",
+      "neural-budgets",
+      "resource-limits",
+      "cancellation-budgets",
+      "reference-machines",
+      "source-volume",
+      "reproducibility-tolerances",
+      "evaluation-profile-freeze",
+      "resource matrix"
+    ],
+    "criteriaCounts": {
+      "FIXED": 18,
+      "UNRESOLVED": 11
+    },
+    "semanticValidation": {
+      "ownerUnit": "U45",
+      "status": "UNAVAILABLE",
+      "admission": "BLOCKED"
+    },
+    "evidenceStatus": "NOT_RUN",
+    "scope": {
+      "languages": [
+        "ja",
+        "en",
+        "ko"
+      ],
+      "platforms": [
+        "macos-arm64",
+        "windows-x86_64"
+      ],
+      "hostTuples": [
+        "macos-arm64/reaper/CLAP",
+        "macos-arm64/reaper/VST3",
+        "windows-x86_64/reaper/CLAP",
+        "windows-x86_64/reaper/VST3",
+        "macos-arm64/bitwig/CLAP",
+        "macos-arm64/bitwig/VST3",
+        "windows-x86_64/bitwig/CLAP",
+        "windows-x86_64/bitwig/VST3",
+        "macos-arm64/logic-pro/AUv2"
+      ],
+      "resourceKinds": [
+        "sample-real",
+        "sample-procedural",
+        "recipe-original",
+        "neural-original",
+        "dictionary-original",
+        "character-original"
+      ],
+      "backends": [
+        "classical",
+        "procedural",
+        "neural",
+        "native"
+      ],
+      "resourceCoverage": "All released resources must prove advertised language/range/style/capabilities. Language subsets and backend-specific incompatibilities are allowed only in a frozen matrix with a supported tested combination for every mandatory feature.",
+      "matrixStatus": "UNRESOLVED",
+      "matrixOwnerUnits": [
+        "U14",
+        "U19",
+        "U20",
+        "U35",
+        "U36",
+        "U42"
+      ],
+      "releasedResources": []
+    }
+  },
+  "trackedFiles": {
+    "count": 3050,
+    "missing": []
+  },
+  "phase13a": {
+    "G2": {
+      "gate": "G2",
+      "passed": false,
+      "blocked_ids": [
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator"
+      ],
+      "errors": []
+    },
+    "G3": {
+      "gate": "G3",
+      "passed": false,
+      "blocked_ids": [
+        "bitwig-studio",
+        "logic-pro",
+        "macos-clap-runtime",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "windows-clap-runtime"
+      ],
+      "errors": []
+    },
+    "G4": {
+      "gate": "G4",
+      "passed": false,
+      "blocked_ids": [
+        "ableton-live",
+        "bitwig-studio",
+        "cubase",
+        "fl-studio",
+        "garageband",
+        "linux-vst3-build",
+        "linux-vst3-validator",
+        "logic-pro",
+        "macos-auv2-build",
+        "macos-auval",
+        "macos-clap-runtime",
+        "macos-installer-clean-os",
+        "macos-notarization",
+        "macos-vst3-build",
+        "macos-vst3-validator",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "studio-one",
+        "windows-authenticode",
+        "windows-clap-runtime",
+        "windows-installer-clean-os",
+        "windows-vst3-build",
+        "windows-vst3-validator"
+      ],
+      "errors": []
+    },
+    "G5": {
+      "gate": "G5",
+      "passed": false,
+      "blocked_ids": [
+        "ableton-live",
+        "bitwig-studio",
+        "cubase",
+        "fl-studio",
+        "garageband",
+        "linux-vst3-build",
+        "linux-vst3-validator",
+        "logic-pro",
+        "macos-auv2-build",
+        "macos-auval",
+        "macos-clap-runtime",
+        "macos-installer-clean-os",
+        "macos-notarization",
+        "macos-vst3-build",
+        "macos-vst3-validator",
+        "official-voicebank-01",
+        "phase12c-full-soak-7200s",
+        "phase12c-linux-clap-validator",
+        "reaper",
+        "studio-one",
+        "windows-authenticode",
+        "windows-clap-runtime",
+        "windows-installer-clean-os",
+        "windows-vst3-build",
+        "windows-vst3-validator"
+      ],
+      "errors": []
+    }
+  },
+  "regressions": {
+    "installer-regression": {
+      "exitCode": 1,
+      "expectedCurrentOutcome": "FAIL_CALLBACK_NOT_CONNECTED"
+    },
+    "refresh-regression": {
+      "exitCode": 1,
+      "expectedCurrentOutcome": "FAIL_CALLBACK_NOT_CONNECTED"
+    }
+  },
+  "inputDigests": {
+    "docs/product/usable-alpha-acceptance.json": "735e6dcba0fcd96e904518812e7ffaaf9b24b47efd8e5f442477a9e6e54c4a84",
+    "docs/product/external-beta-acceptance.json": "fbf453566dbe33452d2c217f91521545ecbec787f7497ce4d4240881ef8eba9e",
+    "docs/product/full-product-beta-contract.json": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+    "docs/phase13a/mandatory-validation-matrix.json": "c9666139732b595eb031a4061332bfba5538284e5365781b602254ddaff8751e",
+    "tests/test_sing_shell_journey.cpp": "f42eb03826fbb5da45a26b977cb746e3462885613f0d914f0e15dfd1aa67b002",
+    "docs/implementation/NATIVE_OBSERVATION_KIT_2026-10-12.json": "953a3fd997e8f2db2daca8ef381846beb2d125b3463efc7b8ae8ccda5acffed4"
+  },
+  "verificationScope": {
+    "fullDependentReleaseBuild": "PASS",
+    "focusedCtests": {
+      "passed": 5,
+      "failed": 0,
+      "seconds": 41.68
+    },
+    "newUncommittedRegressionProbes": {
+      "passed": 0,
+      "failed": 2
+    },
+    "fullCTestMatrix": "NOT_RUN",
+    "humanAcceptance": "NOT_RUN",
+    "signingDawWindowsAccessibility": "NOT_RUN",
+    "observationHashes": 95
+  },
+  "artifacts": [
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/alpha-contract.log",
+      "sha256": "f2a0a9ad1f02bfa2377625ceb4efd84c810ab1147d449f84e6d7af8747040f6b",
+      "bytes": 27
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/build.log",
+      "sha256": "c2ed93ffd93c840755c0e91392ae593b1b52de9b7aaf6c208123feaceb1dde2e",
+      "bytes": 63
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/focused-tests.log",
+      "sha256": "eb52559706926122af4f84b55af341f26553b060b9ab1298e846673dc9799e31",
+      "bytes": 799
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/installer-regression.log",
+      "sha256": "cb3eed6465cbb91da2ad9b24fcaa3de2c030982a8d20984742bf20b826f37a5d",
+      "bytes": 410
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/observation-integrity.log",
+      "sha256": "5c558399a6ffc8f954ebb61fc7b2a6a3c9f33b2fac3556d375a3bf44430a6b95",
+      "bytes": 66
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/phase13-contract.log",
+      "sha256": "d3eaadd50533709bc5e0f6c8915e878043cc5261f291c821f85227e4f730f833",
+      "bytes": 261
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/refresh-regression.log",
+      "sha256": "813e4a00e8a7051958d02bdcb822487a241b1d61224fbe1fbc6650cf621a3eb4",
+      "bytes": 380
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/snapshot.json",
+      "sha256": "70625220a3f82eb684aa9463fdff404d39b4ccf86f30c16f7be2f9b32cd5c714",
+      "bytes": 5819
+    },
+    {
+      "path": "out/evidence/overall-readiness-refresh-2026-10-12/source-worktree.patch",
+      "sha256": "34d2a1415a3f5761c1ff9097fe83a70d8fcc73c958895aa2b35224770c391058",
+      "bytes": 2793
+    }
+  ],
+  "binaryDigests": [
+    {
+      "path": "build/release/seam_tests",
+      "sha256": "3fba75fc8ce5d1e56c6ca9f04d42f6be1f418efe5f0929c170b94f9e4931168e",
+      "mtimeNs": 1791813147250755705
+    },
+    {
+      "path": "build/release/seam_expression_on_song_tests",
+      "sha256": "af176efc2fc6fdf0a7aa21482cbed19d86d42a2bc7e270b16a073cc0edc130c2",
+      "mtimeNs": 1791813140628487879
+    },
+    {
+      "path": "build/release/seam_original_singer_song_journey_tests",
+      "sha256": "f13c524187ce2e188bd515a59f61f6169bcf962664ac0850fa6425f3b0d27a7e",
+      "mtimeNs": 1791813140728979988
+    },
+    {
+      "path": "build/release/seam_procedural_install_journey_tests",
+      "sha256": "3b26e4de64867b8a3ccec4602e0796df20af7c05217fa87928b40bb0cb90f89a",
+      "mtimeNs": 1791813140628510212
+    },
+    {
+      "path": "build/release/seam_sample_review_cli_tests",
+      "sha256": "4b405fe8ac0bbfc417e9879fd2cc1e0141040ba7ca1add0b9d06528f57618c10",
+      "mtimeNs": 1791813141913830515
+    },
+    {
+      "path": "build/release/seam_singer_pilot",
+      "sha256": "94c8ad8685bd2e6cfc250b3a1ff3f00486316f437a8369935ab1a571fbafce69",
+      "mtimeNs": 1791813136957908850
+    }
+  ],
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "independentApprovalClaimed": false
+  }
+}

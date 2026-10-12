@@ -2,6 +2,8 @@
 
 **No production bank is approved.** The immediate [native observation kit](NATIVE_OBSERVATION_KIT_2026-10-12.md) is available with a development procedural singer. The choice below concerns the later reviewed sample bank needed by W01's unchanged Q1–Q3 and canonical unaided Alpha, rather than permission to inspect today's app.
 
+**Owner route update, later on 2026-10-12:** the owner replaced the generated-sample trial with **samples found on the internet**. The [current internet intake and code-level task](INTERNET_SAMPLE_SOURCE_INTAKE_2026-10-12.md) records the acquired PJS recordings, corrected-label pin, conditional license and remaining review/import obligations. The two routes below preserve the earlier decision dossier; they are no longer a pending generated-versus-recorded choice. The recipe-derived draft inventory has not been adopted as PJS coverage.
+
 ## Concrete available material
 
 | Material | Current evidence | Remaining dependency |

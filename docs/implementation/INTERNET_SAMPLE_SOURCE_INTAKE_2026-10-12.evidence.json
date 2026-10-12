@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "capturedUtc": "2026-10-12T14:11:51.998105+00:00",
+  "sourceHead": "257a2c4698f7db039ade7ea061af6f507f448ba0",
+  "scope": "ACQUIRED_SOURCE_ONLY",
+  "releaseEligible": false,
+  "nativeImportPerformed": false,
+  "productionApproval": "NOT_RUN",
+  "ownerRoute": "INTERNET_RECORDED_SAMPLE_TRIAL",
+  "localEvidenceRoot": "out/evidence/internet-vocal-sources-2026-10-12",
+  "facts": {
+    "songs": 100,
+    "speechFiles": 100,
+    "singingSeconds": 1611.443541666667,
+    "audioTypes": [
+      {
+        "rate": 48000,
+        "channels": 1,
+        "sampleBytes": 3,
+        "count": 100
+      }
+    ],
+    "originalLabelIssues": 47,
+    "originalLabelAffectedSongs": 43,
+    "manualLabelIssues": 0,
+    "manualLabelCommit": "cc08bead6bf2b06e88608a8ece12555bcc720ec9",
+    "singerRequirement": "MALE_TRIAL_ORIGINAL_FEMALE_OBLIGATION_OPEN",
+    "license": "CC-BY-SA-4.0",
+    "preview": {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/pjs056_song.wav",
+      "sha256": "92037425e4b461b4efbcf1c38585e8e5122a3dfb5b41e589ae8c9a9390c250b4",
+      "rate": 48000,
+      "channels": 1,
+      "sampleBytes": 3,
+      "frames": 768000,
+      "seconds": 16.0,
+      "identicalToCorpusFile": true
+    }
+  },
+  "retainedArtifacts": [
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/acquisition-manifest.json",
+      "sha256": "11fe2e9e376dca594d9f510cc96ac934074d50b8db481d6981f660929ea316f9",
+      "bytes": 54094
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/retained-files.json",
+      "sha256": "c2e72847a03807537acb96a1e15dfa6529e9e20bec6ddc7699778d5e2e22a11a",
+      "bytes": 158750
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/PJS_corpus_ver1.1.zip",
+      "sha256": "683c00253ee35a62d50de0375bb9d8e003a74338d4ce3495ac3f7ad096abc1ca",
+      "bytes": 275179158
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/pjs-manual-labels-cc08bead.zip",
+      "sha256": "d9f53042866c504ab866bcc972923a6e950435c3423fed27f9ec9075b40c6e80",
+      "bytes": 88944
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/publisher.html",
+      "sha256": "14b007b7aaef37ab1d09658107a63927c07c7abc7f43b878d78584a6f6debdfe",
+      "bytes": 170774
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/csd-readme.md",
+      "sha256": "1fd5ae9add724d7b76a3860346faab32a2c3ed450d6b96173899dd10ab3cbb53",
+      "bytes": 13887
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/pjs056_song.wav",
+      "sha256": "92037425e4b461b4efbcf1c38585e8e5122a3dfb5b41e589ae8c9a9390c250b4",
+      "bytes": 2308096
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/reproduce_intake.py",
+      "sha256": "17c776cfd10dd3a26df47870c4f0bb0543216b91e36a0cffef2df94133183872",
+      "bytes": 2322
+    },
+    {
+      "path": "out/evidence/internet-vocal-sources-2026-10-12/reproduction.log",
+      "sha256": "b5f5cc185972c0f9553ddde105a7ca58a8aede167577a0067f5ae2b4583b97cb",
+      "bytes": 322
+    }
+  ],
+  "limits": [
+    "No native import/publish/install trial executed",
+    "No acoustic coverage/range/style or intelligibility acceptance",
+    "PJS paper identifies a male singer; original female singer obligation remains",
+    "No producer/reviewer identities or canonical acceptance created"
+  ],
+  "sourceUrls": [
+    "https://sites.google.com/site/shinnosuketakamichi/research-topics/pjs_corpus",
+    "https://arxiv.org/html/2006.02959",
+    "https://github.com/UtaUtaUtau/pjs-manual-labels",
+    "https://creativecommons.org/licenses/by-sa/4.0/legalcode.en"
+  ],
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "independentApprovalClaimed": false
+  }
+}
