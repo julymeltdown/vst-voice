@@ -90,7 +90,10 @@ def validate_requirement_evidence(
     return errors
 
 
-def verify_repository(root: Path) -> list[str]:
+def verify_repository(
+    root: Path, *, acceptance_document: dict[str, Any] | None = None
+) -> list[str]:
+    """Check canonical links and one document snapshot, loading it when not supplied."""
     root = root.resolve()
     errors: list[str] = []
 
@@ -107,7 +110,9 @@ def verify_repository(root: Path) -> list[str]:
     if not canonical_doc.is_file():
         errors.append(f"missing canonical English contract: {canonical_doc}")
 
-    payload = _load_json(root / "docs/product/usable-alpha-acceptance.json", errors)
+    payload = acceptance_document
+    if payload is None:
+        payload = _load_json(root / "docs/product/usable-alpha-acceptance.json", errors)
     if payload is None:
         return errors
 
@@ -119,7 +124,7 @@ def verify_repository(root: Path) -> list[str]:
         errors.append("gate must be an object")
         gate = {}
     gate_status = gate.get("status")
-    if gate_status not in VALID_GATE_STATUSES:
+    if not isinstance(gate_status, str) or gate_status not in VALID_GATE_STATUSES:
         errors.append(f"gate.status must be one of {sorted(VALID_GATE_STATUSES)}")
 
     requirements = payload.get("requirements")
@@ -141,7 +146,7 @@ def verify_repository(root: Path) -> list[str]:
         if mandatory is not True:
             errors.append(f"{requirement_id}: mandatory must be true")
         status = item.get("status")
-        if status not in VALID_REQUIREMENT_STATUSES:
+        if not isinstance(status, str) or status not in VALID_REQUIREMENT_STATUSES:
             errors.append(
                 f"{requirement_id}: status must be one of {sorted(VALID_REQUIREMENT_STATUSES)}"
             )

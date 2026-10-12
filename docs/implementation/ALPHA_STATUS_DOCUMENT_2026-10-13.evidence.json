@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "unit": "canonical-alpha-status-document-validation",
+  "sourceBase": "0043e5a8e6baf50f7ff1e7ccaf34e0a3a01fe4ea",
+  "evidenceRoot": "out/evidence/alpha-status-document-2026-10-13",
+  "manifest": {
+    "path": "out/evidence/alpha-status-document-2026-10-13/manifest.json",
+    "sizeBytes": 7025,
+    "sha256": "d02be91c33aa190b3e9acb5f238619069dac1e192adbf6f8b613d11f035d5c56"
+  },
+  "checks": {
+    "statusTests": "12/12 PASS",
+    "canonicalVerifierTests": "6/6 PASS",
+    "canonicalContract": "PASS; actual gate BLOCKED",
+    "configure": "cmake --preset release exit 0; no pinned source identity",
+    "newLocalCTest": "seam_usable_alpha_contract_tests 1/1 PASS; six cases; 0.06 seconds",
+    "baseline": "Nine assertion/subtest failures and two read/parse errors across three status methods; four non-string status subtest TypeErrors in canonical verifier."
+  },
+  "recordedCanonicalRows": "0/20 PASS; unchanged",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Document validity/status counts and existing local verifier regression registration only"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

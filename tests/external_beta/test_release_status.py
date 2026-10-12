@@ -10,6 +10,7 @@ every value were raised.
 from __future__ import annotations
 
 import json
+import copy
 import hashlib
 import tempfile
 import unittest
@@ -22,7 +23,7 @@ from tools.external_beta.release_status import (
     build_rows,
     state_rank,
     status_report,
-    _count_completed_physical_runs,
+    _count_recorded_alpha_passes,
 )
 
 
@@ -30,6 +31,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleaseStatusTests(unittest.TestCase):
+    def counter_document(self, root: Path, rows: list[dict]) -> dict:
+        (root / "docs/product").mkdir(parents=True, exist_ok=True)
+        (root / "docs/product/USABLE_ALPHA_ACCEPTANCE.md").write_text("Synthetic contract fixture\n")
+        (root / "README.md").write_text("docs/product/USABLE_ALPHA_ACCEPTANCE.md\n")
+        return {"schemaVersion": 1, "gate": {"status": "BLOCKED"}, "requirements": rows}
+
     def test_states_are_ordered_weakest_first(self) -> None:
         self.assertEqual(
             STATES,
@@ -123,15 +130,16 @@ class ReleaseStatusTests(unittest.TestCase):
             rows = [{"id": f"UA-{i:03d}", "mandatory": True, "status": "NOT_RUN", "evidence": []}
                     for i in range(1, 21)]
             rows[0].update(status="PASS", evidence=evidence)
+            document = self.counter_document(root, rows)
             with patch("tools.external_beta.release_status._root", return_value=root), \
-                 patch("tools.external_beta.release_status._acceptance", return_value={"requirements": rows}):
-                self.assertEqual((1, 20), _count_completed_physical_runs())
+                 patch("tools.external_beta.release_status._acceptance", return_value=document):
+                self.assertEqual((1, 20), _count_recorded_alpha_passes())
                 rows[1].update(status="PASS", evidence=evidence)
-                self.assertEqual((2, 20), _count_completed_physical_runs())
+                self.assertEqual((2, 20), _count_recorded_alpha_passes())
                 rows[1]["evidence"] = []
-                self.assertEqual((1, 20), _count_completed_physical_runs())
+                self.assertEqual((0, 20), _count_recorded_alpha_passes())
                 artifact.write_bytes(b"Changed after capture")
-                self.assertEqual((0, 20), _count_completed_physical_runs())
+                self.assertEqual((0, 20), _count_recorded_alpha_passes())
 
     def test_completed_and_unsafe_or_duplicate_rows_are_not_counted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -142,14 +150,59 @@ class ReleaseStatusTests(unittest.TestCase):
             rows = [{"id": f"UA-{i:03d}", "mandatory": True, "status": "NOT_RUN", "evidence": []}
                     for i in range(1, 21)]
             rows[0].update(status="COMPLETED", evidence=evidence)
+            document = self.counter_document(root, rows)
             with patch("tools.external_beta.release_status._root", return_value=root), \
-                 patch("tools.external_beta.release_status._acceptance", return_value={"requirements": rows}):
-                self.assertEqual((0, 20), _count_completed_physical_runs())
+                 patch("tools.external_beta.release_status._acceptance", return_value=document):
+                self.assertEqual((0, 20), _count_recorded_alpha_passes())
                 rows[0].update(status="PASS", evidence=[{"path": "../observed.txt", "sha256": evidence[0]["sha256"]}])
-                self.assertEqual((0, 20), _count_completed_physical_runs())
+                self.assertEqual((0, 20), _count_recorded_alpha_passes())
                 rows[0]["evidence"] = evidence
                 rows[1]["id"] = rows[0]["id"]
-                self.assertEqual((0, 20), _count_completed_physical_runs())
+                self.assertEqual((0, 20), _count_recorded_alpha_passes())
+
+    def test_invalid_document_never_counts_recorded_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact = root / "fixture.txt"
+            artifact.write_bytes(b"Synthetic fixture; no physical activity\n")
+            rows = [{"id": f"UA-{i:03d}", "mandatory": True, "status": "NOT_RUN", "evidence": []}
+                    for i in range(1, 21)]
+            rows[0].update(status="PASS", evidence=[{"path": artifact.name,
+                "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}])
+            baseline = self.counter_document(root, rows)
+            for change in ("schema", "gate", "mandatory-false", "mandatory-string", "readme", "doc", "missing-row"):
+                with self.subTest(change=change):
+                    document = copy.deepcopy(baseline)
+                    self.counter_document(root, rows)
+                    if change == "schema":
+                        document["schemaVersion"] = 2
+                    elif change == "gate":
+                        document["gate"]["status"] = "PASSED"
+                    elif change == "mandatory-false":
+                        document["requirements"][1]["mandatory"] = False
+                    elif change == "mandatory-string":
+                        document["requirements"][1]["mandatory"] = "true"
+                    elif change == "readme":
+                        (root / "README.md").write_text("No canonical link\n")
+                    elif change == "doc":
+                        (root / "docs/product/USABLE_ALPHA_ACCEPTANCE.md").unlink()
+                    else:
+                        document["requirements"].pop()
+                    with patch("tools.external_beta.release_status._root", return_value=root), \
+                         patch("tools.external_beta.release_status._acceptance", return_value=document):
+                        self.assertEqual((0, 20), _count_recorded_alpha_passes())
+
+    def test_unreadable_or_malformed_acceptance_retains_canonical_denominator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.counter_document(root, [])
+            path = root / "docs/product/usable-alpha-acceptance.json"
+            for content in (None, "}", "[]"):
+                with self.subTest(content=content):
+                    if content is not None:
+                        path.write_text(content)
+                    with patch("tools.external_beta.release_status._root", return_value=root):
+                        self.assertEqual((0, 20), _count_recorded_alpha_passes())
 
     def test_absent_rows_are_not_claimed_to_pass(self) -> None:
         self.assertIn("not claimed to pass", str(status_report()["absentMeans"]))

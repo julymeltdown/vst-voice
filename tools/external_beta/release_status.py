@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from scripts.verify_usable_alpha_contract import EXPECTED_IDS, validate_requirement_evidence
+from scripts.verify_usable_alpha_contract import EXPECTED_IDS, verify_repository
 
 
 #: The four states, weakest first. A row may never claim a state that outranks its evidence.
@@ -87,38 +87,27 @@ def _acceptance() -> dict:
     )
 
 
-def _count_completed_physical_runs() -> tuple[int, int]:
-    """Completed physical rows out of all canonical rows in the alpha acceptance matrix.
+def _count_recorded_alpha_passes() -> tuple[int, int]:
+    """Count recorded PASS rows only in a valid canonical document.
 
-    Read from the acceptance document rather than restated, so this cannot drift away from the
-    matrix it summarises. A row counts only when it carries a completed physical run; a passing
-    unit or controller test is a different thing and is not one of these.
+    The shared path/hash policy verifies retained bytes, not human activity or
+    operator/candidate authority. Invalid input keeps the canonical denominator.
     """
-    document = _acceptance()
-    rows = document.get("requirements") if isinstance(document, dict) else None
-    if not isinstance(rows, list):
-        return (0, 0)
-    if [row.get("id") if isinstance(row, dict) else None for row in rows] != EXPECTED_IDS:
-        return (0, len(rows))
-    completed = 0
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        # A row counts only when it is marked complete AND carries retained evidence. Status
-        # alone would let a row claim a pass with nothing behind it, which is the exact
-        # confusion this page exists to prevent.
-        if row.get("mandatory") is True and row.get("status") == "PASS" and not validate_requirement_evidence(
-            _root(), row["id"], "PASS", row.get("evidence")
-        ):
-            completed += 1
-    return (completed, len(rows))
+    denominator = len(EXPECTED_IDS)
+    try:
+        document = _acceptance()
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        return (0, denominator)
+    if not isinstance(document, dict) or verify_repository(_root(), acceptance_document=document):
+        return (0, denominator)
+    return (sum(row["status"] == "PASS" for row in document["requirements"]), denominator)
 
 
 def build_rows() -> tuple[Row, ...]:
     """The tracked rows, each derived from evidence that exists in this repository."""
     contract = _contract()
     scope = contract.get("scope", {})
-    completed_runs, total_runs = _count_completed_physical_runs()
+    recorded_passes, total_requirements = _count_recorded_alpha_passes()
 
     return (
         Row(
@@ -174,11 +163,11 @@ def build_rows() -> tuple[Row, ...]:
                 "BETA_READINESS_ISSUES.md (SEAM-BETA-P0-04)",
             ),
             blocked_on=(
-                f"{completed_runs} of {total_runs} canonical rows record PASS with valid hash-bound evidence. "
-                "The rows need a person, installed candidate bytes and retained hash-bound "
-                "evidence; no automated check can produce them."
+                f"{recorded_passes} of {total_requirements} canonical rows record PASS with valid hash-bound evidence. "
+                "Acceptance still requires actual person and installed-candidate evidence; "
+                "the path/hash validator does not authenticate that activity."
             ),
-            notes="This is the number most often misread as progress on its own.",
+            notes="Only a valid canonical document is counted; invalid input reports zero with the 20-requirement denominator. This count is not implementation progress.",
         ),
         Row(
             claim="Target OS and DAW compatibility matrix",

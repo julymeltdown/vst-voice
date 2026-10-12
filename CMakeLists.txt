@@ -2751,6 +2751,12 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_external_beta_python_contract_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s tests/external_beta -p test_*.py)
+    add_test(NAME seam_usable_alpha_contract_tests
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_usable_alpha_contract.py)
+    set_tests_properties(seam_usable_alpha_contract_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
     add_test(NAME seam_voice_source_admission_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/production/test_voice_source_admission.py)

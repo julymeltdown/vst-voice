@@ -55,6 +55,22 @@ class UsableAlphaContractVerificationTests(unittest.TestCase):
         errors = verify_repository(root)
         self.assertTrue(any("gate" in error.lower() and "mandatory" in error.lower() for error in errors), errors)
 
+    def test_non_string_statuses_return_validation_errors(self) -> None:
+        root = self.make_repo(readme="docs/product/USABLE_ALPHA_ACCEPTANCE.md\n")
+        (root / "docs/product/USABLE_ALPHA_ACCEPTANCE.md").write_text("Synthetic contract\n")
+        path = root / "docs/product/usable-alpha-acceptance.json"
+        baseline = json.loads(path.read_text())
+        for location in ("gate", "row"):
+            for value in ([], {}):
+                with self.subTest(location=location, value=value):
+                    payload = json.loads(json.dumps(baseline))
+                    target = payload["gate"] if location == "gate" else payload["requirements"][0]
+                    target["status"] = value
+                    path.write_text(json.dumps(payload))
+                    errors = verify_repository(root)
+                    expected = "gate.status" if location == "gate" else "UA-001: status"
+                    self.assertTrue(any(expected in error for error in errors), errors)
+
     def test_rejects_evidence_symlink_even_when_target_is_inside_repository(self) -> None:
         root = self.make_repo(
             readme="[Usable Alpha](docs/product/USABLE_ALPHA_ACCEPTANCE.md)\n",
