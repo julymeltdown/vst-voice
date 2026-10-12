@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-expanded-audition",
+  "sourceHead": "dc7af6b9b9561cc706244a18fdd1a93fe07bebf5",
+  "manifest": {
+    "path": "out/evidence/female-expanded-audition-2026-10-13/manifest.json",
+    "sizeBytes": 21412,
+    "sha256": "95fae93bc5e302e61376b2446d1f8c9d15f712baedfcf6536c7617d83d88649d"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/female-expanded-audition-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/female-expanded-audition-2026-10-13/verification.log",
+      "sizeBytes": 191,
+      "sha256": "3c0c8ab193bb9c03358241ec09450e309f71a6754c44c8e06a98e21fcc9765bf"
+    }
+  },
+  "packetPage": {
+    "path": "out/evidence/female-expanded-audition-2026-10-13/packet/index.html",
+    "sizeBytes": 33966,
+    "sha256": "4aadfbb58fa7e845cde7ac25ea8974800f47bfe2b46150058bd1074901386c63"
+  },
+  "blankWorksheet": {
+    "path": "out/evidence/female-expanded-audition-2026-10-13/packet/response-template.json",
+    "sizeBytes": 35748,
+    "sha256": "ea6be28799586f8f45619b5e3b1ef1969a38cc9fea6a5c2d5c96bc3ec916ca71"
+  },
+  "browserObservation": {
+    "path": "out/evidence/female-expanded-audition-2026-10-13/browser-observation.json",
+    "sizeBytes": 10902,
+    "sha256": "ab01c372f7ba1fd728cfd4bc65573210eadf3e770e6e335a212626aacd21e34d"
+  },
+  "visualScreenshot": {
+    "path": "out/evidence/female-expanded-audition-2026-10-13/audition-viewport.png",
+    "sizeBytes": 144754,
+    "sha256": "43f3af3aacadb81d4e139d6fc2ce2486ab97dcb6df6f7b05449f0234b1885e45"
+  },
+  "retainedArtifacts": 90,
+  "parentBindings": 3,
+  "preservedSourceHistoricalCanonicalBindings": 136,
+  "packetFiles": 79,
+  "byteIdenticalSourceCopies": 76,
+  "cutCount": 73,
+  "cutSeconds": 37.70920634920635,
+  "sourceVowelRowCounts": {
+    "a": 14,
+    "e": 15,
+    "i": 14,
+    "o": 15,
+    "u": 15
+  },
+  "manualControls": 73,
+  "observedNote66Cuts": 0,
+  "allDecisionsNull": true,
+  "browserAudioRequests": 0,
+  "audioPlayback": "NOT_RUN",
+  "humanListening": "NOT_RUN",
+  "bankAdmission": "NOT_APPROVED",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Expanded manual audition packet and blank worksheet only"
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}
