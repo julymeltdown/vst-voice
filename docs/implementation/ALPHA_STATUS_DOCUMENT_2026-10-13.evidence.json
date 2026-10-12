@@ -18,9 +18,15 @@
   },
   "recordedCanonicalRows": "0/20 PASS; unchanged",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Document validity/status counts and existing local verifier regression registration only"
+    "scope": "Document validity/status counts and existing local verifier regression registration only",
+    "reviewedCommit": "d7872b76b48eceb08b7b4bdfbdfcec7a75b29102",
+    "record": {
+      "path": "out/evidence/derived-take-inspection-2026-10-13/alpha-document-independent-review.md",
+      "sizeBytes": 4038,
+      "sha256": "f0160c65edb53e6152a22de190f8a7b0908e35fbae3bc0a3d47f7d3a3e0b69d4"
+    }
   },
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false

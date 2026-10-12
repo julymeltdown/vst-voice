@@ -4,6 +4,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <set>
@@ -130,6 +131,14 @@ core::Result<CommittedDerivedRevision> ProductionProjectRepository::commitStaged
     return core::failure<CommittedDerivedRevision>(
         core::ErrorCode::InvariantViolation, "Derived asset digest changed during commit");
   }
+  // Inspect the exact stored derivative under this assignment's current policy.
+  // Failed outcomes remain diagnostics; this operation never grants review.
+  const auto request = takeInspectionRequestFor(take->coverageKey, take->pitchLayer);
+  if (!request) return core::Result<CommittedDerivedRevision>{request.error()};
+  const auto inspected = voicebank::inspectTake(assetStore_.pathFor(imported.value()), request.value());
+  if (!inspected) return core::Result<CommittedDerivedRevision>{inspected.error()};
+  if (inspected.value().sourceSha256 != imported.value().sha256 || inspected.value().byteSize != imported.value().byteSize)
+    return core::failure<CommittedDerivedRevision>(core::ErrorCode::Conflict, "Derived audio changed during inspection");
   const auto original = project;
   invalidateProductionQualification(project);
   if (std::none_of(project.assets.begin(), project.assets.end(),
@@ -150,6 +159,9 @@ core::Result<CommittedDerivedRevision> ProductionProjectRepository::commitStaged
   };
   project.derivedRevisions.push_back(revision);
   take->derivedRevisionIds.push_back(revision.revisionId);
+  project.metadataRevisions.push_back(makeDerivedTakeInspectionRevision(
+      {{take->takeId, take->promptId, take->coverageKey, take->pitchLayer}, inspected.value()},
+      take->rawAssetSha256, revision.revisionId, revision.operatorId, revision.performedAtUtc));
   // Keep immutable reviews and annotations for history. Only their current
   // applicability changes; an unrelated take's approvals must remain intact.
   if (take->state != UnitQueueState::Retake) take->state = UnitQueueState::MarkerReview;

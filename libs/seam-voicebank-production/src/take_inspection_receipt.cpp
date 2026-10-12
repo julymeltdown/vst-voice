@@ -258,15 +258,33 @@ MetadataRevision makeTakeInspectionRevision(const TakeInspectionEvidence& eviden
   };
 }
 
+MetadataRevision makeDerivedTakeInspectionRevision(const TakeInspectionEvidence& evidence,
+    std::string rawAssetSha256, std::string derivedRevisionId,
+    std::string operatorId, std::string performedAtUtc) {
+  auto result = makeTakeInspectionRevision(evidence, std::move(operatorId), std::move(performedAtUtc));
+  result.rawAssetSha256 = std::move(rawAssetSha256);
+  result.kind = std::string{kDerivedTakeInspectionRevisionKind};
+  result.values.emplace("derivedRevisionId", std::move(derivedRevisionId));
+  result.revisionId = "derived-take-inspection-" + core::sha256Hex(formats::stringifyJson(
+      Json::Array{result.values.at("evidenceSha256"), result.values.at("derivedRevisionId")}, false)).substr(0U, 32U);
+  return result;
+}
+
 core::Result<TakeInspectionEvidence> validateTakeInspectionRevision(
     const VoicebankProductionProject& project, const MetadataRevision& revision) {
-  if (revision.kind != kTakeInspectionRevisionKind) return invalid("Revision is not a take inspection receipt");
+  const bool derived = revision.kind == kDerivedTakeInspectionRevisionKind;
+  if (revision.kind != kTakeInspectionRevisionKind && !derived) return invalid("Revision is not a take inspection receipt");
   const auto& values = revision.values;
-  if (values.size() != 2U || !values.contains("evidenceJson") || !values.contains("evidenceSha256") ||
+  if (values.size() != (derived ? 3U : 2U) || !values.contains("evidenceJson") || !values.contains("evidenceSha256") ||
+      (derived && (!values.contains("derivedRevisionId") || values.at("derivedRevisionId").empty())) ||
       !isLowerDigest(values.at("evidenceSha256")) ||
-      core::sha256Hex(values.at("evidenceJson")) != values.at("evidenceSha256") ||
-      revision.revisionId != "take-inspection-" + values.at("evidenceSha256").substr(0U, 32U))
+      core::sha256Hex(values.at("evidenceJson")) != values.at("evidenceSha256"))
     return invalid("Take inspection receipt digest or identity is invalid");
+  const auto expectedRevisionId = derived
+      ? "derived-take-inspection-" + core::sha256Hex(formats::stringifyJson(
+          Json::Array{values.at("evidenceSha256"), values.at("derivedRevisionId")}, false)).substr(0U, 32U)
+      : "take-inspection-" + values.at("evidenceSha256").substr(0U, 32U);
+  if (revision.revisionId != expectedRevisionId) return invalid("Take inspection receipt digest or identity is invalid");
   auto evidence = decodeTakeInspectionEvidence(values.at("evidenceJson"));
   if (!evidence) return evidence;
   const auto& decoded = evidence.value();
@@ -277,11 +295,25 @@ core::Result<TakeInspectionEvidence> validateTakeInspectionRevision(
                                        take->pitchLayer};
   if (decoded.binding != expected)
     return invalid("Take inspection receipt was made for a different assignment");
-  if (decoded.inspection.sourceSha256 != revision.rawAssetSha256 ||
-      revision.rawAssetSha256 != take->rawAssetSha256)
+  if (revision.rawAssetSha256 != take->rawAssetSha256)
+    return invalid("Take inspection receipt does not describe the stored take bytes");
+  auto inspectedSha256 = take->rawAssetSha256;
+  if (derived) {
+    bool found = false;
+    for (const auto& id : take->derivedRevisionIds) {
+      const auto step = std::find_if(project.derivedRevisions.begin(), project.derivedRevisions.end(),
+          [&](const auto& value) { return value.revisionId == id; });
+      if (step == project.derivedRevisions.end() || step->inputSha256 != inspectedSha256)
+        return invalid("Derived inspection processing lineage is incomplete");
+      inspectedSha256 = step->outputSha256;
+      if (id == values.at("derivedRevisionId")) { found = true; break; }
+    }
+    if (!found) return invalid("Derived inspection names no revision owned by this take");
+  }
+  if (decoded.inspection.sourceSha256 != inspectedSha256)
     return invalid("Take inspection receipt does not describe the stored take bytes");
   const auto asset = std::find_if(project.assets.begin(), project.assets.end(),
-      [&](const AssetRecord& value) { return value.sha256 == take->rawAssetSha256; });
+      [&](const AssetRecord& value) { return value.sha256 == inspectedSha256; });
   if (asset == project.assets.end() || asset->byteSize != decoded.inspection.byteSize)
     return invalid("Take inspection receipt byte size differs from the stored asset");
   const auto request = takeInspectionRequestFor(take->coverageKey, take->pitchLayer);
@@ -308,6 +340,22 @@ std::optional<TakeInspectionEvidence> currentTakeInspection(
   for (auto revision = project.metadataRevisions.rbegin(); revision != project.metadataRevisions.rend(); ++revision) {
     if (revision->takeId != takeId || revision->kind != kTakeInspectionRevisionKind ||
         revision->rawAssetSha256 != take->rawAssetSha256) continue;
+    auto evidence = validateTakeInspectionRevision(project, *revision);
+    if (evidence) return std::move(evidence).value();
+  }
+  return std::nullopt;
+}
+
+std::optional<TakeInspectionEvidence> currentActiveTakeInspection(
+    const VoicebankProductionProject& project, std::string_view takeId) {
+  const auto take = std::find_if(project.takes.begin(), project.takes.end(),
+      [&](const auto& value) { return value.takeId == takeId; });
+  if (take == project.takes.end()) return std::nullopt;
+  if (take->derivedRevisionIds.empty()) return currentTakeInspection(project, takeId);
+  const auto& currentId = take->derivedRevisionIds.back();
+  for (auto revision = project.metadataRevisions.rbegin(); revision != project.metadataRevisions.rend(); ++revision) {
+    if (revision->takeId != takeId || revision->kind != kDerivedTakeInspectionRevisionKind ||
+        !revision->values.contains("derivedRevisionId") || revision->values.at("derivedRevisionId") != currentId) continue;
     auto evidence = validateTakeInspectionRevision(project, *revision);
     if (evidence) return std::move(evidence).value();
   }

@@ -323,7 +323,7 @@ core::Result<void> validateProductionProject(
           ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW";
       if (status->asString() != expectedStatus)
         return invalid("Dry-take technical status does not match its measured checks");
-    } else if (revision.kind == kTakeInspectionRevisionKind) {
+    } else if (revision.kind == kTakeInspectionRevisionKind || revision.kind == kDerivedTakeInspectionRevisionKind) {
       const auto receipt = validateTakeInspectionRevision(project, revision);
       if (!receipt) return invalid(receipt.error().message);
     }

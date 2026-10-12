@@ -91,10 +91,10 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
       "REVIEW PACKET SHA256 " + packet.packetSha256,
       "ROOT MIDI " + std::to_string(unit.rootMidi) + " / RENDERER " + std::string(voicebank::rendererHintName(unit.renderer)),
       "GAIN DB " + std::to_string(unit.gainDb) + " / PRIORITY " + std::to_string(unit.priority)};
-  const auto currentInspection = production::currentTakeInspection(project, binding.takeId);
+  const auto currentInspection = production::currentActiveTakeInspection(project, binding.takeId);
   if (currentInspection && currentInspection->inspection.sourceSha256 == binding.audioSha256) {
     appendTakeInspectionDetails(result, currentInspection->inspection);
-  } else if (currentInspection) {
+  } else if (production::currentTakeInspection(project, binding.takeId)) {
     result.push_back("AUTOMATED SIGNAL CHECKS COVER THE RAW TAKE, NOT THIS PROCESSED AUDIO / HUMAN REVIEW STILL REQUIRED");
   }
   const auto dryTakeInspection = std::find_if(

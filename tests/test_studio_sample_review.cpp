@@ -6,6 +6,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -91,6 +92,28 @@ struct Dialog final : platform::IFileDialog {
   }
 };
 } // namespace
+
+TEST_CASE("native review shows current derivative inspection instead of a raw-only warning") {
+  Fixture fixture;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::NormalizeGain, .targetPeak=0.15F}, "review-normalized");
+  CHECK(staged);
+  CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), "normalized-revision", "producer",
+      "2026-09-09T10:02:00Z", "take-a", ""));
+  CHECK(fixture.controller.openProductionProject(fixture.root / "producer", fixture.project.inventorySha256, "producer"));
+  fixture.capture();
+  const auto& inspection = *fixture.controller.sampleReviewInspection();
+  CHECK(inspection.packet.units.front().audioSha256 == staged.value().outputSha256);
+  const auto& details = inspection.details;
+  CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
+    return value.find("AUTOMATED SIGNAL CHECKS SIGNAL_CHECKS_PASSED") != std::string::npos;
+  }));
+  CHECK(std::count_if(details.begin(), details.end(), [](const auto& value) { return value.starts_with("AUTOMATED CHECK "); }) == 8);
+  CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) { return value.find("COVER THE RAW TAKE") != std::string::npos; }));
+  CHECK(fixture.project.reviews.empty());
+  CHECK(!fixture.controller.sampleReviewReceipt());
+  CHECK(fixture.controller.sampleReviewerId().empty());
+}
 
 TEST_CASE("Studio human sample review exposes matching automated signal checks without treating them as approval") {
   Fixture fixture(false, true);

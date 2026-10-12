@@ -6,6 +6,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <barrier>
 #include <optional>
@@ -20,7 +21,8 @@ struct StagingFixture final {
   production::VoicebankProductionProject project;
   production::AssetRecord raw;
 
-  StagingFixture() {
+  explicit StagingFixture(std::uint32_t rate = 48000U,
+      seam::voicebank::WavSampleFormat format = seam::voicebank::WavSampleFormat::Pcm24) {
     const auto license = root / "synthetic-license.txt";
     CHECK(seam::core::durableAtomicWriteTextNew(license, "SYNTHETIC TEST ONLY; no production qualification"));
     const auto licenseHash = seam::core::sha256File(license); CHECK(licenseHash);
@@ -34,9 +36,8 @@ struct StagingFixture final {
     project.unitAssignments = {{.coverageKey="sustain:a", .pitchLayer=69, .promptId="a", .plannedTakeId="take-a"}};
     CHECK(repository.initialize(project, event("create", project.projectId)));
     const auto audio = root / "raw.wav";
-    CHECK(seam::voicebank::writeWav(audio, {.sampleRate=48000U, .channels=1U,
-      .sampleFormat=seam::voicebank::WavSampleFormat::Pcm24},
-      seam::test::support::sineWave(48000U, 440.0, 0.12, 0.25F)));
+    CHECK(seam::voicebank::writeWav(audio, {.sampleRate=rate, .channels=1U,
+      .sampleFormat=format}, seam::test::support::sineWave(rate, 440.0, 0.12, 0.25F)));
     const auto imported = repository.importRaw(project, audio,
       {.takeId="take-a", .promptId="a", .coverageKey="sustain:a", .pitchLayer=69}, event("import", "take-a"));
     CHECK(imported); raw = imported.value();
@@ -53,6 +54,95 @@ struct StagingFixture final {
 };
 
 }  // namespace
+
+TEST_CASE("converted take inspection describes the derivative while preserving failing raw evidence") {
+  StagingFixture fixture{44100U, seam::voicebank::WavSampleFormat::Pcm16};
+  const auto rawReceipt = production::currentTakeInspection(fixture.project, "take-a");
+  CHECK(rawReceipt);
+  CHECK(rawReceipt->inspection.outcome(seam::voicebank::TakeCheck::Format) == seam::voicebank::TakeCheckOutcome::Fail);
+  const auto rawMetadata = fixture.project.metadataRevisions;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::Resample, .targetSampleRate=48000U}, "converted");
+  CHECK(staged);
+  CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), "converted-revision", "producer",
+      "2026-09-09T10:01:00Z", "take-a", ""));
+  const auto receipt = std::find_if(fixture.project.metadataRevisions.begin(), fixture.project.metadataRevisions.end(),
+      [](const auto& value) { return value.kind == "derived-take-inspection.v1"; });
+  CHECK(receipt != fixture.project.metadataRevisions.end());
+  const auto evidence = production::validateTakeInspectionRevision(fixture.project, *receipt);
+  CHECK(evidence);
+  CHECK(evidence.value().inspection.sourceSha256 == staged.value().outputSha256);
+  CHECK(evidence.value().inspection.measurements.sampleRate == 48000U);
+  CHECK(evidence.value().inspection.measurements.bitsPerSample == 24U);
+  CHECK(evidence.value().inspection.outcome(seam::voicebank::TakeCheck::Format) == seam::voicebank::TakeCheckOutcome::Pass);
+  const auto active = production::currentActiveTakeInspection(fixture.project, "take-a");
+  CHECK(active);
+  CHECK(active->inspection.sourceSha256 == staged.value().outputSha256);
+  CHECK(std::equal(rawMetadata.begin(), rawMetadata.end(), fixture.project.metadataRevisions.begin(), production::sameMetadataRevision));
+  CHECK(production::currentTakeInspection(fixture.project, "take-a")->inspection.sourceSha256 == fixture.raw.sha256);
+  CHECK(fixture.project.reviews.empty());
+  CHECK(!fixture.project.unitAssignments.front().markerReviewed);
+  CHECK(!fixture.project.unitAssignments.front().pitchReviewed);
+}
+
+TEST_CASE("derived inspection retains failing format and valid historical receipts after another edit") {
+  StagingFixture fixture;
+  const auto first = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::Resample, .targetSampleRate=44100U}, "wrong-rate");
+  CHECK(first);
+  CHECK(fixture.repository.commitStaged(fixture.project, first.value(), "first-revision", "producer",
+      "2026-09-09T10:01:00Z", "take-a", ""));
+  const auto initial = std::find_if(fixture.project.metadataRevisions.begin(), fixture.project.metadataRevisions.end(),
+      [](const auto& value) { return value.kind == "derived-take-inspection.v1"; });
+  CHECK(initial != fixture.project.metadataRevisions.end());
+  const auto historical = *initial;
+  const auto bad = production::validateTakeInspectionRevision(fixture.project, historical);
+  CHECK(bad);
+  CHECK(bad.value().inspection.outcome(seam::voicebank::TakeCheck::Format) == seam::voicebank::TakeCheckOutcome::Fail);
+  const auto second = fixture.repository.stageOperation(fixture.project, "take-a", "first-revision",
+      {.kind=production::OperationKind::Resample, .targetSampleRate=48000U}, "correct-rate");
+  CHECK(second);
+  CHECK(fixture.repository.commitStaged(fixture.project, second.value(), "second-revision", "producer",
+      "2026-09-09T10:02:00Z", "take-a", "first-revision"));
+  CHECK(production::validateTakeInspectionRevision(fixture.project, historical));
+  CHECK(production::validateProductionProject(fixture.project));
+  const auto active = production::currentActiveTakeInspection(fixture.project, "take-a");
+  CHECK(active);
+  CHECK(active->inspection.sourceSha256 == second.value().outputSha256);
+  auto forged = production::makeDerivedTakeInspectionRevision(bad.value(), fixture.raw.sha256,
+      "second-revision", "producer", "2026-09-09T10:02:00Z");
+  CHECK(!production::validateTakeInspectionRevision(fixture.project, forged));
+  auto wrongUnit = bad.value();
+  wrongUnit.binding.pitchLayer = 60;
+  forged = production::makeDerivedTakeInspectionRevision(wrongUnit, fixture.raw.sha256,
+      "first-revision", "producer", "2026-09-09T10:01:00Z");
+  CHECK(!production::validateTakeInspectionRevision(fixture.project, forged));
+  auto legacy = fixture.project;
+  std::erase_if(legacy.metadataRevisions, [](const auto& value) {
+    return value.kind == "derived-take-inspection.v1" && value.values.at("derivedRevisionId") == "second-revision";
+  });
+  CHECK(production::validateProductionProject(legacy));
+  CHECK(production::currentTakeInspection(legacy, "take-a"));
+  CHECK(!production::currentActiveTakeInspection(legacy, "take-a"));
+  CHECK(fixture.project.reviews.empty());
+}
+
+TEST_CASE("a short derived take preserves failed root-pitch diagnostics without approval") {
+  StagingFixture fixture;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::Trim, .startFrame=0U, .endFrame=512U}, "short");
+  CHECK(staged);
+  CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), "short-revision", "producer",
+      "2026-09-09T10:01:00Z", "take-a", ""));
+  const auto active = production::currentActiveTakeInspection(fixture.project, "take-a");
+  CHECK(active);
+  CHECK(active->inspection.sourceSha256 == staged.value().outputSha256);
+  CHECK(active->inspection.outcome(seam::voicebank::TakeCheck::RootPitch) == seam::voicebank::TakeCheckOutcome::Fail);
+  CHECK(!active->inspection.accepted());
+  CHECK(production::currentTakeInspection(fixture.project, "take-a")->inspection.accepted());
+  CHECK(fixture.project.reviews.empty());
+  CHECK(fixture.project.unitAssignments.front().state == production::UnitQueueState::MarkerReview);
+}
 
 TEST_CASE("staged execution descriptor binds every request field and exact owner identity") {
   StagingFixture fixture;

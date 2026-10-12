@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "unit": "current-derived-take-diagnostics",
+  "sourceBase": "d0c7362c4a7bce86149872a452dd60daa8a11432",
+  "evidenceRoot": "out/evidence/derived-take-inspection-2026-10-13",
+  "manifest": {
+    "path": "out/evidence/derived-take-inspection-2026-10-13/manifest.json",
+    "sizeBytes": 10170,
+    "sha256": "92a006c51dbe02126484f5fbe0417ef52366c34ec3ed0d17c21b30655d103b09"
+  },
+  "baseline": "Two missing-derived-receipt probes FAIL; twelve existing staging cases PASS. Baseline executable/source fixture snapshot not retained; raw command/build/test logs retained.",
+  "checks": {
+    "fullDependentBuild": "PASS; all dependent targets rebuilt; exact executables and timestamps retained",
+    "focusedCTest": "6/6 PASS;16.03 seconds",
+    "nativeCaseTotals": [
+      [
+        "11",
+        "0"
+      ],
+      [
+        "15",
+        "0"
+      ],
+      [
+        "25",
+        "0"
+      ],
+      [
+        "6",
+        "0"
+      ],
+      [
+        "10",
+        "0"
+      ],
+      [
+        "59",
+        "0"
+      ]
+    ],
+    "syntheticScenarios": "44.1k PCM16 to 48k PCM24, failed format/root diagnostics, history/currentness, recomputed-ID rebinding/assignment refusal and native review display"
+  },
+  "technicalReview": {
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Seven tested implementation/test snapshots in primary manifest; closure documentation is lead-verified. No human/rights acceptance.",
+    "record": {
+      "path": "out/evidence/derived-take-inspection-2026-10-13/independent-review.md",
+      "sizeBytes": 5797,
+      "sha256": "6fe5dee96a19c8297ab6b4fa1edc5db5f14b4da963b5cefa4645931cabd332af"
+    },
+    "followUps": [
+      "Current-diagnostic presence gate for legacy edits, separate from owner pass/override policy",
+      "Neutral no-current-diagnostics warning for missing or mismatched audio"
+    ]
+  },
+  "approvalPolicy": "UNCHANGED; separate owner decision pending",
+  "actualFemaleCohortImport": "NOT_RUN",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false,
+  "priorReviewClosures": [
+    {
+      "path": "out/evidence/derived-take-inspection-2026-10-13/alpha-document-independent-review.md",
+      "sizeBytes": 4038,
+      "sha256": "f0160c65edb53e6152a22de190f8a7b0908e35fbae3bc0a3d47f7d3a3e0b69d4"
+    },
+    {
+      "path": "out/evidence/derived-take-inspection-2026-10-13/handoff-correction-independent-review.md",
+      "sizeBytes": 4292,
+      "sha256": "e4a8be1979c09804cc82bea3408b7ea717f15aae2bc1825d090615173627f2e5"
+    }
+  ],
+  "currentAudition": [
+    {
+      "path": "out/evidence/female-vocal-review-handoff-2026-10-13/current-audition.html",
+      "sizeBytes": 6361,
+      "sha256": "f50d33de08273f9985c239aa8cf4814beaf2d5f64c360cf14767e66c7bcd6198"
+    },
+    {
+      "path": "out/evidence/female-vocal-review-handoff-2026-10-13/current-audition-manifest.json",
+      "sizeBytes": 5407,
+      "sha256": "c09dab013a7393b6ac5a41c0f7e2c1dff4884db49f3befd7d09a074bb711d8ec"
+    },
+    {
+      "path": "out/evidence/female-vocal-review-handoff-2026-10-13/historical-code-inputs.json",
+      "sizeBytes": 4972,
+      "sha256": "12fcc8f7ab75c252fe618bd7344cc138886664c8a78cb15005750ffa7c39a6da"
+    }
+  ]
+}

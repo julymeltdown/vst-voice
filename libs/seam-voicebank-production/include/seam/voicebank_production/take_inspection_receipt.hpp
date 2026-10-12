@@ -16,6 +16,8 @@ namespace seam::voicebank_production {
 // bytes, the assignment the take was admitted for, and the QC policy and version
 // that decided each outcome. It is technical evidence only and never a review.
 inline constexpr std::string_view kTakeInspectionRevisionKind = "take-inspection.v2";
+// Distinct scope: original raw identity plus one immutable derived revision.
+inline constexpr std::string_view kDerivedTakeInspectionRevisionKind = "derived-take-inspection.v1";
 // Voiced-only receipts written before policy-aware QC. They stay valid history
 // but no longer admit a take.
 inline constexpr std::string_view kLegacyDryTakeInspectionRevisionKind = "dry-take-inspection.v1";
@@ -55,7 +57,11 @@ struct TakeInspectionEvidence final {
 [[nodiscard]] MetadataRevision makeTakeInspectionRevision(
     const TakeInspectionEvidence& evidence, std::string operatorId, std::string performedAtUtc);
 
-// Checks a take-inspection.v2 revision against the take it names: exact digest
+[[nodiscard]] MetadataRevision makeDerivedTakeInspectionRevision(
+    const TakeInspectionEvidence& evidence, std::string rawAssetSha256,
+    std::string derivedRevisionId, std::string operatorId, std::string performedAtUtc);
+
+// Checks raw or derived inspection against the take/revision it names: exact digest
 // and byte size, assignment binding, the policy that applies to the take, and
 // outcomes that the policy version derives from the recorded measurements.
 [[nodiscard]] core::Result<TakeInspectionEvidence> validateTakeInspectionRevision(
@@ -63,6 +69,11 @@ struct TakeInspectionEvidence final {
 
 // The newest valid receipt for the take's current raw bytes, if any.
 [[nodiscard]] std::optional<TakeInspectionEvidence> currentTakeInspection(
+    const VoicebankProductionProject& project, std::string_view takeId);
+
+// Raw when unprocessed; otherwise only a receipt for the latest derived revision.
+// Historical receipts remain valid history but cannot describe newer audio.
+[[nodiscard]] std::optional<TakeInspectionEvidence> currentActiveTakeInspection(
     const VoicebankProductionProject& project, std::string_view takeId);
 
 [[nodiscard]] bool sameMetadataRevision(const MetadataRevision& left, const MetadataRevision& right);
