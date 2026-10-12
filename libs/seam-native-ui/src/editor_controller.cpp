@@ -59,7 +59,8 @@ std::optional<domain::NoteId> noteIdForSemanticId(std::string_view id) noexcept 
 // The diagnostics the editor raises itself. The owner's own are never these: the editor answers
 // their actions, not the owner.
 bool isEditorNotice(const authoring::Diagnostic& diagnostic) noexcept {
-  return diagnostic.code == kEditRefusedCode || diagnostic.code == kSelectionSyncFailedCode;
+  return diagnostic.code == kEditRefusedCode || diagnostic.code == kActionFailedCode ||
+         diagnostic.code == kSelectionSyncFailedCode;
 }
 
 }
@@ -1398,6 +1399,11 @@ void NativeEditorController::noteRefusal(const core::Error& error) {
   raiseNotice(makeEditorNotice(kEditRefusedCode, "editor.edit-refused", error.message));
 }
 
+void NativeEditorController::noteActionFailure(const core::Error& error) {
+  if (error.message.empty()) return;
+  raiseNotice(makeEditorNotice(kActionFailedCode, "editor.action-failed", error.message));
+}
+
 void NativeEditorController::rebuildDiagnosticPanel() {
   // The panel is rebuilt from the owner's diagnostics and this editor's notices, and it is drawn from
   // that alone: a rebuild that produces the same panel asks for no frame, as setDiagnostics and
@@ -1424,14 +1430,14 @@ void NativeEditorController::raiseNotice(authoring::Diagnostic notice) {
     same->addOccurrences(notice.occurrenceCount);
   } else {
     notices_.push_back(std::move(notice));
-    // Only refusals are bounded, and the oldest of them goes: the notice that reports the host is
+    // Refusals and action failures share a bound, and the oldest goes: the notice reporting the host is
     // the one failure here that must not be pushed out by a run of refused keys.
     const auto refusals = static_cast<std::size_t>(std::count_if(
         notices_.begin(), notices_.end(),
-        [](const auto& held) { return held.code == kEditRefusedCode; }));
+        [](const auto& held) { return held.code == kEditRefusedCode || held.code == kActionFailedCode; }));
     if (refusals > kMaximumRefusalNotices) {
       notices_.erase(std::find_if(notices_.begin(), notices_.end(), [](const auto& held) {
-        return held.code == kEditRefusedCode;
+        return held.code == kEditRefusedCode || held.code == kActionFailedCode;
       }));
     }
   }

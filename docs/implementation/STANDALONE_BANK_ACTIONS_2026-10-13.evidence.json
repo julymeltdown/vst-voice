@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "unit": "standalone-bank-action-failures-and-selected-refresh",
+  "sourceBase": "201af96eda5036f0deee7630e03c2eaa91fc4304",
+  "evidenceRoot": "out/evidence/bank-action-failures-2026-10-13",
+  "manifestSha256": "d85a75d5b26fbacc066ac326be396ba1ca0645fda7a28e5f74a3243ee5e71452",
+  "checks": {
+    "fullDependentBuild": "PASS; exit 0",
+    "shellJourney": "13/13 PASS",
+    "diagnosticRegistry": "5/5 PASS",
+    "mixedActionNotice": "1/1 PASS",
+    "refusalCoalescingAndBounds": "2/2 PASS",
+    "overlayLayoutSweep": "1/1 PASS",
+    "standaloneCTest": "2/2 PASS; 0.69 seconds",
+    "toastControlOverlap": "1/1 PASS; paged/unpaged at three sizes; retained before failure"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "originalVerdict": "REVISE (narrow)",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Technical code integration only; lead-run checks",
+    "conditions": "Original and follow-up P2 findings repaired and post-build checks pass; independent final source review pending"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

@@ -55,6 +55,10 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
     result.title = "Nothing was changed";
     result.impact = diagnostic.detail.empty() ? std::string{"No reason was given."}
                                               : diagnostic.detail;
+  } else if (diagnostic.code == "ACTION_FAILED") {
+    result.title = "Action did not complete";
+    result.impact = diagnostic.detail.empty() ? std::string{"No reason was given."}
+                                              : diagnostic.detail;
   } else if (diagnostic.code == "SELECTION_SYNC_FAILED") {
     result.title = "Selection is out of step";
     result.impact = "Your edit is kept, but the renderer did not follow the new selection. "

@@ -246,8 +246,36 @@ TEST_CASE("sing shell journey: browser refresh reaches the standalone catalogue"
                         std::filesystem::copy_options::recursive);
   JourneyApp f{root / "app", {}, false, {}, {}, bank};
   f.paint();
-  const auto revision = f.app->authoring().controller().documentRevision();
   CHECK(!f.app->authoring().runtime().voicebanks().candidates().empty());
+  CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
+  f.paint();
+  const auto cards = f.app->authoring().controller().sceneState().voicebankCards;
+  CHECK(!cards.empty());
+  CHECK(f.app->dispatchAccessibility(seam::native_ui::voicebankCardId(0U, cards.front()),
+                                    SemanticAction::Activate));
+  f.paint();
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  f.doubleClick({grid->bounds.x + 240.0, grid->bounds.y + grid->bounds.height * 0.5});
+  f.paint();
+  CHECK(f.region()->notes.size() == 1U);
+  const auto notes = f.app->accessibilityTree()->materializeNotes(0U, 1U);
+  CHECK(notes.size() == 1U);
+  f.doubleClick({notes.front().bounds.x + notes.front().bounds.width * 0.5,
+                 notes.front().bounds.y + notes.front().bounds.height * 0.5});
+  f.app->textCommit(U"え");
+  f.paint();
+  auto& runtime = f.app->authoring().runtime();
+  runtime.requestPreview(true);
+  const auto deadline = std::chrono::steady_clock::now() + 20s;
+  while (runtime.renderer().progress().state != seam::authoring::RenderState::Ready &&
+         runtime.renderer().progress().state != seam::authoring::RenderState::Failed &&
+         std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(5ms);
+  if (runtime.renderer().progress().state == seam::authoring::RenderState::Failed)
+    throw seam::test::Failure{runtime.renderer().progress().diagnostic};
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Ready);
+  const auto revision = f.app->authoring().controller().documentRevision();
   CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
   f.paint();
   std::filesystem::remove_all(bank);
@@ -255,8 +283,98 @@ TEST_CASE("sing shell journey: browser refresh reaches the standalone catalogue"
   f.paint();
   CHECK(f.app->authoring().controller().voicebankBrowserVisible());
   CHECK(f.app->authoring().runtime().voicebanks().candidates().empty());
+  CHECK(f.app->authoring().controller().sceneState().voicebankCards.empty());
+  CHECK(runtime.voicebanks().resolveTrack(runtime.document().session().project(), f.track()->id).status ==
+        seam::voicebank::VoicebankResolveStatus::Missing);
+  CHECK(runtime.renderer().progress().state != seam::authoring::RenderState::Ready);
+  CHECK(!runtime.renderer().acquireCurrent());
+  const auto diagnostics = runtime.diagnostics();
+  CHECK(std::any_of(diagnostics.begin(), diagnostics.end(), [](const auto& value) {
+    return value.code == "BANK_MISSING";
+  }));
   CHECK(f.app->authoring().controller().documentRevision() == revision);
   CHECK(f.dialog->purposes.empty());
+}
+
+TEST_CASE("sing shell journey: bank installation failure is visible after a pointer action") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("sing-shell-install-pointer-error");
+  JourneyApp f{root, {root / "missing.seambank"}};
+  f.paint();
+  const auto revision = f.app->authoring().controller().documentRevision();
+  CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
+  f.paint();
+  const auto* control = f.find("shell.overlay.voicebank.install");
+  CHECK(control != nullptr);
+  const seam::ui::Point point{control->bounds.x + control->bounds.width * 0.5,
+                              control->bounds.y + control->bounds.height * 0.5};
+  const PointerEvent event{.position = point, .button = PointerButton::Left};
+  f.app->pointerDown(event);
+  f.app->pointerUp(event);
+  f.paint();
+  CHECK(f.dialog->purposes.size() == 1U);
+  CHECK(f.find("shell.diagnostics.toast") != nullptr);
+  CHECK(f.find("shell.diagnostics.toast")->value.find("Action did not complete") != std::string::npos);
+  CHECK(f.find("shell.diagnostics.toast")->description.find("Voicebank installation requires an explicitly trusted public key") != std::string::npos);
+  CHECK(f.find("shell.diagnostics.toast")->actions.empty());
+  const auto* focused = f.app->accessibilityTree()->focusedNode();
+  CHECK(focused != nullptr);
+  CHECK(focused->id.starts_with("shell.overlay.voicebank.") ||
+        focused->id.starts_with(seam::native_ui::kVoicebankCardIdPrefix));
+  CHECK(focused->role == seam::native_ui::SemanticRole::Button);
+  CHECK(f.app->authoring().controller().documentRevision() == revision);
+}
+
+TEST_CASE("sing shell journey: bank installation failure is visible after a keyboard action") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("sing-shell-install-key-error");
+  JourneyApp f{root, {root / "missing.seambank"}};
+  f.paint();
+  const auto revision = f.app->authoring().controller().documentRevision();
+  CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
+  f.paint();
+  f.app->keyDown(KeyEvent{.key = NativeKey::O});
+  f.paint();
+  CHECK(f.dialog->purposes.size() == 1U);
+  CHECK(f.find("shell.diagnostics.toast") != nullptr);
+  CHECK(f.find("shell.diagnostics.toast")->value.find("Action did not complete") != std::string::npos);
+  CHECK(f.find("shell.diagnostics.toast")->description.find("Voicebank installation requires an explicitly trusted public key") != std::string::npos);
+  CHECK(f.find("shell.diagnostics.toast")->actions.empty());
+  const auto* focused = f.app->accessibilityTree()->focusedNode();
+  CHECK(focused != nullptr);
+  CHECK(focused->id.starts_with("shell.overlay.voicebank.") ||
+        focused->id.starts_with(seam::native_ui::kVoicebankCardIdPrefix));
+  CHECK(focused->role == seam::native_ui::SemanticRole::Button);
+  CHECK(f.app->authoring().controller().documentRevision() == revision);
+}
+
+TEST_CASE("sing shell journey: focused bank controls show failure on Enter and Space") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto menu : {false, true}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        menu ? "sing-shell-install-menu-error" : "sing-shell-install-enter-error");
+    JourneyApp f{root, {root / "missing.seambank"}};
+    f.paint();
+    const auto revision = f.app->authoring().controller().documentRevision();
+    CHECK(f.app->dispatchAccessibility(menu ? "shell.singer-menu" : "shell.change-voice",
+                                      SemanticAction::Activate));
+    f.paint();
+    const auto id = menu ? "shell.overlay.singer-menu.install-voicebank"
+                         : "shell.overlay.voicebank.install";
+    CHECK(f.app->dispatchAccessibility(id, SemanticAction::SetFocus));
+    f.app->keyDown(KeyEvent{.key = menu ? NativeKey::Space : NativeKey::Enter});
+    f.paint();
+    CHECK(f.dialog->purposes.size() == 1U);
+    CHECK(f.find("shell.diagnostics.toast") != nullptr);
+    CHECK(f.find("shell.diagnostics.toast")->value.find("Action did not complete") != std::string::npos);
+    CHECK(f.find("shell.diagnostics.toast")->description.find("Voicebank installation requires an explicitly trusted public key") != std::string::npos);
+    CHECK(f.find("shell.diagnostics.toast")->actions.empty());
+    const auto* focused = f.app->accessibilityTree()->focusedNode();
+    CHECK(focused != nullptr);
+    CHECK(focused->id == id);
+    CHECK(focused->role == seam::native_ui::SemanticRole::Button);
+    CHECK(f.app->authoring().controller().documentRevision() == revision);
+  }
 }
 
 TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through real commands") {

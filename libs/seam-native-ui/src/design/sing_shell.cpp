@@ -1665,6 +1665,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   } else {
     overlayDrawn_.reset();
   }
+  // Failure feedback stays above the modal dimmer; only the card retains focus/actions.
+  paintDiagnosticToast(*c, t, state, activeOverlay(controller, state) != nullptr);
   // The kit tooltip is the topmost item, over overlays and menus, and a dynamic item of its own:
   // showing, moving or hiding it damages only its card. Its candidates are read against this
   // frame's elided labels.
@@ -3404,16 +3406,16 @@ void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorScene
   }
 }
 
-void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
-  const auto& l = layout_;
-  const auto& s = state.renderStatus;
+void SingShell::paintDiagnosticToast(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
+                                      bool modal) const {
   // The diagnostics toast stack above the status bar: the shell's own presentation of what the
   // classic painter drew as a full-width strip. The topmost diagnostic is a toast; the whole stack
   // opens as a popover.
   if (!state.diagnostics.empty()) {
     const auto& diagnostic = state.diagnostics.front();
     const auto presentation = presentDiagnostic(diagnostic);
-    const auto tone = diagnostic.severity == authoring::DiagnosticSeverity::Critical
+    const auto tone = (diagnostic.severity == authoring::DiagnosticSeverity::Critical ||
+                       diagnostic.severity == authoring::DiagnosticSeverity::Error)
                           ? t.color.error
                           : diagnostic.severity == authoring::DiagnosticSeverity::Warning
                                 ? t.color.warning
@@ -3422,6 +3424,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     if (state.diagnostics.size() > 1U)
       title = trf(Str::TitleAndMore, {title, std::to_string(state.diagnostics.size() - 1U)});
     lastDiagnosticTitle_ = title;
+    lastDiagnosticImpact_ = presentation.impact;
     lastDiagnosticTone_ = tone;
     const auto toast = diagnosticsToastBounds();
     // The toast stands over the lane, whose playhead is dynamic: it is dynamic too, recorded after
@@ -3438,9 +3441,11 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
       c.setAlpha(toastTween_.eased(frameNow_, preferences_.reduceMotion));
     c.stroke(Path::roundedRect(toast, 8.0), withAlpha(tone, 0.9), StrokeStyle{1.0});
     c.fill(Path::capsule({toast.x + 12.0, toast.y + 9.0, 4.0, toast.height - 18.0}), tone);
-    c.text({toast.x + 24.0, toast.y, std::max(1.0, toast.width - 36.0), toast.height}, title,
+    c.text({toast.x + 24.0, toast.y + 3.0, std::max(1.0, toast.width - 36.0), 20.0}, title,
            style(FontRole::UiSemibold, t.type.smallLabel), t.color.textPrimary);
-    if (const auto open = diagnosticsOpenButton(); open.width > 0.0) {
+    c.text({toast.x + 24.0, toast.y + 23.0, std::max(1.0, toast.width - 36.0), 20.0},
+           presentation.impact, style(FontRole::UiMedium, t.type.smallLabel), t.color.textSecondary);
+    if (const auto open = diagnosticsOpenButton(); !modal && open.width > 0.0) {
       c.fill(Path::roundedRect(open, 8.0),
              diagnosticsOpen_ ? withAlpha(t.color.accent, 0.22) : withAlpha(t.color.surfaceSunken, 0.9));
       c.stroke(Path::roundedRect(open, 8.0),
@@ -3460,10 +3465,17 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.setAlpha(1.0 - toastTween_.eased(frameNow_, preferences_.reduceMotion));
     c.fill(Path::roundedRect(toast, 8.0), t.color.surfaceRaised);
     c.stroke(Path::roundedRect(toast, 8.0), lastDiagnosticTone_, StrokeStyle{1.0});
-    c.text({toast.x + 24.0, toast.y, std::max(1.0, toast.width - 36.0), toast.height},
+    c.text({toast.x + 24.0, toast.y + 3.0, std::max(1.0, toast.width - 36.0), 20.0},
            lastDiagnosticTitle_, style(FontRole::UiSemibold, t.type.smallLabel), t.color.textPrimary);
+    c.text({toast.x + 24.0, toast.y + 23.0, std::max(1.0, toast.width - 36.0), 20.0},
+           lastDiagnosticImpact_, style(FontRole::UiMedium, t.type.smallLabel), t.color.textSecondary);
     c.restore();
   }
+}
+
+void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
+  const auto& l = layout_;
+  const auto& s = state.renderStatus;
   const auto meter = ui::Rect{l.status.right() - 360.0, l.status.y + 6.0, 200.0, 16.0};
   const auto fraction = s.state == RenderStatusState::Ready ? 1.0 : std::clamp(s.fraction, 0.0, 1.0);
   std::string label{renderStatusStateName(s.state)};
@@ -3838,14 +3850,20 @@ bool attemptEnded(authoring::ExportState state) noexcept {
 ui::Rect SingShell::overlaySlot(const NativeEditorController& controller,
                                 const EditorSceneState& state) const noexcept {
   static_cast<void>(controller);
-  static_cast<void>(state);
-  return layout_.overlay;
+  auto slot = layout_.overlay;
+  // Painting and hit-testing must reserve the same space for feedback above the status bar.
+  // Keep it reserved through the fade so no still-visible toast covers a live card control.
+  if (!state.diagnostics.empty() ||
+      (!lastDiagnosticTitle_.empty() && toastTween_.running(frameNow_, preferences_.reduceMotion))) {
+    slot.height = std::max(0.0, std::min(slot.height, diagnosticsToastBounds().y - 8.0 - slot.y));
+  }
+  return slot;
 }
 
 ui::Rect SingShell::diagnosticsToastBounds() const noexcept {
   const auto& l = layout_;
   const auto width = std::min(std::max(240.0, l.status.width * 0.42), 380.0);
-  return {l.status.x, l.status.y - 34.0, width, 28.0};
+  return {l.status.x, l.status.y - 54.0, width, 48.0};
 }
 
 ui::Rect SingShell::diagnosticsOpenButton() const noexcept {
@@ -3890,6 +3908,7 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
                                              const ShellOverlay& overlay, std::string_view id,
                                              SemanticAction action) {
   auto result = overlay.perform(controller, id, action);
+  if (!result) controller.noteActionFailure(result.error());
   if (overlay.kind() == OverlayKind::SingerMenu && result && singerMenuOpen_) {
     // The command ran: its own surface (a review, the voice browser, a field) is up now, or the
     // host ran it. Focus returns to the button; a surface that opened takes it on the next rebuild,
@@ -4890,8 +4909,19 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       refreshSemantics(controller);
       const auto* focused = semantics_.focusedNode();
       const std::string id = focused == nullptr ? std::string{} : focused->id;
-      // Enter and Space run the focused menu item; a command that ran closes the menu.
-      if ((menu || overlay->kind() == OverlayKind::About) &&
+      // All bank actions use the same failure-notice path as pointer and accessibility activation.
+      if (overlay->kind() == OverlayKind::VoicebankBrowser &&
+          (event.key == NativeKey::R || event.key == NativeKey::O)) {
+        const auto commandId = event.key == NativeKey::R ? "shell.overlay.voicebank.refresh"
+                                                        : "shell.overlay.voicebank.install";
+        static_cast<void>(performOverlay(controller, *overlay, commandId, SemanticAction::Activate));
+        refreshSemantics(controller);
+        repaint();
+        return true;
+      }
+      // Enter and Space run the focused control; a successful menu command closes its menu.
+      if ((menu || overlay->kind() == OverlayKind::About ||
+           overlay->kind() == OverlayKind::VoicebankBrowser) &&
           (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
         if (overlayPublishes(controller, id))
           static_cast<void>(performOverlay(controller, *overlay, id, SemanticAction::Activate));
@@ -5480,6 +5510,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   if (!state.diagnostics.empty()) {
     // The toast stack above the status bar: the shell's own presentation of the topmost
     // diagnostic, and the popover opener beside it.
+    const auto presentation = presentDiagnostic(state.diagnostics.front());
     add(SemanticNode{.id = "shell.diagnostics.toast", .role = SemanticRole::Status,
                      .name = tr(Str::Diagnostic),
                      .value = state.diagnostics.size() > 1U
@@ -5488,7 +5519,8 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                          std::to_string(state.diagnostics.size() - 1U)})
                                   : presentDiagnostic(state.diagnostics.front()).title,
                      .bounds = diagnosticsToastBounds(),
-                     .actions = {SemanticAction::SetFocus}});
+                     .actions = {SemanticAction::SetFocus},
+                     .description = presentation.impact});
     if (const auto openButton = diagnosticsOpenButton(); openButton.width > 0.0)
       add(SemanticNode{.id = "shell.diagnostics.open", .role = SemanticRole::Button,
                        .name = tr(Str::Diagnostics), .bounds = openButton,
@@ -5658,8 +5690,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     // Everything under the card goes, including a shell node that shares an id with one of the
     // card's controls (the transport's tempo readout while its field is open): the card publishes
     // its own node for that id, once, at the card's rectangle.
+    // Failure feedback stays readable while the modal card holds all action/focus ownership.
+    for (auto& node : children)
+      if (node.id == "shell.diagnostics.toast") node.actions.clear();
     std::erase_if(children, [](const SemanticNode& node) {
-      return node.id != "shell.status" && node.id != "shell.render-progress";
+      return node.id != "shell.status" && node.id != "shell.render-progress" &&
+             node.id != "shell.diagnostics.toast";
     });
     // The card always holds the keyboard: when it opens, or when the control that had focus left
     // it, its first control takes focus, so Enter and Space act on something the creator can see.

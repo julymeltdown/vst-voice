@@ -545,6 +545,8 @@ private:
   [[nodiscard]] bool knobsShown() const noexcept {
     return layout_.rack == RackPresentation::Full || layout_.inspectorOpen;
   }
+  void paintDiagnosticToast(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
+                            bool modal) const;
   void paintStatus(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   // A re-homed overlay: the scrim, card and controls, over everything else in the body. `controls`
   // is the same list its semantics publish, so paint and hit-test share one layout.
@@ -709,6 +711,7 @@ private:
   bool toastAppearing_{false};
   bool previousDiagnosticVisible_{false};
   mutable std::string lastDiagnosticTitle_;
+  mutable std::string lastDiagnosticImpact_;
   mutable Color lastDiagnosticTone_{};
   RenderStatusState previousRenderState_{RenderStatusState::Idle};
   mutable std::unordered_set<domain::NoteId> seenNotes_;

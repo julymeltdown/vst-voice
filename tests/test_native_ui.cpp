@@ -3579,6 +3579,50 @@ TEST_CASE("native controller bounds its refusal notices and never lets them push
   CHECK(has("Refusal 8"));
 }
 
+TEST_CASE("native controller coalesces action failures within the shared notice limit") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId) -> core::Result<void> {
+         return core::failure(core::ErrorCode::Conflict, "The host is busy");
+       }}};
+  controller.resize(1280.0, 720.0);
+  CHECK(controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840}));
+  CHECK(controller.hostSelectionPending());
+  const auto project = fixture.session.project();
+  const auto revision = fixture.session.revision();
+  const auto& entries = controller.diagnosticPanel().entries();
+  for (int i = 0; i < 9; ++i) {
+    const core::Error error{core::ErrorCode::NotFound, "Action " + std::to_string(i)};
+    if (i % 2 == 0) {
+      controller.noteActionFailure(error);
+      controller.noteActionFailure(error);
+    } else {
+      controller.noteRefusal(core::Error{core::ErrorCode::Conflict, error.message});
+    }
+  }
+  CHECK(entries.size() == 9U);
+  CHECK(std::count_if(entries.begin(), entries.end(), [](const auto& entry) {
+    return entry.diagnostic.code == "SELECTION_SYNC_FAILED";
+  }) == 1);
+  CHECK(std::none_of(entries.begin(), entries.end(), [](const auto& entry) {
+    return entry.diagnostic.detail == "Action 0";
+  }));
+  const auto last = std::find_if(entries.begin(), entries.end(), [](const auto& entry) {
+    return entry.diagnostic.detail == "Action 8";
+  });
+  CHECK(last != entries.end());
+  CHECK(last->diagnostic.code == "ACTION_FAILED");
+  CHECK(last->diagnostic.occurrenceCount == 2U);
+  CHECK((last->diagnostic.actions == std::vector{authoring::DiagnosticAction::Dismiss}));
+  const auto index = static_cast<std::size_t>(last - entries.begin());
+  CHECK(controller.activateDiagnostic(index, authoring::DiagnosticAction::Dismiss));
+  controller.setDiagnostics({});
+  CHECK(entries.size() == 8U);
+  CHECK(fixture.session.project() == project);
+  CHECK(fixture.session.revision() == revision);
+}
+
 TEST_CASE("native controller refuses a diagnostic id whose issue is no longer where the id says, and touches nothing") {
   using namespace seam;
   NativeUiFixture fixture;

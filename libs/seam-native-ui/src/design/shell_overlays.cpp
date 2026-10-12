@@ -2541,16 +2541,10 @@ core::Result<void> VoicebankBrowserOverlay::perform(NativeEditorController& cont
   return core::failure(core::ErrorCode::NotFound, tr(Str::UnknownVoiceBrowserControl));
 }
 
-bool VoicebankBrowserOverlay::key(NativeEditorController& controller, std::string_view focusedId,
+bool VoicebankBrowserOverlay::key(NativeEditorController& controller, std::string_view,
                                   const KeyEvent& event) const {
   switch (event.key) {
-    case NativeKey::Enter:
-    case NativeKey::Space:
-      static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
-      return true;
-    // The classic browser's keys: R refreshes, O opens the installer, V closes.
-    case NativeKey::R: static_cast<void>(controller.refreshVoicebanks()); return true;
-    case NativeKey::O: static_cast<void>(controller.openVoicebankInstaller()); return true;
+    // Activation, R and O are owned by SingShell's shared result/notice path.
     case NativeKey::V: controller.closeVoicebankBrowser(); return true;
     case NativeKey::Left:
     case NativeKey::Right:

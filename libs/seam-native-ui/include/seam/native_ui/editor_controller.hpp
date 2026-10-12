@@ -294,6 +294,9 @@ public:
   // Any other error is the owner's to report, and a success needs no telling. This changes state and
   // asks for a repaint and calls no host callback, so an owner may call it with its own lock held.
   void noteRefusal(const core::Error& error);
+  // A surface action failed; retain its reason without claiming that no partial work occurred.
+  // Like edit refusals, this notice coalesces and never changes the document.
+  void noteActionFailure(const core::Error& error);
   // The host refused the last move of the editor's selection and has not followed since. The edit that
   // moved the editor stays. The editor asks again before its next key press or pointer press, three
   // tries in all for one move, and then leaves the notice standing with its Retry, which starts a new

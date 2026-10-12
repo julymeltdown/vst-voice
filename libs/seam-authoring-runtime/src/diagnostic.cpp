@@ -99,6 +99,7 @@ constexpr std::array definitions{
     // move this bundle forward, and it does so through an acknowledgement the creator never applies.
     Definition{"SUPPORT_BUNDLE_SUBMITTED", DiagnosticSeverity::Info, kNotice},
     Definition{"EDIT_REFUSED", DiagnosticSeverity::Warning, kNotice},
+    Definition{"ACTION_FAILED", DiagnosticSeverity::Error, kNotice},
     Definition{"SELECTION_SYNC_FAILED", DiagnosticSeverity::Warning, kRetryNotice},
 };
 

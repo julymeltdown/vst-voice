@@ -210,10 +210,13 @@ TEST_CASE("diagnostic registry registers the editor's own notices with only the 
   // what the editor does without one: dismissing it and, for the host that would not follow, asking
   // again.
   CHECK(DiagnosticRegistry::isRegistered("EDIT_REFUSED"));
+  CHECK(DiagnosticRegistry::isRegistered("ACTION_FAILED"));
   CHECK(DiagnosticRegistry::isRegistered("SELECTION_SYNC_FAILED"));
   CHECK(DiagnosticRegistry::severity("EDIT_REFUSED") == DiagnosticSeverity::Warning);
+  CHECK(DiagnosticRegistry::severity("ACTION_FAILED") == DiagnosticSeverity::Error);
   CHECK(DiagnosticRegistry::severity("SELECTION_SYNC_FAILED") == DiagnosticSeverity::Warning);
   CHECK((DiagnosticRegistry::actions("EDIT_REFUSED") == std::vector{DiagnosticAction::Dismiss}));
+  CHECK((DiagnosticRegistry::actions("ACTION_FAILED") == std::vector{DiagnosticAction::Dismiss}));
   CHECK((DiagnosticRegistry::actions("SELECTION_SYNC_FAILED") ==
          std::vector{DiagnosticAction::Retry, DiagnosticAction::Dismiss}));
 

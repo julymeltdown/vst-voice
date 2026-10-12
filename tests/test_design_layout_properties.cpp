@@ -1133,6 +1133,52 @@ TEST_CASE("every re-homed overlay keeps its layout properties at every size and 
   checker.finish("overlays");
 }
 
+TEST_CASE("bank failure toast stays clear of paged and unpaged browser controls") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto count : {1U, 120U}) {
+    for (const auto& size : std::array<std::array<double, 2U>, 3U>{{{720.0, 480.0},
+                                                                 {1280.0, 720.0},
+                                                                 {1600.0, 900.0}}}) {
+      LayoutFixture f;
+      Frame frame;
+      CHECK(paintFrame(f, size[0], size[1], 1.0, frame));
+      std::vector<authoring::VoicebankCard> cards;
+      for (unsigned i = 0U; i < count; ++i) {
+        authoring::VoicebankCard card;
+        card.id = "toast-bank-" + std::to_string(i);
+        card.version = "1.0.0";
+        card.displayName = "Singer " + std::to_string(i);
+        card.contentHash = "hash-" + std::to_string(i);
+        card.installed = true;
+        card.selectable = true;
+        cards.push_back(std::move(card));
+      }
+      f.controller.setVoicebankCards(cards);
+      f.controller.showVoicebankBrowser();
+      f.controller.noteActionFailure(core::Error{core::ErrorCode::IoError, "The source cannot be opened"});
+      CHECK(paintFrame(f, size[0], size[1], 1.0, frame));
+      CHECK(f.shell.overlayKind(f.controller) == OverlayKind::VoicebankBrowser);
+      const auto toast = std::find_if(frame.nodes.begin(), frame.nodes.end(), [](const auto& node) {
+        return node.id == "shell.diagnostics.toast";
+      });
+      CHECK(toast != frame.nodes.end());
+      CHECK(toast->actions.empty());
+      CHECK(toast->description == "The source cannot be opened");
+      CHECK(std::any_of(frame.nodes.begin(), frame.nodes.end(), [](const auto& node) {
+        return node.id == "shell.overlay.voicebank.next";
+      }) == (count == 120U));
+      for (const auto& node : frame.nodes) {
+        if (!interactive(node)) continue;
+        const auto overlapWidth = std::min(toast->bounds.right(), node.bounds.right()) -
+                                  std::max(toast->bounds.x, node.bounds.x);
+        const auto overlapHeight = std::min(toast->bounds.bottom(), node.bounds.bottom()) -
+                                   std::max(toast->bounds.y, node.bounds.y);
+        CHECK(overlapWidth <= 0.0 || overlapHeight <= 0.0);
+      }
+    }
+  }
+}
+
 TEST_CASE("Settings sections retain accessible targets through compact and Korean layouts") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   Checker checker;

@@ -18,8 +18,10 @@
 namespace seam::native_ui {
 
 inline constexpr std::string_view kEditRefusedCode = "EDIT_REFUSED";
+inline constexpr std::string_view kActionFailedCode = "ACTION_FAILED";
 
-// How many refusals of different wording the stack keeps; the oldest goes first.
+// How many edit refusals and action failures of different wording the stack keeps together.
+// The oldest goes first; neither kind may evict a standing host-selection notice.
 inline constexpr std::size_t kMaximumRefusalNotices = 8U;
 
 // Build a notice the editor raises itself. Severity and actions are read from the registry by code,
