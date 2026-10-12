@@ -1,0 +1,40 @@
+{
+  "format": "seam-source-registration-blueprint-v1",
+  "status": "DESIGN_UNREVIEWED_NOT_AN_EXECUTABLE_REQUEST",
+  "sourceBase": "1352ca87417c668d9f02525d7662848c17990481",
+  "requiresInputs": {
+    "workspace": null,
+    "expectedProjectSha256": null,
+    "registeredProducerId": null,
+    "registeredDistinctReviewerId": null,
+    "occurredAtUtc": null,
+    "performerAndPublicLicenseAdmissionDisposition": null,
+    "phoneticListeningDecision": null,
+    "failedQcOwnerPolicy": null
+  },
+  "proposedStrategy": {
+    "id": "vocalset-1.1-f1-sustain-trial",
+    "kind": "HUMAN_RECORDING",
+    "rights": "NOT_ASSESSED",
+    "coverage": "NOT_ASSESSED",
+    "listening": "NOT_ASSESSED",
+    "permissions": {
+      "sourceUse": false,
+      "transformation": false,
+      "singingBankRedistribution": false,
+      "commercialRenders": false
+    },
+    "licenseLocator": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/public-recording-source-representation-2026-10-13/unapproved-source-dossier.txt",
+    "licenseSha256": "8f5576bda3c37fccb3836dfa85d53da994824b2992c0869cdaf2762b80ac3f8f",
+    "evidenceState": "UNAPPROVED_DOSSIER_NOT_SOURCE_AUTHORIZATION"
+  },
+  "sourceDossier": {
+    "path": "out/evidence/public-recording-source-representation-2026-10-13/unapproved-source-dossier.txt",
+    "sizeBytes": 2663,
+    "sha256": "8f5576bda3c37fccb3836dfa85d53da994824b2992c0869cdaf2762b80ac3f8f"
+  },
+  "registrationPerformed": false,
+  "executionEligible": false,
+  "qualificationEligible": false,
+  "betaEligible": false
+}

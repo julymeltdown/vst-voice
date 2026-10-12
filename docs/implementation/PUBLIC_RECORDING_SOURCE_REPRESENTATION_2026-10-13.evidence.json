@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "unit": "public-recording-source-representation-design",
+  "sourceBase": "1352ca87417c668d9f02525d7662848c17990481",
+  "manifest": {
+    "path": "out/evidence/public-recording-source-representation-2026-10-13/manifest.json",
+    "sizeBytes": 9260,
+    "sha256": "a419def1003108770b835303c873d38a361c612c1149362906837f6385a40710"
+  },
+  "blueprint": {
+    "path": "docs/implementation/PUBLIC_RECORDING_SOURCE_REPRESENTATION_2026-10-13.blueprint.json",
+    "sizeBytes": 1543,
+    "sha256": "3aba843afe763e871e4da9f175d0bf10f98e947fe254c4cc89161b0e44cec2f6"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "checks": {
+    "artifactJsonParse": "PASS",
+    "dossierWithinNative4MiBLimit": "PASS",
+    "sourceSnapshotGitEquality": "PASS",
+    "allRequiredHumanInputsNull": "PASS",
+    "noPermissionOrOutcomeApproved": "PASS",
+    "nativeCodecValidation": "NOT_RUN",
+    "nativeRegistration": "NOT_RUN",
+    "mediaImportOrTransform": "NOT_RUN",
+    "humanAcceptance": "NOT_RUN",
+    "betaPromotion": false
+  }
+}
