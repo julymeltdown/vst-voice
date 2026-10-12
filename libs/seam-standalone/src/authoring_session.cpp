@@ -334,6 +334,8 @@ void AuthoringSession::configureController() {
       .microscopeUnitChanged = externalCallbacks_.microscopeUnitChanged,
       .playMicroscopeSample = externalCallbacks_.playMicroscopeSample,
       .selectVoicebank = externalCallbacks_.selectVoicebank,
+      .refreshVoicebanks = externalCallbacks_.refreshVoicebanks,
+      .openVoicebankInstaller = externalCallbacks_.openVoicebankInstaller,
       .diagnosticAction = externalCallbacks_.diagnosticAction,
       .viewChanged = externalCallbacks_.viewChanged,
       .applyAudioSettings = externalCallbacks_.applyAudioSettings,

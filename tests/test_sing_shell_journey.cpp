@@ -124,7 +124,8 @@ struct JourneyApp final {
              bool reduceMotion = false,
              std::function<std::chrono::steady_clock::time_point()> uiClock = {},
              std::function<std::unique_ptr<seam::platform::IAudioDeviceCatalog>()>
-                 audioCatalog = {}) {
+                 audioCatalog = {},
+             std::filesystem::path voicebankRoot = SEAM_SOURCE_PRODUCTION_VOICEBANK) {
     seam::standalone::NativeEditorAppConfig config;
     config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
     config.applicationSupportRoot = root;
@@ -135,7 +136,7 @@ struct JourneyApp final {
     config.authoring.sampleRate = 48000U;
     config.authoring.outputChannels = 2U;
     config.authoring.voicebankRoots = {seam::voicebank::VoicebankSearchRoot{
-        .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        .path = std::move(voicebankRoot),
         .kind = seam::voicebank::VoicebankRootKind::Development,
     }};
     config.designPreferences = seam::native_ui::design::DesignPreferences{
@@ -211,6 +212,52 @@ std::size_t autosaveSnapshots(const std::filesystem::path& testRoot,
 }
 
 }  // namespace
+
+TEST_CASE("sing shell journey: installation controls reach the native application dialog") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  JourneyApp f{seam::test::support::temporaryDirectory("sing-shell-install-dialog"), {}};
+  f.paint();
+  const auto revision = f.app->authoring().controller().documentRevision();
+  CHECK(f.app->dispatchAccessibility("shell.singer-menu", SemanticAction::Activate));
+  f.paint();
+  CHECK(f.app->dispatchAccessibility("shell.overlay.singer-menu.install-voicebank",
+                                    SemanticAction::Activate));
+  f.paint();
+  CHECK(f.dialog->purposes.size() == 1U);
+  CHECK(f.dialog->purposes.front() == seam::platform::FileDialogPurpose::InstallVoicebank);
+  CHECK(f.app->authoring().controller().documentRevision() == revision);
+
+  // The same callback also serves the visible bank browser; cancelling either picker
+  // reaches the existing application command without installing or editing a document.
+  CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
+  f.paint();
+  CHECK(f.app->dispatchAccessibility("shell.overlay.voicebank.install", SemanticAction::Activate));
+  f.paint();
+  CHECK(f.dialog->purposes.size() == 2U);
+  CHECK(f.dialog->purposes.back() == seam::platform::FileDialogPurpose::InstallVoicebank);
+  CHECK(f.app->authoring().controller().documentRevision() == revision);
+}
+
+TEST_CASE("sing shell journey: browser refresh reaches the standalone catalogue") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("sing-shell-catalogue-refresh");
+  const auto bank = root / "catalogue-bank";
+  std::filesystem::copy(SEAM_SOURCE_PRODUCTION_VOICEBANK, bank,
+                        std::filesystem::copy_options::recursive);
+  JourneyApp f{root / "app", {}, false, {}, {}, bank};
+  f.paint();
+  const auto revision = f.app->authoring().controller().documentRevision();
+  CHECK(!f.app->authoring().runtime().voicebanks().candidates().empty());
+  CHECK(f.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
+  f.paint();
+  std::filesystem::remove_all(bank);
+  CHECK(f.app->dispatchAccessibility("shell.overlay.voicebank.refresh", SemanticAction::Activate));
+  f.paint();
+  CHECK(f.app->authoring().controller().voicebankBrowserVisible());
+  CHECK(f.app->authoring().runtime().voicebanks().candidates().empty());
+  CHECK(f.app->authoring().controller().documentRevision() == revision);
+  CHECK(f.dialog->purposes.empty());
+}
 
 TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through real commands") {
   if (!seam::native_ui::paint::vectorBackendAvailable()) return;

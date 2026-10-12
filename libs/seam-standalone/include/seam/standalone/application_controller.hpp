@@ -270,6 +270,8 @@ public:
 
   [[nodiscard]] const std::vector<authoring::VoicebankCard>& voicebankCards()
       const noexcept { return voicebankBrowser_.cards(); }
+  // Refresh the actual catalogue and revoke preview work from its previous generation.
+  [[nodiscard]] core::Result<void> refreshVoicebankBrowser();
   [[nodiscard]] core::Result<authoring::VoicebankInstallResult> installVoicebank(
       const std::filesystem::path& packagePath,
       authoring::ExistingVoicebankDecision decision =
@@ -417,7 +419,6 @@ private:
       authoring::ExportSettings settings) const;
   [[nodiscard]] core::Result<authoring::ExportResult> runExport(
       ExportRequest request, std::stop_token stopToken);
-  [[nodiscard]] core::Result<void> refreshVoicebankBrowser();
   [[nodiscard]] std::optional<voicebank::VoicebankCandidate> findCandidate(
       std::string_view id, std::string_view version,
       std::string_view contentHash) const;

@@ -427,6 +427,22 @@ core::Result<void> NativeEditorApp::initialize() {
         requestWindowRepaint();
         return selected;
       },
+      .refreshVoicebanks = [this] {
+        if (applicationController_ == nullptr) {
+          return core::failure(core::ErrorCode::InvalidState,
+                               "Voicebank refresh is unavailable");
+        }
+        const auto refreshed = applicationController_->refreshVoicebankBrowser();
+        if (refreshed) refreshCrashRecoveryContext();
+        requestWindowRepaint();
+        return refreshed;
+      },
+      .openVoicebankInstaller = [this] {
+        const auto installed = dispatchApplicationCommand(
+            platform::ApplicationCommand::InstallVoicebank);
+        requestWindowRepaint();
+        return installed;
+      },
       .diagnosticAction = [this](const authoring::Diagnostic& diagnostic,
                                  authoring::DiagnosticAction action) {
         return handleDiagnosticAction(diagnostic, action);
