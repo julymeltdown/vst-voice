@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-original-source-supplement",
+  "sourceHead": "6ee878484b91e0042c80052c639efb84bb8341ee",
+  "manifest": {
+    "path": "out/evidence/female-source-supplement-2026-10-13/manifest.json",
+    "sizeBytes": 34753,
+    "sha256": "044aaa168be48c6297b193dba28056bc7ccebdf54edf9dd15b34b00b9d877463"
+  },
+  "newOriginalCount": 10,
+  "newNativeInvocationCount": 20,
+  "totalOriginalCount": 297,
+  "totalCleanF1Count": 25,
+  "primarySourceGrant": "CC-BY-4.0; licensor-controlled rights only",
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "betaPromotion": false,
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/female-source-supplement-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/female-source-supplement-2026-10-13/verification.log",
+      "sizeBytes": 261,
+      "sha256": "cd2220e8f45b247bd7480ac3403a314932799e05c8d4a0994ab0cb417aa7e64a"
+    },
+    "scope": "Read-only integrity/census/retained-run/source/page/status reproduction; native commands were executed separately and are bound in the manifest"
+  }
+}

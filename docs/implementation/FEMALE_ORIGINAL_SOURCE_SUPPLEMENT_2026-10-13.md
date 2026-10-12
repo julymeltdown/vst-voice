@@ -1,0 +1,52 @@
+# Female original-source supplement and source-fit review
+
+Date: 2026-10-13, Asia/Seoul. Acquisition/execution source HEAD: `6ee878484b91e0042c80052c639efb84bb8341ee`. Git fetch and fast-forward pull preceded this work. The [evidence index](FEMALE_ORIGINAL_SOURCE_SUPPLEMENT_2026-10-13.evidence.json) binds the local manifest, 124 artifacts and eight preserved intake/build/audition bindings. Technical review is PENDING.
+
+## Acquired result
+
+Downloaded **ten additional unchanged VocalSet 1.1 f1 WAV members**: straight scales and arpeggios, each on the source-labelled a/e/i/o/u. These are **8,797,370 bytes / 99.73843537414966 seconds**, mono 44.1 kHz PCM16. The original archive README identifies f1 as soprano. The primary [Zenodo record](https://zenodo.org/records/1203819) was rechecked through its public API: CC BY 4.0, archive size 2,077,243,579 bytes and declared MD5 `0c09396242f946e7111ad7d8fc649b81` still match the retained central-directory inventory.
+
+Each download required HTTP 206 with the exact Content-Range, matching local-header name/method/flags, safe member path, decompressed size and central-directory CRC. SHA-256 binds every resulting member. This is selected-member acquisition; the full archive MD5 remains NOT_CHECKED. The earlier interrupted partial archive is not counted.
+
+There are now **25 original f1 WAVs / 265.178820861678 seconds**, plus the separately retained 272 Karoryfer female growl WAVs: **297 acquired original WAVs** in total. The previous 357-entry retained-file index is an immutable earlier evidence set, not an audio count; this supplement has its own index. The original 15 sustain cuts, null worksheet and frozen 95-file procedural kit are unchanged.
+
+[Audition the ten originals](../../out/evidence/female-vocal-sources-2026-10-13/f1-straight-scales-arpeggios/audition-originals.html). The page has ten named manual controls, preload none, no script/autoplay, source/license attribution and per-file hashes. Preparing controls does not record playback or human listening. Media and execution evidence are local ignored files, not a pushed or published media package.
+
+## Source grant and unresolved admission
+
+The [CC BY 4.0 legal code](https://creativecommons.org/licenses/by/4.0/legalcode.en), particularly sections 2(a), 2(b) and 3(a), allows commercial reproduction/adaptation/redistribution of licensor-controlled material with attribution, license/change notices and no conflicting downstream restrictions or implied endorsement. That is the basis for this bounded acquisition, not proof of the performer's personality/consent rights. The earlier source-specific unapproved dossier, all four false permission flags and the repository acquisition-agreement/EULA disposition remain unchanged. No producer or distinct reviewer is registered, and no real source declaration was created.
+
+Primary-source follow-up did not establish a stronger complete female-bank source:
+
+| Lead checked | Primary evidence and route decision |
+| --- | --- |
+| OddVoices Air Navier | The original [repository](https://gitlab.com/oddvoices/oddvoices/) and `voices/LICENSE` at commit `33a248af8df88edf5166593bf36b7e24e7bc1f94` explicitly mark vocal data CC0. The original README describes Air as an alto; female performer identity and source-specific consent were not established. Metadata/license only retained; no audio acquired or female qualification inferred from vocal range. The Apache code license is distinct from the recording license. |
+| ACV-002 | The creator's [README](https://github.com/Archivoice/ACV-002) identifies Jonathan Huang's feminine acted singing, CC BY-SA 4.0 and model-specific provisions. Official release metadata includes two releases with audio archives; no archive was downloaded. The listed songs' composition/lyric clearance and fit to this selected f1/Japanese route were not established. |
+| Oniku Kurumi | The original [distribution terms](https://onikuru.info/db-download/) prohibit raw/modified database redistribution except specified nonaudio metadata and require prior permission for commercial results, corporate publication and creating new databases. No requested grant established; no audio acquired. |
+| Tohoku Kiritan | The original [distribution agreement](https://zunko.jp/kiridev/login.php) specifies noncommercial permission and authenticated access. No requested commercial/raw-bank grant established; no login or download attempted. |
+| Children's Song Dataset | The actual [dataset README](https://github.com/equal-singer/CSD) specifies CC BY-NC-SA 4.0. A paper's open-access license does not license its dataset commercially. No audio acquired. |
+| FMWAVES Erin | Original terms returned HTTP 403. A search snippet is insufficient to verify the complete grant. No bypass, provider contact or download attempted. |
+
+This is a bounded follow-up, not a claim that no suitable internet source exists. ARTEX remains excluded. No source provider was contacted and no permission was invented.
+
+## Fresh code/runtime evidence
+
+Executed the current `build/release/seam_voicebank_cli` twice per new original: **10 `inspect-wav` + 10 `extract-pitch`, all final exits 0**. Each inspection reports finite, nonsilent decoded samples and zero clipped samples. Every pitch result matches its original SHA, sample/frame count and remains `trainingAdmitted=false`, `releaseEligible=false`.
+
+The CLI SHA is `ce8810ddbc98d8d5d6e7c55d261da35e70e082bd4b128e010904d32a924bb23f`, identical to the executable retained after the full dependent rebuild at 8b92033e. Five exact code snapshots match that build commit: the CLI entrypoint, pitch implementation/header and WAV implementation/header. No source changed and no new CTest/full build is claimed. Read-only reproduction verifies all 124 artifact hashes, eight earlier bindings, ten original CRC/WAV/HTTP identities, the 20 retained final runs, page controls and exact Git/current-binary identities; the index separately binds its verification log. The original intake reproduction also passes all 357 earlier retained hashes.
+
+The code boundaries matter:
+
+- `apps/seam-voicebank-cli/main.cpp:138` starts bounded pitch extraction; its result is source-bound descriptive features, explicitly unadmitted. The FFT work limits, zero-padded full-hop coverage, 2,048-frame window and 256-frame hop were recorded from the actual output.
+- `apps/seam-voicebank-cli/main.cpp:254` starts decoded WAV inspection. Its finite/level/clipping checks verify intake readability; they do not authenticate source rights or linguistic content.
+- The additional pre-screen filters voiced observations at confidence >= 0.9 and within 35 cents of rounded MIDI, then measures consecutive equal-note runs. Run seconds equal observation count times hop/rate, with overlapping analysis windows. These are descriptive candidates, not validated cuts, loop markers or acoustic durations.
+- Stronger runs occur at several notes between 60 and 74. **No note-66 run meets this pre-screen's 150 ms threshold**; maximum observed 66 run is 58.05 ms. This does not prove complete absence of F-sharp audio, and it does not qualify the starter's required 66 layer. Off-scale estimates also exist and need real review.
+- An initial Python summary wrapper used `frames` instead of the documented `pitchFrames` key. It failed with KeyError; its script/outputs are preserved under `first-attempt`. The corrected final run records all 20 invocations. No product defect or first-run success is fabricated.
+
+## Next development decision
+
+Retain this as additional raw source material for the same selected female internet route. A real producer/reviewer must decide which original intervals, if any, extend the trial. Do not auto-map source vowels to Japanese, promote frame bins to layers, fill the missing default 66 from a transition, or register these files against the old 15-cut declaration without binding the actual newly selected material.
+
+The immediate dependencies are genuine source-rights/admission disposition, actual producer and distinct reviewer, per-material phonetic/pitch/listening decisions and the owner's failed-QC policy. Once those exist, use the normal dedicated producer workspace, exact source declaration and assigned native import/conversion/current QC. The [source representation design](PUBLIC_RECORDING_SOURCE_REPRESENTATION_2026-10-13.md) remains the code-level procedure; its technical approval supplies no human or rights decisions.
+
+Recovery/version/legacy-annotation findings now have independent technical approvals. Alpha remains **0/20 recorded PASS**, External Beta BLOCKED; this acquisition does not satisfy AE1's original procedural voice, learned-resource qualification, installed/platform/DAW/signing/listening/archive/release evidence or the U45 reconciliation hold. Full scope and the existing goal remain ACTIVE. Stash, .github and Windows TODO are preserved.
