@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import re
 import statistics
 import struct
+import sys
 import wave
 
 WINDOW = 2048
@@ -35,7 +36,14 @@ def strict_json(data: bytes) -> dict:
     def invalid_constant(value: str) -> None:
         raise ValueError(f"Non-finite JSON constant: {value}")
 
-    result = json.loads(data, parse_constant=invalid_constant)
+    def unique_object(pairs: list[tuple[str, object]]) -> dict:
+        result = {}
+        for key, value in pairs:
+            require(key not in result, f"Duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    result = json.loads(data, parse_constant=invalid_constant, object_pairs_hook=unique_object)
     require(isinstance(result, dict), "Expected a JSON object")
     return result
 
@@ -149,9 +157,11 @@ def prepare(plan_path: Path, output: Path) -> dict:
     require(isinstance(license_record, dict) and isinstance(license_record.get("attribution"), str) and
             bool(license_record["attribution"]) and isinstance(license_record.get("sourceUrl"), str),
             "License provenance and attribution are required")
+    require(bool(license_record["sourceUrl"].strip()), "License sourceUrl must not be empty")
     _, legal_text = bound_file(root, license_record, MAXIMUM_JSON_BYTES)
     prepared: list[tuple[dict, bytes, int, dict]] = []
     ids: set[str] = set()
+    audio_hashes: set[str] = set()
     for source in sources:
         require(isinstance(source, dict), "Invalid source record")
         identifier = source.get("id", "")
@@ -161,6 +171,9 @@ def prepare(plan_path: Path, output: Path) -> dict:
         require(source.get("sourceVowel") in ("a", "e", "i", "o", "u") and
                 source.get("sourceTechnique") == "straight", "This cohort requires straight source-vowel labels")
         path, audio = bound_file(root, source["audio"], MAXIMUM_AUDIO_BYTES)
+        audio_sha = digest(audio)
+        require(audio_sha not in audio_hashes, "Duplicate source audio hash")
+        audio_hashes.add(audio_sha)
         _, measured = bound_file(root, source["analysis"], MAXIMUM_JSON_BYTES)
         rows, pcm, rate = proposal_rows(path, audio, strict_json(measured))
         for row in rows:
@@ -194,7 +207,7 @@ def prepare(plan_path: Path, output: Path) -> dict:
                      "assignment": "NOT_ASSIGNED", "pitchReview": "NOT_REVIEWED",
                      "phoneticReview": "NOT_REVIEWED", "listeningReview": "NOT_REVIEWED"})
     result = {"schemaVersion": 1, "documentKind": "UnassignedVocalCutProposals",
-              "status": "UNAPPROVED", "inputRoot": str(root), "planSha256": digest(raw_plan),
+              "status": "UNAPPROVED", "planSha256": digest(raw_plan),
               "license": license_record, "retainedLicensePath": "license-source.txt",
               "changeNotice": "Original PCM intervals copied into new RIFF/WAV containers. Ancillary chunks removed; "
                               "no resampling, normalization, pitch shift or phoneme assignment.",
@@ -215,8 +228,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = prepare(args.plan, args.output)
-    except (ValueError, OSError, KeyError, TypeError, EOFError, wave.Error) as error:
-        print(f"Preparation refused: {error}")
+    except (ValueError, OSError, KeyError, TypeError, EOFError, ArithmeticError, RecursionError, wave.Error) as error:
+        print(f"Preparation refused: {error}", file=sys.stderr)
         return 2
     print(f"Prepared {len(result['cuts'])} unassigned, unapproved cuts")
     return 0

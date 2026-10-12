@@ -6,9 +6,12 @@ import json
 import math
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 import wave
+from unittest.mock import patch
 
 from tools.voicebank_source_intake.prepare_sustain_cuts import prepare
 
@@ -61,6 +64,8 @@ class SustainIntakeTests(unittest.TestCase):
         self.assertEqual(initial, self.audio.read_bytes())
         self.assertEqual("UNAPPROVED", first["status"])
         self.assertEqual("NOT_APPROVED", first["bankAdmission"])
+        self.assertNotIn("inputRoot", first)
+        self.assertNotIn(str(self.root), json.dumps(first))
         self.assertEqual(1, len(first["cuts"]))
         for cut in first["cuts"]:
             self.assertEqual("NOT_ASSIGNED", cut["assignment"])
@@ -116,7 +121,12 @@ class SustainIntakeTests(unittest.TestCase):
                     self.plan["analysisContract"]["windowFrames"] = 1024
                 self.save()
                 target = self.root / change
-                with self.assertRaises(ValueError):
+                expected = {"source": "Analysis source identity mismatch",
+                            "extent": "Analysis/audio extent or format mismatch",
+                            "order": "Invalid analysis frame order or extent",
+                            "nonfinite": "Non-finite JSON constant",
+                            "contract": "Unsupported analysis contract"}[change]
+                with self.assertRaisesRegex(ValueError, expected):
                     prepare(self.plan_path, target)
                 self.assertFalse(target.exists())
                 self.analysis, self.plan = original_analysis, original_plan
@@ -152,10 +162,107 @@ class SustainIntakeTests(unittest.TestCase):
                             frame["confidence"] = 0.1
                 self.save()
                 target = self.root / change
-                with self.assertRaises(ValueError):
+                expected = {"traversal": "Bound paths must remain below",
+                            "symlink": "Symlink input is not supported",
+                            "duplicate": "Invalid or duplicate source id",
+                            "unstable": "No intervals satisfy"}[change]
+                with self.assertRaisesRegex(ValueError, expected):
                     prepare(self.plan_path, target)
                 self.assertFalse(target.exists())
                 self.analysis, self.plan = original_analysis, original_plan
+
+    def test_refuses_repeated_audio_duplicate_json_keys_and_empty_source_url(self) -> None:
+        baseline_plan = copy.deepcopy(self.plan)
+        for change in ("audio", "keys", "url"):
+            with self.subTest(change=change):
+                self.plan = copy.deepcopy(baseline_plan)
+                self.save()
+                original_plan = copy.deepcopy(self.plan)
+                if change == "audio":
+                    second = copy.deepcopy(self.plan["sources"][0])
+                    second.update(id="fixture-e", sourceVowel="e")
+                    self.plan["sources"].append(second)
+                    expected = "Duplicate source audio hash"
+                elif change == "url":
+                    self.plan["license"]["sourceUrl"] = ""
+                    expected = "License sourceUrl must not be empty"
+                else:
+                    data = json.dumps(self.analysis).replace('"sampleRate": 8000',
+                                                            '"sampleRate": 8000, "sampleRate": 8000')
+                    self.analysis_path.write_text(data)
+                    self.plan["sources"][0]["analysis"] = self.binding(self.analysis_path)
+                    expected = "Duplicate JSON key"
+                self.plan_path.write_text(json.dumps(self.plan))
+                target = self.root / change
+                with self.assertRaisesRegex(ValueError, expected):
+                    prepare(self.plan_path, target)
+                self.assertFalse(target.exists())
+                self.plan = original_plan
+                self.save()
+
+    def test_malformed_cli_input_has_controlled_stderr_refusal(self) -> None:
+        tool = Path(__file__).resolve().parents[1] / "tools/voicebank_source_intake/prepare_sustain_cuts.py"
+        for change in ("large-number", "deep-json"):
+            with self.subTest(change=change):
+                if change == "large-number":
+                    data = copy.deepcopy(self.analysis)
+                    data["pitchFrames"][0]["f0Hz"] = 10 ** 399
+                    text = json.dumps(data)
+                else:
+                    text = "[" * 1500 + "0" + "]" * 1500
+                self.analysis_path.write_text(text)
+                self.plan["sources"][0]["analysis"] = self.binding(self.analysis_path)
+                self.plan_path.write_text(json.dumps(self.plan))
+                target = self.root / change
+                result = subprocess.run([sys.executable, str(tool), "--plan", str(self.plan_path),
+                                         "--output", str(target)], capture_output=True, text=True)
+                self.assertEqual(2, result.returncode)
+                self.assertEqual("", result.stdout)
+                self.assertIn("Preparation refused:", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse(target.exists())
+
+    def test_io_failure_keeps_incomplete_marker_and_no_complete_manifest(self) -> None:
+        output = self.root / "partial"
+        original = Path.write_bytes
+
+        def failing_write(path: Path, data: bytes) -> int:
+            if path.name == "license-source.txt":
+                raise OSError("Forced publication failure")
+            return original(path, data)
+
+        with patch.object(Path, "write_bytes", failing_write):
+            with self.assertRaisesRegex(OSError, "Forced publication failure"):
+                prepare(self.plan_path, output)
+        self.assertTrue((output / "INCOMPLETE").is_file())
+        self.assertFalse((output / "cuts.json").exists())
+
+    def test_format_and_rate_refusals_name_the_failed_boundary(self) -> None:
+        for change in ("stereo", "pcm24", "rate"):
+            with self.subTest(change=change):
+                if change == "rate":
+                    self.analysis["sampleRate"] = 16000
+                    expected = "Analysis/audio extent or format mismatch"
+                else:
+                    width = 3 if change == "pcm24" else 2
+                    channels = 2 if change == "stereo" else 1
+                    with wave.open(str(self.audio), "wb") as wav:
+                        wav.setnchannels(channels)
+                        wav.setsampwidth(width)
+                        wav.setframerate(self.rate)
+                        wav.writeframes((b"\x01" + b"\x00" * (width - 1)) * self.frames * channels)
+                    expected = "supports mono PCM16 only"
+                self.plan["sources"][0]["audio"] = self.binding(self.audio)
+                self.save()
+                target = self.root / change
+                with self.assertRaisesRegex(ValueError, expected):
+                    prepare(self.plan_path, target)
+                self.assertFalse(target.exists())
+                with wave.open(str(self.audio), "wb") as wav:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(self.rate)
+                    wav.writeframes(self.original_pcm)
 
 
 if __name__ == "__main__":

@@ -12,10 +12,36 @@
   },
   "realCanonicalRows": "0/20 PASS; unchanged",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Status reporting and shared evidence validation only"
+    "scope": "Status reporting and shared evidence validation only",
+    "reviewedCommit": "dd011466a0b90ebb83e2676a2ad32eb3aef1c32b",
+    "record": {
+      "path": "out/evidence/female-vocal-hardening-2026-10-13/alpha-counter-independent-review.md",
+      "sizeBytes": 7126,
+      "sha256": "ee855445cf6e87868c209c299d91a8227fdf747004582f871578a2a2863e4746"
+    }
   },
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "additionalVerifierCheck": {
+    "result": "5/5 PASS; CTest registration remains open",
+    "record": {
+      "path": "out/evidence/female-vocal-hardening-2026-10-13/additional-alpha-verifier-result.json",
+      "sizeBytes": 140,
+      "sha256": "5ae0ed157e2f1dc67462451711b148d655e6b870e05dfd5cdc45a6f3ad51e458"
+    },
+    "log": {
+      "path": "out/evidence/female-vocal-hardening-2026-10-13/additional-alpha-verifier-tests.log",
+      "sizeBytes": 103,
+      "sha256": "baf49b59538192f3e136ca0404cac516ecb8dd2fe5ba1416604056f3080fa49c"
+    }
+  },
+  "followUps": [
+    "Validate full canonical document before reporting row counts; current mandatory/order/evidence checks are unchanged.",
+    "Name the counter as recorded PASS rows rather than authenticated physical runs.",
+    "Exercise false/non-boolean mandatory values.",
+    "Register scripts/test_usable_alpha_contract.py in configured CTest.",
+    "Canonical evidence policy does not yet authenticate requirement/candidate/operator/time; no real row is promoted."
+  ]
 }

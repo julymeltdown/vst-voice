@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-vocal-cohort-hardening",
+  "sourceBase": "dd011466a0b90ebb83e2676a2ad32eb3aef1c32b",
+  "evidenceRoot": "out/evidence/female-vocal-hardening-2026-10-13",
+  "manifest": {
+    "path": "out/evidence/female-vocal-hardening-2026-10-13/manifest.json",
+    "sizeBytes": 17842,
+    "sha256": "dc669f07753be47634320515ef7f19956d9543ea5cb611e8a15cbe4a7a4b8a9a"
+  },
+  "reproduction": {
+    "path": "out/evidence/female-vocal-hardening-2026-10-13/reproduction.log",
+    "sizeBytes": 95,
+    "sha256": "f04657c5433a044b620c41af26baca1ba7760aa7bc211e81fed24d5cc80cff02"
+  },
+  "checks": {
+    "baseline": "Six assertion/subtest failures across three of eleven test methods against the prior tool; fixture-isolation repair log retained.",
+    "unitTests": "11/11 PASS",
+    "focusedPythonCTest": "2/2 PASS; 0.55 seconds",
+    "nativeReader": "15/15 finite, non-silent, unclipped; exact retained analyzer from F2",
+    "bytePreservation": "All 15 WAVs unchanged; cuts.json differs only by removal of inputRoot; repeat byte-identical; prior 105-artifact F2 set unchanged."
+  },
+  "technicalReview": {
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Exact three-file tool/test/README diff on dd011466; metadata closure is lead-verified. Reviewer did not rerun CLI/tests.",
+    "record": {
+      "path": "out/evidence/female-vocal-hardening-2026-10-13/independent-review.md",
+      "sizeBytes": 5310,
+      "sha256": "bf872bc480e72d8c856ddf8587db7f94193e230476a59820a3857a3be37f4263"
+    },
+    "reviewedSources": [
+      {
+        "path": "tools/voicebank_source_intake/prepare_sustain_cuts.py",
+        "sizeBytes": 12239,
+        "sha256": "d5e9b7b5d09b1486242f688ced5f983f25f973399222b6dfaeab2362e701543e"
+      },
+      {
+        "path": "tests/test_voicebank_source_intake.py",
+        "sizeBytes": 13971,
+        "sha256": "c7db5d82f01dd818af1d80b64497abe76b9c804699644aa3ce2001a3233502f6"
+      },
+      {
+        "path": "tools/voicebank_source_intake/README.md",
+        "sizeBytes": 3737,
+        "sha256": "a66a37a1d7ae51335f9c40e5ea4bb2e3f452eee63669d34713c67e3d485ee86e"
+      }
+    ]
+  },
+  "limitations": [
+    "1500 nested arrays prove controlled non-object refusal on Python 3.14; RecursionError handler checked by inspection only.",
+    "Whitespace-only attribution can still pass; P3 follow-up.",
+    "Reviewer text says 14 WAV files; actual directory has 15 WAVs plus cuts.json, intake-plan.json and license-source.txt. Raw verdict retained without rewriting."
+  ],
+  "assignment": "NOT_ASSIGNED",
+  "humanAcceptance": "NOT_RUN",
+  "rightsAdmission": "NOT_APPROVED",
+  "bankAdmission": "NOT_APPROVED",
+  "betaPromotion": false
+}
