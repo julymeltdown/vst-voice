@@ -2688,6 +2688,7 @@ if(SEAM_BUILD_TESTS)
       COMMAND ${Python3_EXECUTABLE} -m unittest ${SEAM_PRODUCTION_REMAINING_MODULES})
     set_tests_properties(${SEAM_PRODUCTION_CTESTS} PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;SEAM_VOICEBANK_CLI=$<TARGET_FILE:seam_voicebank_cli>"
       LABELS "production-public-release")
     add_test(NAME seam_ui_design_assets
       COMMAND ${Python3_EXECUTABLE} -m unittest

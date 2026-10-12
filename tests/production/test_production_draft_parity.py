@@ -11,6 +11,8 @@ import unittest
 import wave
 from pathlib import Path
 
+from tests.production.native_cli import voicebank_cli
+
 from tools.external_beta.voicebank_production import (
     prepare_production_draft_definition,
     validate_production_draft_workspace,
@@ -20,6 +22,7 @@ from tools.external_beta.voicebank_production import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+CLI = voicebank_cli(ROOT)
 from tools.external_beta._production_draft_validation import _quality_policy_identity, _quality_material_identity, _quality_current
 from tools.external_beta._production_draft_validation import (
     TAKE_INSPECTION_KIND, TAKE_INSPECTOR, canonical_take_evidence, take_check_outcomes, take_qc_policy)
@@ -240,7 +243,7 @@ class ProductionDraftParityTests(unittest.TestCase):
                     self.assertEqual(plan, prepare_style_migration(workspace, inventory))
                 # The durable application is C++: the CLI has to accept the plan this planner wrote,
                 # produce exactly its proposed project, retain the plan and refuse to apply it twice.
-                cli = ROOT / "build/release/seam_voicebank_cli"
+                cli = CLI
                 if not cli.is_file():
                     self.skipTest("C++ CLI is not built")
                 applied = subprocess.run([str(cli), "migrate-style", str(workspace), str(output_file),
@@ -283,7 +286,7 @@ class ProductionDraftParityTests(unittest.TestCase):
     def test_style_inventory_creates_cpp_workspace_verified_by_python(self) -> None:
         from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
         from tools.external_beta._production_draft_validation import _project
-        cli = ROOT / "build/release/seam_voicebank_cli"
+        cli = CLI
         if not cli.is_file():
             self.skipTest("C++ CLI is not built")
         inventory = generate_draft_inventory({"profileId": "style-parity", "supportedStyles": ["neutral", "soft"],
@@ -324,7 +327,7 @@ class ProductionDraftParityTests(unittest.TestCase):
                 self.assertFalse((root / f"bad-{index}").exists())
 
     def test_actual_cli_registers_source_without_prefilled_policy_or_approval(self) -> None:
-        cli = ROOT / "build/release/seam_voicebank_cli"
+        cli = CLI
         if not cli.is_file():
             self.skipTest("Build the actual production CLI for cross-language parity")
         with tempfile.TemporaryDirectory() as directory:
@@ -362,7 +365,7 @@ class ProductionDraftParityTests(unittest.TestCase):
             self.assertEqual(unchanged, (workspace / "project.json").read_bytes())
 
     def test_actual_cli_records_schema3_quality_with_matching_python_identities(self) -> None:
-        cli = ROOT / "build/release/seam_voicebank_cli"
+        cli = CLI
         if not cli.is_file():
             self.skipTest("Build the actual production CLI for cross-language parity")
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "unit": "production-native-target",
+  "sourceHead": "b8c81465a7e43a782ef15700f62b855956ec17e6",
+  "manifest": {
+    "path": "out/evidence/production-native-target-2026-10-13/manifest.json",
+    "sizeBytes": 10135,
+    "sha256": "6a96e788b86617000df77341a706391f28c58e5be75734e7c833067efcc7689b"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/production-native-target-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/production-native-target-2026-10-13/verification.log",
+      "sizeBytes": 205,
+      "sha256": "2cde5238e949df66e04480ad64b0dced4d5b67220c921b68fe231d0498213fe3"
+    }
+  },
+  "baselineProbesPassedIgnoringOverride": 5,
+  "combinedMissingProbe": "IMPORT_ABORT_EXIT1_FIRST_MODULE",
+  "isolatedMissingTargetRefusals": 5,
+  "missingTargetTestExecution": "NONE_IMPORT_REFUSALS",
+  "fullBuild": {
+    "exitCode": 0,
+    "receipt": {
+      "path": "out/evidence/production-native-target-2026-10-13/build.json",
+      "sizeBytes": 245,
+      "sha256": "b9c949cc3cccfadbd4aa818061db4b2f79d58297066f2ecda0da4584fd4469e3"
+    }
+  },
+  "executedCTestEntry": "seam_public_release_python_tests",
+  "pythonMethodsPassed": 115,
+  "affectedModuleMethods": 52,
+  "skippedMethods": 0,
+  "configuredCTestEntries": 4,
+  "executedCTestEntries": 1,
+  "alternatePathProbesPassed": 5,
+  "alternateNativeInvocations": 39,
+  "alternateProbesOverlapAggregate": true,
+  "secondBuildDirectoryExecution": "NOT_RUN",
+  "retainedArtifacts": 39,
+  "preservedBindings": 6,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Production CTest target selection and explicit missing-target refusal only"
+  },
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}

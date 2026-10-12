@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.production.native_cli import voicebank_cli
+
 from tools.external_beta._production_draft_validation import (
     TAKE_INSPECTION_KIND, TAKE_QC_APPLICABLE, canonical_take_evidence, take_check_outcomes, take_inspection_errors,
     take_qc_policy)
@@ -24,7 +26,7 @@ from tools.external_beta._production_review_transition import production_project
 from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "build/release/seam_voicebank_cli"
+CLI = voicebank_cli(ROOT)
 BAKE = ROOT / "docs/implementation/evidence/nasal-consonant-2026-09-09/ma-bake"
 CANDIDATE = BAKE / "candidates/00000000000153d9-00000000000153da"
 RECIPE = BAKE / "recipes/7361e7c1d112ba26cf07284548c14866a865195f52d7737e4352b38382d8d2d2.json"

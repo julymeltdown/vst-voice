@@ -14,6 +14,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from tests.production.native_cli import voicebank_cli
 from typing import Any, Callable
 
 from tools.external_beta._production_generation import RegistryError, decode_request, encode_record, inspect_generation_requests
@@ -21,7 +23,7 @@ from tools.external_beta.voicebank_production import prepare_production_draft_de
 from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "build/release/seam_voicebank_cli"
+CLI = voicebank_cli(ROOT)
 BAKE = ROOT / "docs/implementation/evidence/nasal-consonant-2026-09-09/ma-bake"
 CANDIDATE = BAKE / "candidates/00000000000153d9-00000000000153da"
 RECIPE = BAKE / "recipes/7361e7c1d112ba26cf07284548c14866a865195f52d7737e4352b38382d8d2d2.json"
@@ -50,7 +52,7 @@ class RecordCodecTest(unittest.TestCase):
             decode_request(encode_record({"formatId": "com.project-seam.generation-request", "schemaVersion": 1.0}))
 
 
-@unittest.skipUnless(CLI.is_file(), "requires build/release/seam_voicebank_cli")
+@unittest.skipUnless(CLI.is_file(), "Build the native voicebank CLI for cross-language parity")
 class CppGenerationRequestParityTest(unittest.TestCase):
     """One workspace driven through the real CLI to a completed, an exhausted and a stale request."""
 

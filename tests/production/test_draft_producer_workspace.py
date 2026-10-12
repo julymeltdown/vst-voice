@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.production.native_cli import voicebank_cli
+
 from tools.external_beta.voicebank_production import (
     prepare_production_draft_definition,
     validate_production_draft_workspace,
@@ -25,7 +27,7 @@ from tools.voicebank_script_generator.draft_inventory import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "build/release/seam_voicebank_cli"
+CLI = voicebank_cli(ROOT)
 CUSTOM_PROFILE = {
     "profileId": "custom \u2014 voice",
     "supportedStyles": ["soft, \"airy\"", "\u660e\u308b\u3044"],
