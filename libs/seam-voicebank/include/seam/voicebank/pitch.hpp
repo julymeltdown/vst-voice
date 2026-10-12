@@ -8,11 +8,15 @@
 #include <vector>
 #include <stop_token>
 #include <limits>
+#include <string_view>
 
 namespace seam::voicebank {
 
 enum class PitchCorrelationMethod { Direct, Fft };
 enum class PitchFrameCoverage { CompleteWindows, FullHopGrid };
+
+// Version 2 enforces the configured Hz interval after lag interpolation.
+inline constexpr std::string_view kPitchAnalysisAlgorithm = "fft-autocorrelation-v2";
 
 struct PitchConfig final {
   std::size_t frameSize{2048};
@@ -27,6 +31,8 @@ struct PitchConfig final {
 
 struct PitchFrame final {
   std::size_t sourceFrame{0};
+  // Voiced estimates are finite and inside the configured inclusive Hz interval;
+  // rejected estimates remain unvoiced with zero F0 and their measured confidence.
   double f0Hz{0.0};
   double confidence{0.0};
   bool voiced{false};

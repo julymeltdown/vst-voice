@@ -376,7 +376,7 @@ class ReviewTests(unittest.TestCase):
                 "print(json.dumps({'formatId':'com.project-seam.training-pitch-features','schemaVersion':1,"
                 "'sourceSha256':hashlib.sha256(payload).hexdigest(),'sampleRate':rate,'frameCount':count,"
                 "'windowFrames':window,'hopSize':256,'minimumHz':60,'maximumHz':1200,'voicingThreshold':0.32,"
-                "'algorithm':'fft-autocorrelation-v1','coverage':'full-hop-zero-padded','pitchFrames':frames,"
+                "'algorithm':'fft-autocorrelation-v2','coverage':'full-hop-zero-padded','pitchFrames':frames,"
                 "'trainingAdmitted':False,'releaseEligible':False}, sort_keys=True))\n")
             extractor.chmod(0o700)
             extractor_digest = hashlib.sha256(extractor.read_bytes()).hexdigest()

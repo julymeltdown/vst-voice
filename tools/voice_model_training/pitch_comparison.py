@@ -17,7 +17,7 @@ import statistics
 import sys
 
 from .audio_source import read_pcm_source
-from .native_features import extract_pitch
+from .native_features import CURRENT_PITCH_ALGORITHM, extract_pitch
 
 
 def _digest(value):
@@ -31,7 +31,7 @@ def _track(value, digest, sample_rate, frame_count, hop_size):
     if (not isinstance(value, dict) or set(value) != fields
             or value["formatId"] != "com.project-seam.training-pitch-features"
             or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1
-            or value["algorithm"] != "fft-autocorrelation-v1" or value["coverage"] != "full-hop-zero-padded"
+            or value["algorithm"] != CURRENT_PITCH_ALGORITHM or value["coverage"] != "full-hop-zero-padded"
             or value["trainingAdmitted"] is not False or value["releaseEligible"] is not False):
         raise ValueError("Unsupported native full-hop pitch contract")
     if not _digest(digest) or value["sourceSha256"] != digest:
@@ -59,8 +59,8 @@ def _track(value, digest, sample_rate, frame_count, hop_size):
         if (type(confidence) not in (int, float) or not math.isfinite(confidence)
                 or not 0 <= confidence <= 1 + 1e-9
                 or type(f0) not in (int, float) or not math.isfinite(f0)
-                or (not 0 < f0 < sample_rate / 2 if row["voiced"] else f0 != 0)
-                or row["voiced"] != (confidence >= value["voicingThreshold"])):
+                or (not value["minimumHz"] <= f0 <= value["maximumHz"] if row["voiced"] else f0 != 0)
+                or (row["voiced"] and confidence < value["voicingThreshold"])):
             raise ValueError("Invalid native pitch confidence, F0 or voicing")
     return rows, window
 
@@ -139,7 +139,7 @@ two-WAV entrypoint below performs extraction and byte binding itself.
         referenceSha256=reference_sha256, candidateSha256=candidate_sha256,
         referenceTrackSha256=hashlib.sha256(json.dumps(reference, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest(),
         candidateTrackSha256=hashlib.sha256(json.dumps(candidate, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest(),
-        algorithm="fft-autocorrelation-v1", alignment="exact-source-frame-no-shift-no-warp",
+        algorithm=CURRENT_PITCH_ALGORITHM, alignment="exact-source-frame-no-shift-no-warp",
         minimumConfidence=minimum_confidence, maximumErrorCents=maximum_error_cents,
         analysisFrames=len(source), referenceVoicedFrames=reference_voiced, candidateVoicedFrames=candidate_voiced,
         measurableVoicedPairs=compared, withinToleranceFrames=compared - outside, outsideToleranceFrames=outside,

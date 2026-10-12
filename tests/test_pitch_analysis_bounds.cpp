@@ -5,6 +5,64 @@
 #include <numbers>
 #include <cmath>
 
+TEST_CASE("voiced pitch estimates stay within the requested frequency interval") {
+  using namespace seam::voicebank;
+  for (const auto rate : {8000U, 22050U, 44100U, 48000U, 96000U}) {
+    for (const auto method : {PitchCorrelationMethod::Direct, PitchCorrelationMethod::Fft}) {
+      PitchConfig config;
+      config.minimumHz = 1005.0;
+      config.maximumHz = 1200.0;
+      config.hopSize = config.frameSize;
+      config.correlationMethod = method;
+      const auto control = static_cast<double>(rate) / std::round(rate / 1100.0);
+      for (const auto frequency : {
+               control,
+               static_cast<double>(rate) / std::floor(rate / config.maximumHz),
+               static_cast<double>(rate) / std::ceil(rate / config.minimumHz)}) {
+        std::vector<float> samples(config.frameSize * 2U);
+        for (std::size_t index = 0U; index < samples.size(); ++index) {
+          samples[index] = static_cast<float>(0.25 * std::sin(
+              2.0 * std::numbers::pi * frequency * static_cast<double>(index) / rate));
+        }
+        const auto result = analyzePitch(samples, rate, config); CHECK(result);
+        CHECK(result.value().size() == 2U);
+        for (const auto& frame : result.value()) {
+          if (frame.voiced) {
+            CHECK(std::isfinite(frame.f0Hz));
+            CHECK(frame.f0Hz >= config.minimumHz);
+            CHECK(frame.f0Hz <= config.maximumHz);
+          } else {
+            CHECK(frame.f0Hz == 0.0);
+          }
+          if (frequency == control) {
+            CHECK(frame.voiced);
+            CHECK_NEAR(frame.f0Hz, control, 2.0);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("interpolation outside the frequency interval is unvoiced rather than clamped") {
+  using namespace seam::voicebank;
+  for (const auto method : {PitchCorrelationMethod::Direct, PitchCorrelationMethod::Fft}) {
+    PitchConfig config;
+    config.minimumHz = 1000.5;
+    config.maximumHz = 1200.0;
+    config.hopSize = config.frameSize;
+    config.correlationMethod = method;
+    const auto samples = seam::test::support::sineWave(44100U, 1000.0, 0.1, 0.25F);
+    const auto result = analyzePitch(samples, 44100U, config); CHECK(result);
+    CHECK(!result.value().empty());
+    for (const auto& frame : result.value()) {
+      CHECK(frame.confidence > 0.9);
+      CHECK(!frame.voiced);
+      CHECK(frame.f0Hz == 0.0);
+    }
+  }
+}
+
 TEST_CASE("Full hop pitch coverage includes bounded zero padded tail frames") {
   using namespace seam::voicebank;
   for (const auto count : {1U, 255U, 256U, 257U, 4097U}) {

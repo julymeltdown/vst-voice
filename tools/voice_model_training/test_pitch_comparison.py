@@ -17,7 +17,7 @@ def track(pitches, *, digest="a" * 64, confidence=.95):
     return dict(formatId="com.project-seam.training-pitch-features", schemaVersion=1,
         sourceSha256=digest, sampleRate=48000, frameCount=len(pitches) * 256,
         windowFrames=2048, hopSize=256, minimumHz=60, maximumHz=1200,
-        voicingThreshold=.32, algorithm="fft-autocorrelation-v1", coverage="full-hop-zero-padded",
+        voicingThreshold=.32, algorithm="fft-autocorrelation-v2", coverage="full-hop-zero-padded",
         trainingAdmitted=False, releaseEligible=False,
         pitchFrames=[dict(sourceFrame=i * 256, f0Hz=p, voiced=p > 0,
                           confidence=confidence if p > 0 else 0.) for i, p in enumerate(pitches)])
@@ -73,6 +73,13 @@ class PitchComparisonTests(unittest.TestCase):
         self.assertEqual(silent["status"], "UNRESOLVED")
         self.assertEqual(silent["unvoicedPairs"], 25)
         self.assertEqual(silent["measurableVoicedPairs"], 0)
+        rejected = deepcopy(unvoiced)
+        for frame in rejected["pitchFrames"]:
+            frame["confidence"] = .95
+        unresolved = compare(rejected, rejected)
+        self.assertEqual(unresolved["status"], "UNRESOLVED")
+        self.assertEqual(unresolved["unvoicedPairs"], 25)
+        self.assertEqual(unresolved["measurableVoicedPairs"], 0)
         uncertain = deepcopy(source)
         uncertain["pitchFrames"][3]["confidence"] = .4
         result = compare(source, uncertain)
@@ -87,12 +94,14 @@ class PitchComparisonTests(unittest.TestCase):
         for changes in (dict(hopSize=128), dict(sampleRate=44100), dict(frameCount=8191),
                         dict(windowFrames=1024), dict(sourceSha256="b" * 64),
                         dict(coverage="complete-windows"), dict(schemaVersion=True),
-                        dict(minimumHz=50), dict(trainingAdmitted=True)):
+                        dict(minimumHz=50), dict(trainingAdmitted=True),
+                        dict(algorithm="fft-autocorrelation-v1")):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 compare_pitch_tracks(source, source | changes, reference_sha256="a" * 64,
                     candidate_sha256="a" * 64, sample_rate=48000, frame_count=8192)
         for changes in (dict(sourceFrame=1), dict(f0Hz=float("nan")), dict(voiced=False),
-                        dict(confidence=-1), dict(confidence=2), dict(voiced=True, f0Hz=0)):
+                        dict(confidence=-1), dict(confidence=2), dict(voiced=True, f0Hz=0),
+                        dict(f0Hz=59), dict(f0Hz=1225)):
             malformed = deepcopy(source)
             malformed["pitchFrames"][0].update(changes)
             with self.subTest(changes=changes), self.assertRaises(ValueError): compare(source, malformed)

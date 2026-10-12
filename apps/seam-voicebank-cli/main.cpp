@@ -164,7 +164,8 @@ int extractPitchCommand(const std::filesystem::path& path) {
       {"windowFrames", static_cast<std::int64_t>(config.frameSize)},
       {"hopSize", static_cast<std::int64_t>(config.hopSize)},
       {"minimumHz", config.minimumHz}, {"maximumHz", config.maximumHz},
-      {"voicingThreshold", config.voicingThreshold}, {"algorithm", "fft-autocorrelation-v1"},
+      {"voicingThreshold", config.voicingThreshold},
+      {"algorithm", std::string{seam::voicebank::kPitchAnalysisAlgorithm}},
       {"coverage", "full-hop-zero-padded"}, {"pitchFrames", std::move(frames)},
       {"trainingAdmitted", false}, {"releaseEligible", false}}};
   std::cout << seam::formats::stringifyJson(result, false) << '\n';

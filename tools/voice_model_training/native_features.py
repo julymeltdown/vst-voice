@@ -7,6 +7,8 @@ import signal
 import subprocess
 import time
 
+CURRENT_PITCH_ALGORITHM = "fft-autocorrelation-v2"
+
 
 def extract_pitch(executable: Path, source: Path, *, timeout_seconds: float = 30) -> dict:
     if os.name != "posix":

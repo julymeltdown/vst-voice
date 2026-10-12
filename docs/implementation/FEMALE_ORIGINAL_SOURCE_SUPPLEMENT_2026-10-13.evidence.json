@@ -26,7 +26,7 @@
     },
     "p3Disposition": {
       "sourceDecisionFacts": "Two documentation findings addressed in follow-up; no admission change",
-      "pitchDeclaredRange": "OPEN_SEPARATE_CODE_UNIT"
+      "pitchDeclaredRange": "LOCALLY_VERIFIED_SEPARATE_CODE_UNIT_PENDING_INDEPENDENT_REVIEW"
     },
     "clarificationArtifacts": [
       {
@@ -64,7 +64,18 @@
         "sizeBytes": 351,
         "sha256": "16c631ed3f6b311d5c42c7ab5c1937fe651aed91efadc10518075c4e6004a67a"
       }
-    ]
+    ],
+    "clarificationReview": {
+      "status": "APPROVE",
+      "sourceCommit": "73b309f0083b2d481282dede1c683bf9e5c1f884",
+      "verdict": {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-73b309f0.md",
+        "sizeBytes": 2775,
+        "sha256": "35c0607e2808120678d21a1d7ebbf2137a82b5a704f58813318cb96687a23ebc"
+      },
+      "optionalFinding": "Combined-filter wording corrected in the separately verified pitch-range unit"
+    },
+    "pitchRangeRepair": "docs/implementation/PITCH_DECLARED_RANGE_2026-10-13.evidence.json"
   },
   "betaPromotion": false,
   "verification": {

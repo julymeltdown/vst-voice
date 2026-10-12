@@ -1,6 +1,7 @@
 """Convert captured native pitch features into unreviewed training labels."""
 import copy
 import math
+from .native_features import CURRENT_PITCH_ALGORITHM
 from .labels import label_report
 
 
@@ -55,7 +56,7 @@ def apply_pitch_features(label: dict, features: dict, *, source_sha256: str, sam
     if (not isinstance(features, dict) or set(features) != fields
             or features["formatId"] != "com.project-seam.training-pitch-features"
             or type(features["schemaVersion"]) is not int or features["schemaVersion"] != 1
-            or features["algorithm"] != "fft-autocorrelation-v1" or features["coverage"] != "full-hop-zero-padded"
+            or features["algorithm"] != CURRENT_PITCH_ALGORITHM or features["coverage"] != "full-hop-zero-padded"
             or features["trainingAdmitted"] is not False or features["releaseEligible"] is not False):
         raise ValueError("Unsupported native pitch feature contract")
     if (not isinstance(source_sha256, str) or len(source_sha256) != 64
@@ -87,7 +88,13 @@ def apply_pitch_features(label: dict, features: dict, *, source_sha256: str, sam
         confidence = frame["confidence"]
         if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
             raise ValueError("Invalid pitch confidence")
-        f0.append(frame["f0Hz"]); voiced.append(frame["voiced"])
+        frequency, is_voiced = frame["f0Hz"], frame["voiced"]
+        if (type(is_voiced) is not bool or type(frequency) not in (int, float)
+                or not math.isfinite(frequency)
+                or (not features["minimumHz"] <= frequency <= features["maximumHz"] if is_voiced else frequency != 0)
+                or (is_voiced and confidence < features["voicingThreshold"])):
+            raise ValueError("Extracted pitch is outside its declared bounds or inconsistent")
+        f0.append(frequency); voiced.append(is_voiced)
     result = copy.deepcopy(label)
     result.update(hopSize=256, f0Hz=f0, voiced=voiced, reviewRevision=None)
     report = label_report(result, vocabulary=vocabulary, minimum_confidence=minimum_confidence)

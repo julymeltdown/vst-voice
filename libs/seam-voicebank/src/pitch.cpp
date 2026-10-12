@@ -54,7 +54,7 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
     return core::failure<std::vector<PitchFrame>>(
         core::ErrorCode::InvalidArgument, "Pitch analysis configuration is invalid");
   }
-  const auto minimumLagValue = std::floor(static_cast<double>(sampleRate) / config.maximumHz);
+  const auto minimumLagValue = std::ceil(static_cast<double>(sampleRate) / config.maximumHz);
   if (!std::isfinite(minimumLagValue) || minimumLagValue >= static_cast<double>(config.frameSize / 2U)) {
     return core::failure<std::vector<PitchFrame>>(core::ErrorCode::InvalidArgument, "Pitch lag range is outside the analysis window");
   }
@@ -179,10 +179,14 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
         refinedLag += 0.5 * (left - right) / denominator;
       }
     }
-    const bool voiced = best >= config.voicingThreshold && refinedLag > 0.0;
+    const auto frequency = refinedLag > 0.0 ? static_cast<double>(sampleRate) / refinedLag : 0.0;
+    // A strong correlation can still propose a period outside the requested
+    // interval. Keep its confidence, but do not invent a clamped fundamental.
+    const bool voiced = best >= config.voicingThreshold && std::isfinite(frequency) &&
+                        frequency >= config.minimumHz && frequency <= config.maximumHz;
     result.push_back(PitchFrame{
         .sourceFrame = start,
-        .f0Hz = voiced ? static_cast<double>(sampleRate) / refinedLag : 0.0,
+        .f0Hz = voiced ? frequency : 0.0,
         .confidence = best,
         .voiced = voiced,
     });

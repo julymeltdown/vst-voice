@@ -40,7 +40,10 @@ inline constexpr std::string_view kAcousticAnalysisAlgorithmId =
 // partition pitch mark generation also uses. Version 1 anchored each frame to its
 // window origin, which placed voicing boundaries up to 1408 samples early at
 // 48 kHz; its records are refused rather than reinterpreted.
-inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "2";
+// Version 3 also rejects pitch proposals outside the declared frequency bounds.
+// Version 2 could report >1200 Hz at 44.1 kHz or below a configured minimum;
+// derivatives from it must be remeasured instead of claiming current analysis.
+inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "3";
 inline constexpr std::string_view kAcousticAnalysisFormatId =
     "com.project-seam.acoustic-analysis";
 

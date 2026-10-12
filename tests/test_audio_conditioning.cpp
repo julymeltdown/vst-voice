@@ -298,13 +298,15 @@ TEST_CASE("acoustic analysis refuses a record from a different algorithm revisio
   CHECK(analysis);
 
   // A future revision of the analyser must invalidate what the old one recorded.
-  auto stale = analysis.value();
-  stale.algorithmVersion = "0";
-  CHECK(!stale.currentAlgorithm());
-  CHECK(!seam::voicebank::validateAcousticAnalysis(stale, unit, digest,
-      static_cast<seam::time::SampleFrame>(kFrames)));
-  CHECK(!seam::voicebank::encodeAcousticAnalysis(stale, unit, digest,
-      static_cast<seam::time::SampleFrame>(kFrames)));
+  for (const auto oldVersion : {"0", "2"}) {
+    auto stale = analysis.value();
+    stale.algorithmVersion = oldVersion;
+    CHECK(!stale.currentAlgorithm());
+    CHECK(!seam::voicebank::validateAcousticAnalysis(stale, unit, digest,
+        static_cast<seam::time::SampleFrame>(kFrames)));
+    CHECK(!seam::voicebank::encodeAcousticAnalysis(stale, unit, digest,
+        static_cast<seam::time::SampleFrame>(kFrames)));
+  }
 
   // A different algorithm identity is likewise not interchangeable.
   auto foreign = analysis.value();

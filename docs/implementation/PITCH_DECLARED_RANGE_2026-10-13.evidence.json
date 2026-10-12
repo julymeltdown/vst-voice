@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "unit": "pitch-declared-range",
+  "sourceHead": "73b309f0083b2d481282dede1c683bf9e5c1f884",
+  "manifest": {
+    "path": "out/evidence/pitch-declared-range-2026-10-13/manifest.json",
+    "sizeBytes": 21543,
+    "sha256": "ca384ef8a063d56e3fb10eb47f25719c314452482eb83323ab792583bf60a48c"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/pitch-declared-range-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/pitch-declared-range-2026-10-13/verification.log",
+      "sizeBytes": 336,
+      "sha256": "247b09577f45e484f73f7359fa681ee60e403567f25bd7a6f85464921e433881"
+    }
+  },
+  "fullBuildExitCode": 0,
+  "fullBuildElapsedSeconds": null,
+  "focusedCTestEntriesPassed": 7,
+  "nativeCasesPassed": 178,
+  "pythonReportedCases": 23,
+  "pythonPassedCases": 22,
+  "pythonSkippedCases": 1,
+  "additionalActualNativeControlPassed": 1,
+  "newOriginalNativeInvocations": 20,
+  "oldOutOfRangeVoicedFrames": 106,
+  "newOutOfRangeVoicedFrames": 0,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaPromotion": false
+}
