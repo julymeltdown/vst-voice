@@ -71,8 +71,13 @@
       "sha256": "3fc752b4066b3b3b6cf4ba19bb9c2b96f9a9153fe3fd9d3c61333d765641ffe0"
     },
     "independentScope": "Read-only artifact/digest/PCM/HTML/null-field audit; recorded browser/session values taken from lead evidence",
-    "p3": "Missing no-inference worksheet warning; separate schema-2 packet locally verified, follow-up review pending",
-    "independentNativeExecution": "NOT_RUN"
+    "p3": "CLOSED by independently approved fc1ed331 warning/version packet",
+    "independentNativeExecution": "NOT_RUN",
+    "p3FollowupVerdict": {
+      "path": "out/evidence/production-review-closeout-2026-10-13/review-4fbf94df-fc1ed331.txt",
+      "sizeBytes": 11840,
+      "sha256": "e0597371a6c925700c9777f911d0a086b1bebf4cf3f9010b3a98611a27abe841"
+    }
   },
   "alphaRecordedPasses": [
     0,

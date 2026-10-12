@@ -56,9 +56,18 @@
   "audioPlayback": "NOT_RUN",
   "humanListening": "NOT_RUN",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Required warning restoration and explicit worksheet version only"
+    "scope": "Required warning restoration and explicit worksheet version only",
+    "sourceCommit": "fc1ed331a4fe12f78169ad3ffb9a6526b76b834a",
+    "verdict": {
+      "path": "out/evidence/production-review-closeout-2026-10-13/review-4fbf94df-fc1ed331.txt",
+      "sizeBytes": 11840,
+      "sha256": "e0597371a6c925700c9777f911d0a086b1bebf4cf3f9010b3a98611a27abe841"
+    },
+    "closure": "567c worksheet warning/version P3 closed",
+    "independentScope": "Read-only source/artifact/behavior correspondence; execution results taken from lead logs",
+    "independentNativeExecution": "NOT_RUN"
   },
   "sourceAdmission": "NOT_ASSESSED",
   "bankAdmission": "NOT_APPROVED",
