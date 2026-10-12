@@ -9045,3 +9045,8 @@ Review in English received diagnosis/proposal/concrete-diff requests01a12215-9e7
 ## 2026-10-13 — Public source licence refresh and additional female corpus hold, on0017645c
 
 [Primary declaration refresh](FEMALE_SOURCE_LICENSE_REFRESH_2026-10-13.md): four HTTP200 primary requests with SHA/size checks. VocalSet original record stillCCBY4; full archiveMD5 remainsNOT_CHECKED. ProjectAI❤dol female English corpus pinned517c98a0 hasCCBYSA4 plus README prior-permission request for publishing a model featuring the voice and additional use conditions; production voicebank/model disposition remainsHOLD, no audio acquired. No categoricalCCBYSA commercial prohibition inferred, no provider contact/login/playback. Female originals remain297; actual actor/rights/mapping/listening/full release exits absent, Alpha0/20, Beta BLOCKED, goalACTIVE.
+
+
+## 2026-10-13 — Independent inspector/history and limits approvals, on6f34ffbb
+
+Exact combined verdict retained: e0fcfd41 APPROVE for inspector/history;0017645c APPROVE for numerical disclosure/controls. Reviewer independently checked commits,163/44artifact hashes, source snapshots, old/new workspace byte prefixes, version markers, frame-breakdown counts and probes without native execution. Four inspector nonblockingP3s stay explicit: intermediate baseline test source absent, replay-harness/validator-output retention, refused-approval diagnostic clarity and named supported-version sets. Baseline/source and numerical binding prose clarified; original frozen manifests unchanged. Native history is structural, not replay/authentication. No production-QC, performer, source, human, DAW or Beta acceptance; Alpha0/20/Beta BLOCKED/full goalACTIVE.
