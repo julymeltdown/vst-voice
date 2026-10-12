@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "0017645c874f141419f5910bfbbf38104e9967df",
+  "scope": "Fresh public primary declarations and candidate hold; no audio acquired or rights granted",
+  "artifacts": [
+    {
+      "path": "out/evidence/female-source-license-refresh-2026-10-13/aidol-LICENSE.txt",
+      "sizeBytes": 20134,
+      "sha256": "e7c454631d5d7d4890ca2ff13fc8ec4f9fd3f33e9ad2e78c31a64aaf2d6f5b8d"
+    },
+    {
+      "path": "out/evidence/female-source-license-refresh-2026-10-13/aidol-README.md",
+      "sizeBytes": 2443,
+      "sha256": "ac7f7c845ef1b8caa212fc91372a0748460d5e1655c28ae31d92001604dddbac"
+    },
+    {
+      "path": "out/evidence/female-source-license-refresh-2026-10-13/aidol-commit.json",
+      "sizeBytes": 12853,
+      "sha256": "9a3a800a9b59ec6d42c915851a8474514db3d400035d8203766b4d618496a2b8"
+    },
+    {
+      "path": "out/evidence/female-source-license-refresh-2026-10-13/receipt.json",
+      "sizeBytes": 2137,
+      "sha256": "39634196932f22a9eddec4561cafd59e0ee586934ff039becfebc7f60ed79719"
+    },
+    {
+      "path": "out/evidence/female-source-license-refresh-2026-10-13/vocalset-record.json",
+      "sizeBytes": 5068,
+      "sha256": "1844de4e1e65c73cf2570e922ca7853d3413629bac0afcd52870a359b0ee9b01"
+    }
+  ],
+  "verification": "4 public HTTP200 requests; pinned README/LICENSE declarations and retained response SHA/size checks passed",
+  "aidolSourceCommit": "517c98a02f95c1b4c371a9cc9678ab3a974222a9",
+  "aidolDisposition": "HOLD_PRIOR_PERMISSION_AND_DECLARATION_DISPOSITION",
+  "vocalsetRecordLicense": "cc-by-4.0",
+  "femaleOriginalsUnchanged": 297,
+  "humanAcceptance": "NOT_RUN",
+  "betaStatus": "BLOCKED",
+  "betaPromotion": false
+}
