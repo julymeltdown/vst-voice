@@ -329,6 +329,9 @@ class CppTakeInspectionParityTest(unittest.TestCase):
                 "generation": project["lastDurableGeneration"], "projectSha256": hashlib.sha256(payload).hexdigest(),
                 "action": "transform", "subjectId": "synthetic-legacy-edit", "operatorId": "producer",
                 "occurredAtUtc": "2026-09-28T00:10:00Z"}
+            parent_journal = json.loads((workspace / "journal" / f"{project['lastDurableGeneration'] - 1:020}.json").read_bytes())
+            if "reviewInspectionPolicyVersion" in parent_journal:
+                journal["reviewInspectionPolicyVersion"] = parent_journal["reviewInspectionPolicyVersion"]
             (legacy / "generations" / name).write_bytes(payload)
             (legacy / "journal" / name).write_text(json.dumps(journal, sort_keys=True, indent=2) + "\n")
             (legacy / "project.json").write_bytes(payload)

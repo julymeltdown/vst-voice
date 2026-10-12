@@ -40,10 +40,14 @@
       "sizeBytes": 8569,
       "sha256": "552354a6dd377d3b0e22f0f3f7511a549eb3d18c26f1caecbd0d1f58f04a005c"
     },
-    "openFinding": "P2: strict Python history replay invalidates older edited approvals; a later diagnostic cannot repair past generations"
+    "openFinding": "P2 historical REVISE retained; compatibility repair locally verified in INSPECTION_POLICY_HISTORY_2026-10-13, independent recheck/integration pending"
   },
   "failedQcPolicy": "UNCHANGED; owner decision pending",
   "legacyReinspection": "NOT_IMPLEMENTED in this unit",
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "followUps": {
+    "nativeToPythonReceiptParity": "CLOSED by independently approved e14f9e096a7fc218b515bb3512a4c13bacd418fe",
+    "preciseNativeRefusalAssertion": "ADDRESSED LOCALLY in inspection-policy-history unit"
+  }
 }

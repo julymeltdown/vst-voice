@@ -278,6 +278,7 @@ core::Result<void> ProductionProjectRepository::writeGeneration(
       formats::JsonValue{formats::JsonValue::Object{
           {"format", "com.project-seam.voicebank-production-journal-event"},
           {"schemaVersion", std::int64_t{1}},
+          {"reviewInspectionPolicyVersion", history_internal::kCurrentReviewInspectionPolicyVersion},
           {"generation", static_cast<std::int64_t>(next.lastDurableGeneration)},
           {"projectSha256", projectDigest},
           {"action", event.action},

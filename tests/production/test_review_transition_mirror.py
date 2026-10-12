@@ -364,10 +364,105 @@ class CppReviewTransitionParityTest(unittest.TestCase):
         journal = {"format": "com.project-seam.voicebank-production-journal-event", "schemaVersion": 1,
                    "generation": project["lastDurableGeneration"], "projectSha256": hashlib.sha256(payload).hexdigest(),
                    "action": action, "subjectId": subject, "operatorId": actor, "occurredAtUtc": "2026-09-28T01:00:00Z"}
+        parent_journal = json.loads((source / "journal" / f"{project['lastDurableGeneration'] - 1:020}.json").read_bytes())
+        if "reviewInspectionPolicyVersion" in parent_journal:
+            journal["reviewInspectionPolicyVersion"] = parent_journal["reviewInspectionPolicyVersion"]
         (target / "generations" / name).write_bytes(payload)
         (target / "journal" / name).write_bytes((json.dumps(journal, sort_keys=True, indent=2) + "\n").encode())
         (target / "project.json").write_bytes(payload)
         return target
+
+    @staticmethod
+    def _pre_policy_copy(source: Path, target: Path) -> Path:
+        """Only this copied synthetic history represents pre-marker bytes; original files never change."""
+        shutil.copytree(source, target)
+        previous = b""
+        for path in sorted((target / "journal").glob("*.json")):
+            journal = json.loads(path.read_bytes())
+            journal.pop("reviewInspectionPolicyVersion", None)
+            if journal.get("ancestry", {}).get("parentGeneration", 0):
+                journal["ancestry"]["parentJournalSha256"] = hashlib.sha256(previous).hexdigest()
+            previous = (json.dumps(journal, sort_keys=True, indent=2) + "\n").encode()
+            path.write_bytes(previous)
+        return target
+
+    def test_pre_policy_edited_approval_stays_readable_after_native_reinspection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace, inventory, units = self._producer(root)
+            old = self._pre_policy_copy(workspace, root / "pre-policy")
+            take_id = units[69]["plannedTakeId"]
+            def edit(project):
+                take = _take(project, take_id)
+                parent = effective_audio(project, take)
+                identity = f"legacy-edit-{len(take['derivedRevisionIds'])}"
+                take["derivedRevisionIds"].append(identity)
+                project["derivedRevisions"].append({"revisionId": identity, "inputSha256": parent,
+                    "outputSha256": parent, "operation": "NORMALIZE_GAIN", "operationVersion": "seam-pcm-ops-1",
+                    "parameters": {"targetPeak": "0.027358368039131165"}, "operatorId": "producer", "performedAtUtc": AT})
+            edited = self._append(old, root / "old-edited", edit, "transform", "legacy-edit-0")
+            def approve(project):
+                generation = project["lastDurableGeneration"]
+                project.update(_decide(project, take_id, at="2026-09-28T01:00:00Z"))
+                project["lastDurableGeneration"] = generation
+            approved = self._append(edited, root / "old-approved", approve, "review", take_id, "reviewer")
+            self._ok("inspect-source-quality", str(approved), "procedural-a")
+            legacy_result = validate_production_draft_workspace(approved, inventory)
+            self.assertTrue(legacy_result.passed, legacy_result.errors)
+            before = self._project(approved)
+            recorded = self._ok("record-current-take-inspection", str(approved),
+                hashlib.sha256((approved / "project.json").read_bytes()).hexdigest(), take_id,
+                "producer", "2026-09-28T01:01:00Z", "legacy-edit-0")
+            latest = self._project(approved)
+            self.assertEqual(before["reviews"], latest["reviews"])
+            self.assertEqual("MARKER_REVIEW", _take(latest, take_id)["state"])
+            journal = json.loads((approved / "journal" / f"{latest['lastDurableGeneration']:020}.json").read_bytes())
+            self.assertEqual(2, journal["reviewInspectionPolicyVersion"])
+            self.assertEqual("not granted", recorded["unitApproval"])
+            self.assertTrue(validate_production_draft_workspace(approved, inventory).passed)
+            # A later edit makes the native receipt historical; omission cannot switch the rule off.
+            newer = self._append(approved, root / "new-edited", edit, "transform", "legacy-edit-1")
+            forged = self._append(newer, root / "new-uninspected-approval", approve, "review", take_id, "reviewer")
+            refused = validate_production_draft_workspace(forged, inventory)
+            self.assertFalse(refused.passed)
+            self.assertTrue(any("without current automated inspection" in error for error in refused.errors), refused.errors)
+            dropped = root / "dropped-marker"
+            shutil.copytree(approved, dropped)
+            path = dropped / "journal" / f"{latest['lastDurableGeneration']:020}.json"
+            document = json.loads(path.read_bytes()); document.pop("reviewInspectionPolicyVersion")
+            path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
+            result = validate_production_draft_workspace(dropped, inventory)
+            # This first marker has no marked parent, so removing every marker is indistinguishable
+            # from legacy bytes; no authentication of the archive is claimed. Test a later drop instead.
+            self.assertTrue(result.passed, result.errors)
+            later_drop = root / "later-dropped-marker"
+            shutil.copytree(newer, later_drop)
+            generation = self._project(newer)["lastDurableGeneration"]
+            path = later_drop / "journal" / f"{generation:020}.json"
+            document = json.loads(path.read_bytes()); document.pop("reviewInspectionPolicyVersion")
+            path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
+            result = validate_production_draft_workspace(later_drop, inventory)
+            self.assertFalse(result.passed)
+            self.assertTrue(any("drops" in error and "inspection policy" in error for error in result.errors), result.errors)
+
+    def test_unknown_or_malformed_policy_markers_refuse_in_native_and_python(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace, inventory, _ = self._producer(root)
+            generation = self._project(workspace)["lastDurableGeneration"]
+            for index, marker in enumerate((None, True, 2.0, "2", 1, 3)):
+                with self.subTest(marker=marker):
+                    target = root / f"bad-policy-{index}"
+                    shutil.copytree(workspace, target)
+                    path = target / "journal" / f"{generation:020}.json"
+                    journal = json.loads(path.read_bytes()); journal["reviewInspectionPolicyVersion"] = marker
+                    path.write_text(json.dumps(journal, sort_keys=True, indent=2) + "\n")
+                    result = validate_production_draft_workspace(target, inventory)
+                    self.assertFalse(result.passed)
+                    self.assertTrue(any("inspection policy" in error for error in result.errors), result.errors)
+                    native = subprocess.run([str(CLI), "inspect-source-quality", str(target), "procedural-a"],
+                        capture_output=True, text=True, timeout=60)
+                    self.assertEqual(2, native.returncode, native.stderr)
 
     def test_cli_decisions_bind_the_mirrored_basis_through_retake_and_selection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -635,7 +635,7 @@ TEST_CASE("an approval needs the take's current take-inspection receipt; a rejec
   auto uninspected = handDecided(legacy, packet, "a-69", "reviewer", "2026-09-28T10:01:00Z");
   const auto refused = internal::applyReviewTransition(&legacy, uninspected, event, false);
   CHECK(!refused);
-  CHECK(refused.error().message.find("current") != std::string::npos);
+  CHECK(refused.error().message.find("current automated inspection") != std::string::npos);
   // A rejection admits nothing, so it needs no receipt.
   auto rejected = uninspected;
   rejected.reviews.back().result = "REJECTED";
@@ -675,7 +675,7 @@ TEST_CASE("edited approval requires the latest diagnostic even when output bytes
   auto missing = handDecided(legacy, packet, "a-69", "reviewer", event.occurredAtUtc);
   const auto refused = internal::applyReviewTransition(&legacy, missing, event, false);
   CHECK(!refused);
-  CHECK(refused.error().message.find("current") != std::string::npos);
+  CHECK(refused.error().message.find("current automated inspection") != std::string::npos);
   auto rejected = missing;
   rejected.reviews.back().result = "REJECTED";
   for (auto& take : rejected.takes) if (take.takeId == "take-a") take.state = production::UnitQueueState::Rejected;
@@ -684,4 +684,13 @@ TEST_CASE("edited approval requires the latest diagnostic even when output bytes
     assignment.markerReviewed = assignment.pitchReviewed = false;
   }
   CHECK(internal::applyReviewTransition(&legacy, rejected, event, false));
+}
+
+TEST_CASE("new production journals declare their current inspection admission policy") {
+  ReviewFixture fixture;
+  for (const auto& entry:std::filesystem::directory_iterator(fixture.root/"workspace"/"journal")) {
+    const auto journal=seam::formats::parseJson(seam::core::readTextFileLimited(entry.path(),1024U*1024U).value());CHECK(journal);
+    const auto* marker=journal.value().find("reviewInspectionPolicyVersion");CHECK(marker);
+    CHECK(marker->isInteger());CHECK(marker->asInt64()==2);
+  }
 }

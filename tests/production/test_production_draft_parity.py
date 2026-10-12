@@ -64,6 +64,12 @@ def _generation(workspace: Path, project: dict, number: int, action: str, subjec
                "subjectId": subject, "operatorId": actor, "occurredAtUtc": "2026-09-09T10:00:00Z"}
     if ancestry is not None:
         journal["ancestry"] = ancestry
+    parent = ancestry["parentGeneration"] if ancestry is not None else number - 1
+    parent_path = workspace / "journal" / f"{parent:020}.json"
+    if parent and parent_path.is_file():
+        parent_journal = json.loads(parent_path.read_bytes())
+        if "reviewInspectionPolicyVersion" in parent_journal:
+            journal["reviewInspectionPolicyVersion"] = parent_journal["reviewInspectionPolicyVersion"]
     (workspace / "generations" / f"{number:020}.json").write_bytes(payload)
     (workspace / "journal" / f"{number:020}.json").write_bytes(_text(journal))
     (workspace / "project.json").write_bytes(payload)

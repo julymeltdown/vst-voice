@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "unit": "inspection-policy-history",
+  "sourceBase": "e14f9e096a7fc218b515bb3512a4c13bacd418fe",
+  "manifest": {
+    "path": "out/evidence/inspection-policy-history-2026-10-13/manifest.json",
+    "sizeBytes": 19921,
+    "sha256": "e54782b7f2514020d0f871451575a772b670b9bfe9182e3f79011100cf5349aa"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 17.87076362499647
+  },
+  "nativeCaseCount": 133,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 3.733885250003368
+  },
+  "pythonCaseCount": 50,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "historyReplayP2": "ADDRESSED LOCALLY; independent recheck/integration pending",
+  "markerAuthentication": "DECLARATIVE ONLY; removing all markers is indistinguishable from unsigned legacy history",
+  "failedQcPolicy": "UNCHANGED; owner input pending",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

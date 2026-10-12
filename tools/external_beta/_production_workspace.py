@@ -14,6 +14,7 @@ from ._production_common import ProductionResult, is_hex_digest, is_timestamp, s
 from ._source_admission import validate_source_strategy_document
 from ._source_admission import validate_source_strategy_draft
 from ._production_inventory import inventory_errors, producer_assignments, style_owned
+from ._production_review_transition import review_inspection_policy
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -254,11 +255,14 @@ def validate_production_workspace(
         errors.append("generation and journal sets do not match")
     latest_key = max(generations)
     latest_payload: bytes | None = None
+    inspection_policy_active = False
     for key in sorted(set(generations) & set(journals)):
         project, payload = _load_object(generations[key], f"generation[{key}]", errors)
         journal, _ = _load_object(journals[key], f"journal[{key}]", errors)
         if project is None or payload is None or journal is None:
             continue
+        inspection_policy_active, policy_errors = review_inspection_policy(journal, inspection_policy_active, f"journal[{key}]")
+        errors.extend(policy_errors)
         generation = int(key)
         if project.get("lastDurableGeneration") != generation:
             errors.append(f"generation[{key}] number does not match project")

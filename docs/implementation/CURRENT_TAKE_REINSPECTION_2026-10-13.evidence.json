@@ -32,15 +32,26 @@
     "elapsedSeconds": 1.2236435419981717
   },
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "reviewedCommit": "e14f9e096a7fc218b515bb3512a4c13bacd418fe",
+    "record": {
+      "path": "out/evidence/inspection-policy-history-2026-10-13/reinspection-independent-review.md",
+      "sizeBytes": 7426,
+      "sha256": "307ecfd18e7266a0e62b08ae77256387bfc5ad619b760b08f91175422e3e67f4"
+    },
+    "scope": "six exact historical implementation/test snapshots; subsequent marker fixture adaptation is reviewed separately",
+    "p3FollowUps": [
+      "Generic metadata writer still accepts diagnostic receipt kinds",
+      "CLI must disclose whether reinspection lowers an existing approval; approved-take transition now tested in marker unit"
+    ]
   },
   "priorAdmissionReview": {
     "path": "out/evidence/current-take-reinspection-2026-10-13/admission-independent-review.md",
     "sizeBytes": 8569,
     "sha256": "552354a6dd377d3b0e22f0f3f7511a549eb3d18c26f1caecbd0d1f58f04a005c"
   },
-  "historyReplayP2": "OPEN; planned durable admission-policy marker, not repaired by reinspection",
+  "historyReplayP2": "ADDRESSED LOCALLY in INSPECTION_POLICY_HISTORY_2026-10-13; independent recheck/integration pending",
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false

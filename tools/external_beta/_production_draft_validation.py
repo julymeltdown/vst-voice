@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
-from ._production_review_transition import review_transition_errors
+from ._production_review_transition import review_transition_errors, review_inspection_policy
 from ._source_admission import FEASIBILITY, PERMISSIONS, STRATEGY_KINDS
 from ._production_inventory import inventory_errors, producer_assignments, style_owned
 
@@ -734,6 +734,7 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
         latest_journal = b""
         previous_generation = 0
         latest: dict[str, Any] = {}
+        inspection_policy_active = False
         for path in generations:
             project, payload = read_bounded_object(path, min(MAX_JSON_BYTES, MAX_HISTORY_BYTES - history_bytes))
             history_bytes += len(payload)
@@ -757,8 +758,11 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             if not isinstance(journal.get("action"), str) or journal["action"] not in JOURNAL_ACTIONS or not isinstance(journal.get("subjectId"), str) or not journal["subjectId"] or not _utc(journal.get("occurredAtUtc")):
                 errors.append(f"{label} journal fields are invalid")
             bindings, takes = _project(workspace, project, label, errors)
+            inspection_policy_active, policy_errors = review_inspection_policy(journal, inspection_policy_active, label)
+            errors.extend(policy_errors)
             errors.extend(review_transition_errors(latest if previous_generation else None, project,
-                                                   journal.get("action"), label))
+                                                   journal.get("action"), label,
+                                                   require_current_inspection=inspection_policy_active))
             old_assessments, assessments = latest.get("sourceQualityAssessments",[]), project.get("sourceQualityAssessments",[])
             if isinstance(old_assessments,list) and isinstance(assessments,list):
                 if assessments[:len(old_assessments)] != old_assessments:

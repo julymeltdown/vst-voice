@@ -46,6 +46,9 @@ std::string generationFilename(std::uint64_t generation) {
 
 core::Result<Ancestry> verifyAncestry(const std::filesystem::path& root,
     const J& journal, std::string_view projectId, std::uint64_t generation) {
+  const auto* policy = journal.find("reviewInspectionPolicyVersion");
+  if (policy && (!policy->isInteger() || policy->asInt64() != kCurrentReviewInspectionPolicyVersion))
+    return core::failure<Ancestry>(core::ErrorCode::Unsupported, "Unsupported production review inspection policy");
   const auto* ancestry = journal.find("ancestry");
   if (!ancestry) return Ancestry{};  // Legacy bytes remain a separate, contiguous contract.
   const auto invalid = [] { return core::failure<Ancestry>(core::ErrorCode::Conflict,
