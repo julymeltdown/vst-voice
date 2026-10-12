@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "sourceBase": "e3f2c7e00575c1779e001675a3407c726a3fdc39",
+  "scope": "Female original vocal download, public-license facts and local technical intake; no Beta/AE1 acceptance",
+  "localEvidenceRoot": "out/evidence/female-vocal-sources-2026-10-13",
+  "artifacts": [
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/acquisition-manifest.json",
+      "bytes": 2612,
+      "sha256": "4dfec7f3d71fb520fc466aab64c9d17722c16ab43a0b0f7ef723562af68b783a"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/retained-files.json",
+      "bytes": 64198,
+      "sha256": "5039dc9a441fbab1ba8c92e800b6872ef51076015412ab617ede1efdff157143"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/reproduce_intake.py",
+      "bytes": 3154,
+      "sha256": "abdd8d507520792eff15ba0ac738af74a08afcfb15c21716ff815eb12bbc67d2"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/reproduction.log",
+      "bytes": 194,
+      "sha256": "73309f758908f584e3b84b20597276a90fb517555216a309eb35b698f40a6f97"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/download_vocalset_subset.py",
+      "bytes": 2904,
+      "sha256": "4b380f6a047f3318e3365fffb049d125f4269e019d0f032c19b2cf3fc4707694"
+    },
+    {
+      "path": "out/evidence/female-vocal-sources-2026-10-13/vocalset-subset-download.log",
+      "bytes": 955,
+      "sha256": "1e7a6b524f5b79d0cda46f39a86a39737272b187dd8e4ae8f6178195ff893b81"
+    }
+  ],
+  "originalUrls": [
+    "https://zenodo.org/records/1203819",
+    "https://zenodo.org/api/records/1203819",
+    "https://zenodo.org/records/1442513",
+    "https://shop.karoryfer.com/pages/free-272-merry-orks",
+    "https://shop.karoryfer.com/pages/free-samples",
+    "https://github.com/sfzinstruments/karoryfer.272-merry-orks/releases/tag/v1.001",
+    "https://creativecommons.org/licenses/by/4.0/legalcode.en",
+    "https://creativecommons.org/publicdomain/zero/1.0/legalcode.en",
+    "https://tyc.rei-yumesaki.net/material/utau/terms/"
+  ],
+  "facts": {
+    "vocalsetFemaleWavs": 15,
+    "orksFemaleWavs": 272,
+    "totalWavs": 287,
+    "retainedFiles": 357,
+    "seamReaderPass": 287,
+    "seamPitchAnalyses": 15,
+    "fullVocalSetArchiveMd5Verified": false,
+    "fullOrksZipCrc": "PASS",
+    "reproduction": "PASS"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "independentApprovalClaimed": false
+  },
+  "holds": {
+    "ownerRightsPolicy": "PENDING",
+    "producer": "NOT_REGISTERED",
+    "distinctReviewer": "NOT_REGISTERED",
+    "phoneticAndPitchReview": "NOT_REVIEWED",
+    "nativeImport": "NOT_RUN",
+    "humanListening": "NOT_RUN",
+    "ae1": "NOT_SATISFIED",
+    "beta": "BLOCKED"
+  }
+}
