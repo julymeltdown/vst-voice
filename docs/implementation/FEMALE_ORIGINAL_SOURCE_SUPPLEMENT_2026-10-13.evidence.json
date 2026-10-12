@@ -15,8 +15,56 @@
   "sourceAdmission": "NOT_ASSESSED",
   "humanAcceptance": "NOT_RUN",
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "sourceCommit": "ccf01e6a5e3394d78a5b65a18c10b5c3a180b083",
+    "scope": "Acquisition, execution evidence and primary-file correspondence; no legal/performer/listening/phonetic/Beta approval",
+    "verdict": {
+      "path": "out/evidence/female-source-supplement-2026-10-13/review-ccf01e6a.md",
+      "sizeBytes": 6459,
+      "sha256": "50374e02c103f00cae9641cb1d7ba9d63e4600b0b38dcf7877c75cd9be483b94"
+    },
+    "p3Disposition": {
+      "sourceDecisionFacts": "Two documentation findings addressed in follow-up; no admission change",
+      "pitchDeclaredRange": "OPEN_SEPARATE_CODE_UNIT"
+    },
+    "clarificationArtifacts": [
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/acv001-readme-pinned.fetch.json",
+        "sizeBytes": 299,
+        "sha256": "5c8cf8a10a3b5a0824545c214e1addf14e1fec895b99309d0d618a58742f4039"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/acv001-readme-pinned.md",
+        "sizeBytes": 4583,
+        "sha256": "8329dfccc442e0c40049d8b68bd5d3ae9cbc3ade0cbaaba9b20124ef26e1502d"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/manual-eula-snapshot.md",
+        "sizeBytes": 1465,
+        "sha256": "8c59f21d4640ee71e83152c88d6cdc7de8c67d5d798a5110b323e6f1bac18681"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/oddvoices-license-pinned.txt",
+        "sizeBytes": 155,
+        "sha256": "1adf75443b6c88c9072ef0c68056d8ed7cba07432e8a79b2a43e66ed8b551fdc"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/oddvoices-license-pinned.txt.fetch.json",
+        "sizeBytes": 357,
+        "sha256": "fc36744365f0f78610ab7a408507237fe9d34eb381f7e54aeddab233d7e94877"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/oddvoices-readme-pinned.md",
+        "sizeBytes": 3726,
+        "sha256": "6a4c7bf21ef0d23109f74ca1a8d1b5ae82c39d8294c2c79fe90f1b1a331aaa2b"
+      },
+      {
+        "path": "out/evidence/female-source-supplement-2026-10-13/review-closeout/oddvoices-readme-pinned.md.fetch.json",
+        "sizeBytes": 351,
+        "sha256": "16c631ed3f6b311d5c42c7ab5c1937fe651aed91efadc10518075c4e6004a67a"
+      }
+    ]
   },
   "betaPromotion": false,
   "verification": {
