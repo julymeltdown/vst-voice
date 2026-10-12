@@ -114,6 +114,8 @@ FORGERIES = (
     ("pitch fields unpaired", _edit(lambda e: e["measurements"].update(analyzedRootMidi=None)),
      "measurements its policy does not use"),
     ("older inspector", _edit(lambda e: e.update(inspectorVersion="1")), "not a current inspector"),
+    ("unknown future inspector", _edit(lambda e: e.update(inspectorVersion="4")), "not a current inspector"),
+    ("integer inspector", _edit(lambda e: e.update(inspectorVersion=3)), "not a current inspector"),
     ("unknown field", _edit(lambda e: e.update(note="looks fine")), "fields are incomplete or unknown"),
     ("pretty printed", lambda text: json.dumps(json.loads(text), indent=1, sort_keys=True), "not in canonical form"),
     ("escaped letter", lambda text: text.replace('"policy":"voiced"', '"policy":"\\u0076oiced"'), "not in canonical form"),

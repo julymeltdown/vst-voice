@@ -36,14 +36,14 @@ std::string upperCase(std::string_view value) {
 // The reviewer sees which QC policy judged the take and every outcome,
 // including the checks that do not apply to it. None of it is an approval.
 void appendTakeInspectionDetails(std::vector<std::string>& result,
-                                 const voicebank::TakeInspection& inspection) {
+                                 const voicebank::TakeInspection& inspection, std::string_view inspectorVersion) {
   using voicebank::TakeCheck;
   using voicebank::TakeCheckOutcome;
   const auto& measured = inspection.measurements;
   const auto policy = upperCase(voicebank::takeQcPolicyName(inspection.policy));
   result.push_back("AUTOMATED SIGNAL CHECKS " +
       std::string{inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"} + " / " +
-      std::string{voicebank::kTakeInspectorId} + " v" + std::string{voicebank::kTakeInspectorVersion} + " / " +
+      std::string{voicebank::kTakeInspectorId} + " v" + std::string{inspectorVersion} + " / " +
       policy + " QC POLICY v" + std::to_string(voicebank::kTakeQcPolicyVersion) +
       " / HUMAN REVIEW STILL REQUIRED");
   result.push_back("INSPECTED WAV FORMAT " + std::to_string(measured.sampleRate) + " HZ / " +
@@ -93,9 +93,20 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
       "GAIN DB " + std::to_string(unit.gainDb) + " / PRIORITY " + std::to_string(unit.priority)};
   const auto currentInspection = production::currentActiveTakeInspection(project, binding.takeId);
   if (currentInspection && currentInspection->inspection.sourceSha256 == binding.audioSha256) {
-    appendTakeInspectionDetails(result, currentInspection->inspection);
+    appendTakeInspectionDetails(result, currentInspection->inspection, currentInspection->inspectorVersion);
   } else {
     result.push_back("NO CURRENT AUTOMATED CHECKS FOR THIS AUDIO / HUMAN REVIEW STILL REQUIRED");
+    for (auto revision = project.metadataRevisions.rbegin(); revision != project.metadataRevisions.rend(); ++revision) {
+      if (revision->takeId != binding.takeId ||
+          (revision->kind != production::kTakeInspectionRevisionKind &&
+           revision->kind != production::kDerivedTakeInspectionRevisionKind)) continue;
+      const auto historical = production::validateTakeInspectionRevision(project, *revision);
+      if (!historical || historical.value().currentAlgorithm() ||
+          historical.value().inspection.sourceSha256 != binding.audioSha256) continue;
+      result.push_back("HISTORICAL AUTOMATED CHECKS / " + std::string{voicebank::kTakeInspectorId} + " v" +
+          historical.value().inspectorVersion + " / REINSPECT THIS AUDIO BEFORE APPROVAL");
+      break;
+    }
   }
   const auto dryTakeInspection = std::find_if(
       project.metadataRevisions.rbegin(), project.metadataRevisions.rend(),

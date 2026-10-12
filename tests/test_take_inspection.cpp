@@ -323,6 +323,15 @@ TEST_CASE("inspecting one take and importing another requires reinspection") {
   CHECK(!fixture.repository.importRaw(fixture.project, first, input, AdmissionFixture::event("take-a")));
   fixture.assertUnchanged(before);
 
+  auto priorInspector = production::decodeTakeInspectionEvidence(firstReceipt.values.at("evidenceJson"));
+  CHECK(priorInspector);
+  priorInspector.value().inspectorVersion = "2";
+  input.technicalInspection = reissue(firstReceipt, priorInspector.value());
+  const auto outdated = fixture.repository.importRaw(fixture.project, first, input, AdmissionFixture::event("take-a"));
+  CHECK(!outdated);
+  CHECK(!outdated && outdated.error().message.find("older inspector") != std::string::npos);
+  fixture.assertUnchanged(before);
+
   input.technicalInspection = firstReceipt;
   const auto admitted = fixture.repository.importRaw(fixture.project, first, input, AdmissionFixture::event("take-a"));
   CHECK(admitted);
@@ -421,6 +430,44 @@ TEST_CASE("every admitted take carries a current receipt of its stored bytes und
   spaced.values["evidenceSha256"] = seam::core::sha256Hex(spaced.values.at("evidenceJson"));
   spaced.revisionId = "take-inspection-" + spaced.values.at("evidenceSha256").substr(0U, 32U);
   CHECK(!validAfterReplacing(fixture.project, spaced));
+}
+
+TEST_CASE("version two take receipts remain exact history but cannot be current") {
+  AdmissionFixture fixture;
+  const auto source = fixture.root / "voiced.wav";
+  writeTake(source, voicedTake());
+  const auto imported = fixture.repository.importRaw(fixture.project, source,
+      AdmissionFixture::take("take-a", "sustain:a"), AdmissionFixture::event("take-a"));
+  CHECK(imported);
+  auto legacy = fixture.project;
+  auto& receipt = legacy.metadataRevisions.back();
+  CHECK(receipt.kind == production::kTakeInspectionRevisionKind);
+  auto encoded = seam::formats::parseJson(receipt.values.at("evidenceJson")); CHECK(encoded);
+  encoded.value().asObject().insert_or_assign("inspectorVersion", seam::formats::JsonValue{"2"});
+  receipt.values.at("evidenceJson") = seam::formats::stringifyJson(encoded.value(), false);
+  receipt.values.at("evidenceSha256") = seam::core::sha256Hex(receipt.values.at("evidenceJson"));
+  receipt.revisionId = "take-inspection-" + receipt.values.at("evidenceSha256").substr(0U, 32U);
+  const auto bytes = production::encodeProductionProject(legacy);
+  const auto decoded = production::decodeProductionProject(bytes); CHECK(decoded);
+  CHECK(production::encodeProductionProject(decoded.value()) == bytes);
+  const auto historical = production::validateTakeInspectionRevision(decoded.value(), receipt); CHECK(historical);
+  CHECK(production::encodeTakeInspectionEvidence(historical.value()) == receipt.values.at("evidenceJson"));
+  CHECK(!production::currentTakeInspection(decoded.value(), "take-a"));
+  CHECK(!production::currentActiveTakeInspection(decoded.value(), "take-a"));
+  CHECK(production::currentTakeInspection(fixture.project, "take-a"));
+  CHECK(historical.value().inspectorVersion == "2");
+  CHECK(!historical.value().currentAlgorithm());
+  CHECK(production::currentTakeInspection(fixture.project, "take-a")->inspectorVersion == "3");
+  for (const auto* version : {"1", "4", "23"}) {
+    auto unsupported = historical.value();
+    unsupported.inspectorVersion = version;
+    CHECK(!production::decodeTakeInspectionEvidence(production::encodeTakeInspectionEvidence(unsupported)));
+  }
+  for (const auto& version : {seam::formats::JsonValue{std::int64_t{3}}, seam::formats::JsonValue{true},
+                             seam::formats::JsonValue{nullptr}}) {
+    encoded.value().asObject().insert_or_assign("inspectorVersion", version);
+    CHECK(!production::decodeTakeInspectionEvidence(seam::formats::stringifyJson(encoded.value(), false)));
+  }
 }
 
 TEST_CASE("the asset store publishes only verified copies and repairs a corrupt content address") {

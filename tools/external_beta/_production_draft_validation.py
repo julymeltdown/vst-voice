@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
-from ._production_review_transition import review_transition_errors, review_inspection_policy
+from ._production_review_transition import review_transition_errors, review_inspection_policy, CURRENT_TAKE_INSPECTOR_VERSION
 from ._source_admission import FEASIBILITY, PERMISSIONS, STRATEGY_KINDS
 from ._production_inventory import inventory_errors, producer_assignments, style_owned
 
@@ -28,12 +28,12 @@ JOURNAL_ACTIONS = {
 QUEUE_STATES = {"MISSING", "REJECTED", "RETAKE", "MARKER_REVIEW", "PITCH_REVIEW", "APPROVED"}
 HEX64_LOWER = re.compile(r"^[0-9a-f]{64}$")
 
-# Mirrors libs/seam-voicebank take_inspection (inspector "2", QC policy version 1) and the take-inspection.v2
+# Mirrors libs/seam-voicebank take_inspection (current inspector "3", historical "2", QC policy version 1) and take-inspection.v2
 # receipt in libs/seam-voicebank-production: the same bounds, policy map, outcome rules and canonical bytes, so
 # this accepts exactly the receipts the C++ codec accepts. A receipt is technical evidence, never a review.
 TAKE_INSPECTION_KIND = "take-inspection.v2"
 DERIVED_TAKE_INSPECTION_KIND = "derived-take-inspection.v1"
-TAKE_INSPECTOR = ("seam.take-inspector", "2")
+TAKE_INSPECTOR = ("seam.take-inspector", CURRENT_TAKE_INSPECTOR_VERSION)
 TAKE_CHECKS = ("format", "finite", "clipping", "dcOffset", "signalPresent", "quiet", "unvoiced", "rootPitch")
 TAKE_OUTCOMES = ("PASS", "FAIL", "INAPPLICABLE")
 TAKE_QC_APPLICABLE = {
@@ -183,7 +183,7 @@ def take_inspection_errors(revision: dict[str, Any], take: dict[str, Any], asset
         return invalid("evidence fields are incomplete or unknown")
     policy, binding, measured, checks = (evidence[name] for name in ("policy", "binding", "measurements", "checks"))
     if (not _integer(evidence["schemaVersion"], 2, 2) or not _integer(evidence["policyVersion"], 1, 1) or
-            (evidence["inspectorId"], evidence["inspectorVersion"]) != TAKE_INSPECTOR or
+            evidence["inspectorId"] != TAKE_INSPECTOR[0] or evidence["inspectorVersion"] not in ("2", TAKE_INSPECTOR[1]) or
             not isinstance(policy, str) or not isinstance(evidence["status"], str) or
             not isinstance(evidence["takeSha256"], str) or HEX64_LOWER.fullmatch(evidence["takeSha256"]) is None):
         return invalid("evidence is not a current inspector and policy version")
@@ -734,7 +734,7 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
         latest_journal = b""
         previous_generation = 0
         latest: dict[str, Any] = {}
-        inspection_policy_active = False
+        inspection_policy_active = 0
         for path in generations:
             project, payload = read_bounded_object(path, min(MAX_JSON_BYTES, MAX_HISTORY_BYTES - history_bytes))
             history_bytes += len(payload)
@@ -762,7 +762,8 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             errors.extend(policy_errors)
             errors.extend(review_transition_errors(latest if previous_generation else None, project,
                                                    journal.get("action"), label,
-                                                   require_current_inspection=inspection_policy_active))
+                                                   require_current_inspection=bool(inspection_policy_active),
+                                                   inspector_version="2" if inspection_policy_active == 2 else CURRENT_TAKE_INSPECTOR_VERSION))
             old_assessments, assessments = latest.get("sourceQualityAssessments",[]), project.get("sourceQualityAssessments",[])
             if isinstance(old_assessments,list) and isinstance(assessments,list):
                 if assessments[:len(old_assessments)] != old_assessments:

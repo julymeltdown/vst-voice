@@ -691,8 +691,69 @@ TEST_CASE("new production journals declare their current inspection admission po
   for (const auto& entry:std::filesystem::directory_iterator(fixture.root/"workspace"/"journal")) {
     const auto journal=seam::formats::parseJson(seam::core::readTextFileLimited(entry.path(),1024U*1024U).value());CHECK(journal);
     const auto* marker=journal.value().find("reviewInspectionPolicyVersion");CHECK(marker);
-    CHECK(marker->isInteger());CHECK(marker->asInt64()==2);
+    CHECK(marker->isInteger());CHECK(marker->asInt64()==3);
   }
+}
+
+TEST_CASE("old derived inspector receipts are readable but cannot admit new approval") {
+  namespace internal = production::review_internal;
+  ReviewFixture fixture;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind = production::OperationKind::NormalizeGain, .targetPeak = 0.15F}, "gain-stage");
+  CHECK(staged);
+  CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), "gain", "producer",
+      "2026-09-28T10:01:00Z", "take-a", ""));
+  CHECK(production::currentActiveTakeInspection(fixture.project, "take-a"));
+  auto legacy = fixture.project;
+  auto& receipt = legacy.metadataRevisions.back();
+  CHECK(receipt.kind == production::kDerivedTakeInspectionRevisionKind);
+  auto evidence = production::decodeTakeInspectionEvidence(receipt.values.at("evidenceJson")); CHECK(evidence);
+  evidence.value().inspectorVersion = "2";
+  receipt.values.at("evidenceJson") = production::encodeTakeInspectionEvidence(evidence.value());
+  receipt.values.at("evidenceSha256") = seam::core::sha256Hex(receipt.values.at("evidenceJson"));
+  receipt.revisionId = "derived-take-inspection-" + seam::core::sha256Hex(seam::formats::stringifyJson(
+      seam::formats::JsonValue::Array{receipt.values.at("evidenceSha256"), "gain"}, false)).substr(0U, 32U);
+  CHECK(production::validateTakeInspectionRevision(legacy, receipt));
+  const auto bytes = production::encodeProductionProject(legacy);
+  const auto decoded = production::decodeProductionProject(bytes); CHECK(decoded);
+  CHECK(production::encodeProductionProject(decoded.value()) == bytes);
+  CHECK(production::currentTakeInspection(legacy, "take-a"));
+  CHECK(!production::currentActiveTakeInspection(legacy, "take-a"));
+  auto approved = handDecided(legacy, fixture.packet(), "a-69", "reviewer", "2026-09-28T10:02:00Z");
+  const auto result = internal::applyReviewTransition(&legacy, approved,
+      ReviewFixture::event("review", "take-a", "reviewer", "2026-09-28T10:02:00Z"), false);
+  CHECK(!result);
+  CHECK(!result && result.error().message.find("current automated inspection") != std::string::npos);
+}
+
+TEST_CASE("a historically approved take needs the current inspector before candidate publication") {
+  namespace internal = production::candidate_publication_internal;
+  ReviewFixture fixture;
+  fixture.decide(production::SampleCandidateReviewDecision::Accept, "2026-09-28T10:01:00Z");
+  const auto packet = fixture.packet();
+  const auto& unit = packet.units.front();
+  const auto material = std::find_if(fixture.project.metadataRevisions.begin(), fixture.project.metadataRevisions.end(),
+      [&](const auto& row) { return row.takeId == unit.takeId && row.kind == production::kSampleCandidateReviewKind; });
+  CHECK(material != fixture.project.metadataRevisions.end());
+  const auto review = std::find_if(fixture.project.reviews.begin(), fixture.project.reviews.end(),
+      [&](const auto& row) { return row.takeId == unit.takeId && row.result == "PASS"; });
+  CHECK(review != fixture.project.reviews.end());
+  const production::SampleCandidateUnitBinding binding{unit.unitId, unit.takeId, unit.audioSha256,
+      review->reviewId, material->revisionId};
+  CHECK(internal::validateReviewedBinding(fixture.project, packet.manifest, binding));
+  auto legacy = fixture.project;
+  for (auto& receipt : legacy.metadataRevisions) {
+    if (receipt.takeId != unit.takeId || receipt.kind != production::kTakeInspectionRevisionKind) continue;
+    auto evidence = production::decodeTakeInspectionEvidence(receipt.values.at("evidenceJson")); CHECK(evidence);
+    evidence.value().inspectorVersion = "2";
+    receipt.values.at("evidenceJson") = production::encodeTakeInspectionEvidence(evidence.value());
+    receipt.values.at("evidenceSha256") = seam::core::sha256Hex(receipt.values.at("evidenceJson"));
+    receipt.revisionId = "take-inspection-" + receipt.values.at("evidenceSha256").substr(0U, 32U);
+  }
+  CHECK(production::validateProductionProject(legacy));
+  const auto refused = internal::validateReviewedBinding(legacy, packet.manifest, binding);
+  CHECK(!refused);
+  CHECK(!refused && refused.error().message.find("current automated inspection") != std::string::npos);
 }
 
 TEST_CASE("native verification reports unsupported inspection policy rather than another refusal") {
@@ -701,7 +762,7 @@ TEST_CASE("native verification reports unsupported inspection policy rather than
   name.insert(0U,20U-name.size(),'0');name+=".json";
   const auto path=fixture.root/"workspace"/"journal"/name;
   const auto original=seam::core::readTextFileLimited(path,1024U*1024U);CHECK(original);
-  for (const auto* literal:{"null","true","2.0","\"2\"","1","3"}) {
+  for (const auto* literal:{"null","true","2.0","\"2\"","1","4"}) {
     auto journal=seam::formats::parseJson(original.value());CHECK(journal);
     journal.value().asObject().erase("reviewInspectionPolicyVersion");
     auto text=seam::formats::stringifyJson(journal.value(),true);
@@ -721,7 +782,7 @@ TEST_CASE("recovery refuses unsupported newest journal policy without exposing a
   auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
   const auto path=fixture.root/"workspace"/"journal"/name;
   auto journal=seam::formats::parseJson(seam::core::readTextFileLimited(path,1024U*1024U).value());CHECK(journal);
-  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{3}});
+  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{4}});
   CHECK(seam::core::durableAtomicWriteText(path,seam::formats::stringifyJson(journal.value(),true)+"\n"));
   const auto files=[&] {
     std::map<std::filesystem::path,std::string> result;
@@ -813,7 +874,7 @@ TEST_CASE("unknown inspection policy refuses before interpreting changed journal
     auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
     const auto path=fixture.root/"workspace"/"journal"/name;
     auto future=seam::formats::parseJson(seam::core::readTextFileLimited(path,1024U*1024U).value());CHECK(future);
-    future.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{3}});
+    future.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{4}});
     future.value().asObject().insert_or_assign(field,seam::formats::JsonValue{std::string{"future-contract"}});
     const auto text=seam::formats::stringifyJson(future.value(),true)+"\n";
     CHECK(seam::core::durableAtomicWriteText(path,text));

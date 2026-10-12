@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "unit": "take-inspector-version-history",
+  "sourceHead": "5906c9b8fd484e9ab2bdd46e8bef5c4f025f81b0",
+  "manifest": {
+    "path": "out/evidence/take-inspector-version-history-2026-10-13/manifest.json",
+    "sizeBytes": 41208,
+    "sha256": "ffe69efa7c427861a10c526c223ac00bafd949780b1e2050d88769ab58938876"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/take-inspector-version-history-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/take-inspector-version-history-2026-10-13/verification.log",
+      "sizeBytes": 245,
+      "sha256": "c43193ee5cf130e3bc3bf6a1345262f543c4bb2fb68343fab785ef08030dc53b"
+    }
+  },
+  "nativeCasesPassed": 140,
+  "focusedCTestEntriesPassed": 7,
+  "pythonPassedTests": 47,
+  "pythonSkippedTests": 0,
+  "currentTakeInspectorVersion": "3",
+  "supportedHistoricalTakeInspectorVersions": [
+    "2"
+  ],
+  "currentReviewInspectionPolicyVersion": 3,
+  "supportedHistoricalReviewInspectionPolicyVersions": [
+    2
+  ],
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "parentNumericalReview": {
+    "status": "APPROVE",
+    "commit": "5906c9b8fd484e9ab2bdd46e8bef5c4f025f81b0",
+    "scope": "Numerical scope only; identity issue assigned to this unit",
+    "verdict": {
+      "path": "out/evidence/take-inspector-version-history-2026-10-13/review-5906c9b8.txt",
+      "sizeBytes": 16375,
+      "sha256": "66833d55aa91fe6c14290f9a2d01e8ad9cb6489c708e756560fcd4be6fa5d013"
+    }
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}

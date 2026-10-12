@@ -117,6 +117,7 @@ std::string encodeTakeInspectionEvidence(const TakeInspectionEvidence& evidence)
       {"pitchLayer", Json{static_cast<std::int64_t>(evidence.binding.pitchLayer)}},
   };
   auto object = takeInspectionJson(evidence.inspection);
+  object.asObject().insert_or_assign("inspectorVersion", Json{evidence.inspectorVersion});
   object.asObject().emplace("schemaVersion", Json{std::int64_t{2}});
   object.asObject().emplace("binding", Json{std::move(binding)});
   return formats::stringifyJson(object, false);
@@ -139,7 +140,8 @@ core::Result<TakeInspectionEvidence> decodeTakeInspectionEvidence(std::string_vi
   const auto* status = root.find("status");
   if (integerIn(root.find("schemaVersion"), 2, 2) != 2 ||
       !inspectorId->isString() || inspectorId->asString() != voicebank::kTakeInspectorId ||
-      !inspectorVersion->isString() || inspectorVersion->asString() != voicebank::kTakeInspectorVersion ||
+      !inspectorVersion->isString() ||
+      (inspectorVersion->asString() != "2" && inspectorVersion->asString() != voicebank::kTakeInspectorVersion) ||
       integerIn(root.find("policyVersion"), voicebank::kTakeQcPolicyVersion, voicebank::kTakeQcPolicyVersion) !=
           voicebank::kTakeQcPolicyVersion ||
       !policyName->isString() || !takeSha256->isString() || !isLowerDigest(takeSha256->asString()) ||
@@ -234,6 +236,7 @@ core::Result<TakeInspectionEvidence> decodeTakeInspectionEvidence(std::string_vi
       .inspection = {.policy = *policy, .sourceSha256 = takeSha256->asString(),
                      .byteSize = static_cast<std::uint64_t>(*byteSize), .measurements = measured,
                      .checks = outcomes},
+      .inspectorVersion = inspectorVersion->asString(),
   };
   if (status->asString() != (evidence.inspection.accepted() ? kPassedStatus : kNeedsReviewStatus))
     return invalid("Take inspection status does not match its check outcomes");
@@ -341,7 +344,7 @@ std::optional<TakeInspectionEvidence> currentTakeInspection(
     if (revision->takeId != takeId || revision->kind != kTakeInspectionRevisionKind ||
         revision->rawAssetSha256 != take->rawAssetSha256) continue;
     auto evidence = validateTakeInspectionRevision(project, *revision);
-    if (evidence) return std::move(evidence).value();
+    if (evidence && evidence.value().currentAlgorithm()) return std::move(evidence).value();
   }
   return std::nullopt;
 }
@@ -357,7 +360,7 @@ std::optional<TakeInspectionEvidence> currentActiveTakeInspection(
     if (revision->takeId != takeId || revision->kind != kDerivedTakeInspectionRevisionKind ||
         !revision->values.contains("derivedRevisionId") || revision->values.at("derivedRevisionId") != currentId) continue;
     auto evidence = validateTakeInspectionRevision(project, *revision);
-    if (evidence) return std::move(evidence).value();
+    if (evidence && evidence.value().currentAlgorithm()) return std::move(evidence).value();
   }
   return std::nullopt;
 }

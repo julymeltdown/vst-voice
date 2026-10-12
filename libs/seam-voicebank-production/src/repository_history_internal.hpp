@@ -13,7 +13,9 @@ namespace seam::voicebank_production::history_internal {
 
 // New writes require diagnostics for the reviewed active audio. Unmarked
 // historical journals retain the earlier raw-receipt admission rule in replay.
-inline constexpr std::int64_t kCurrentReviewInspectionPolicyVersion{2};
+// Policy 2 replay requires active-audio receipts from inspector 2. Policy 3
+// pins inspector 3; older markers or unmarked later writes cannot downgrade it.
+inline constexpr std::int64_t kCurrentReviewInspectionPolicyVersion{3};
 
 // Journal-only attempts are not committed generations. Their exact bytes are
 // retained and named by the next committed journal, alongside its real parent.

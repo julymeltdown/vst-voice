@@ -103,7 +103,7 @@ TEST_CASE("Studio refuses an unsupported newest workspace without replacing the 
   auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
   const auto path=fixture.root/"producer"/"journal"/name;
   auto journal=formats::parseJson(core::readTextFileLimited(path,1024U*1024U).value());CHECK(journal);
-  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",formats::JsonValue{std::int64_t{3}});
+  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",formats::JsonValue{std::int64_t{4}});
   CHECK(core::durableAtomicWriteText(path,formats::stringifyJson(journal.value(),true)+"\n"));
   const auto journalHash=core::sha256File(path).value();
   const auto pointerHash=core::sha256File(fixture.root/"producer"/"project.json").value();
@@ -149,6 +149,7 @@ TEST_CASE("Studio human sample review exposes matching automated signal checks w
   const auto& details = fixture.controller.sampleReviewInspection()->details;
   CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
     return value.find("AUTOMATED SIGNAL CHECKS SIGNAL_CHECKS_PASSED") != std::string::npos &&
+        value.find("seam.take-inspector v3") != std::string::npos &&
         value.find("VOICED QC POLICY v1") != std::string::npos &&
         value.find("HUMAN REVIEW STILL REQUIRED") != std::string::npos;
   }));
@@ -176,6 +177,37 @@ TEST_CASE("Studio human sample review exposes matching automated signal checks w
   }));
   CHECK(fixture.project.reviews.empty());
   CHECK(fixture.controller.sampleReviewerId().empty());
+}
+
+TEST_CASE("Studio shows inspector two as historical evidence requiring reinspection") {
+  Fixture fixture;
+  auto& receipt = fixture.project.metadataRevisions.back();
+  CHECK(receipt.kind == production::kTakeInspectionRevisionKind);
+  auto evidence = production::decodeTakeInspectionEvidence(receipt.values.at("evidenceJson")); CHECK(evidence);
+  evidence.value().inspectorVersion = "2";
+  receipt.values.at("evidenceJson") = production::encodeTakeInspectionEvidence(evidence.value());
+  receipt.values.at("evidenceSha256") = core::sha256Hex(receipt.values.at("evidenceJson"));
+  receipt.revisionId = "take-inspection-" + receipt.values.at("evidenceSha256").substr(0U, 32U);
+  // A declared historical fixture, not a new write through the current inspector.
+  const auto bytes = production::encodeProductionProject(fixture.project);
+  auto name = std::to_string(fixture.project.lastDurableGeneration);
+  name.insert(0U, 20U - name.size(), '0'); name += ".json";
+  const auto journalPath = fixture.root / "producer/journal" / name;
+  auto journal = formats::parseJson(core::readTextFileLimited(journalPath, 1024U*1024U).value()); CHECK(journal);
+  journal.value().asObject().insert_or_assign("projectSha256", formats::JsonValue{core::sha256Hex(bytes)});
+  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion", formats::JsonValue{std::int64_t{2}});
+  CHECK(core::durableAtomicWriteText(fixture.root / "producer/generations" / name, bytes));
+  CHECK(core::durableAtomicWriteText(fixture.root / "producer/project.json", bytes));
+  CHECK(core::durableAtomicWriteText(journalPath, formats::stringifyJson(journal.value(), true) + "\n"));
+  CHECK(fixture.controller.openProductionProject(fixture.root / "producer", fixture.project.inventorySha256, "producer"));
+  fixture.capture();
+  const auto& details = fixture.controller.sampleReviewInspection()->details;
+  CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
+    return value == "HISTORICAL AUTOMATED CHECKS / seam.take-inspector v2 / REINSPECT THIS AUDIO BEFORE APPROVAL";
+  }));
+  CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) {
+    return value.starts_with("AUTOMATED SIGNAL CHECKS ");
+  }));
 }
 
 TEST_CASE("legacy edited audio always warns when current diagnostics are missing") {

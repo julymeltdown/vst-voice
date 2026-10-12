@@ -255,7 +255,7 @@ def validate_production_workspace(
         errors.append("generation and journal sets do not match")
     latest_key = max(generations)
     latest_payload: bytes | None = None
-    inspection_policy_active = False
+    inspection_policy_active = 0
     for key in sorted(set(generations) & set(journals)):
         project, payload = _load_object(generations[key], f"generation[{key}]", errors)
         journal, _ = _load_object(journals[key], f"journal[{key}]", errors)

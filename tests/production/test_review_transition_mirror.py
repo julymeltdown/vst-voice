@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from tools.external_beta._production_review_transition import (
-    REVIEW_MATERIAL_KIND, effective_audio, production_project_json, review_basis, review_transition_errors)
+    REVIEW_MATERIAL_KIND, effective_audio, production_project_json, review_basis, review_transition_errors,
+    review_inspection_policy)
 from tools.external_beta.voicebank_production import prepare_production_draft_definition, validate_production_draft_workspace
 from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
 
@@ -60,7 +61,7 @@ def _producer() -> dict[str, Any]:
                                            "markerReviewed": False, "pitchReviewed": False})
         # Stands in for the take-inspection.v2 receipt every import appends; its content is checked elsewhere.
         project["metadataRevisions"].append({"revisionId": f"take-inspection-{take_id}", "takeId": take_id,
-            "rawAssetSha256": digest, "kind": "take-inspection.v2", "values": {"evidenceJson": "{}",
+            "rawAssetSha256": digest, "kind": "take-inspection.v2", "values": {"evidenceJson": '{"inspectorId":"seam.take-inspector","inspectorVersion":"3"}',
             "evidenceSha256": "0" * 64}, "operatorId": importer, "performedAtUtc": AT})
     return project
 
@@ -179,7 +180,7 @@ class ReviewTransitionRuleTest(unittest.TestCase):
         _take(processed, "take-a")["derivedRevisionIds"] = ["a-gain"]
         processed["metadataRevisions"].append({"revisionId": "derived-fixture", "takeId": "take-a",
             "rawAssetSha256": "b" * 64, "kind": "derived-take-inspection.v1",
-            "values": {"derivedRevisionId": "a-gain", "evidenceJson": "{}", "evidenceSha256": "0" * 64},
+            "values": {"derivedRevisionId": "a-gain", "evidenceJson": '{"inspectorId":"seam.take-inspector","inspectorVersion":"3"}', "evidenceSha256": "0" * 64},
             "operatorId": "producer", "performedAtUtc": AT})
         self.assertRefused(review_transition_errors(processed, _decide(processed, "take-a"), "review", "g"),
                            "processed the take's audio")
@@ -201,6 +202,29 @@ class ReviewTransitionRuleTest(unittest.TestCase):
                            "without current automated inspection")
         self.assertEqual([], review_transition_errors(_producer(), _decide(_producer(), "take-a"), "review", "g"))
 
+    def test_inspector_two_admits_historical_policy_two_but_not_a_new_approval(self) -> None:
+        old = _producer()
+        for row in old["metadataRevisions"]:
+            evidence = json.loads(row["values"]["evidenceJson"])
+            evidence["inspectorVersion"] = "2"
+            row["values"]["evidenceJson"] = json.dumps(evidence)
+        decision = _decide(old, "take-a")
+        self.assertEqual([], review_transition_errors(old, decision, "review", "g", inspector_version="2"))
+        self.assertRefused(review_transition_errors(old, decision, "review", "g"), "current automated inspection")
+        self.assertEqual([], review_transition_errors(old, _decide(old, "take-a", result="REJECTED"), "review", "g"))
+
+    def test_inspection_policy_is_closed_and_cannot_downgrade_after_three(self) -> None:
+        active = 0
+        for marker, expected in ((None, 0), (2, 2), (None, 2), (3, 3), (2, 3), (None, 3)):
+            journal = {} if marker is None else {"reviewInspectionPolicyVersion": marker}
+            active, errors = review_inspection_policy(journal, active, "g")
+            self.assertEqual([], errors)
+            self.assertEqual(expected, active)
+        for marker in (None, True, 2.0, "2", 1, 4):
+            value, errors = review_inspection_policy({"reviewInspectionPolicyVersion": marker}, active, "g")
+            self.assertEqual(3, value)
+            self.assertIn("unsupported review inspection policy", errors[0])
+
     def test_edited_approval_cannot_substitute_raw_or_earlier_diagnostics(self) -> None:
         project = _producer()
         project["assets"].append({"sha256": "e" * 64, "relativePath": "derived/e.wav", "byteSize": 100, "kind": "DERIVED"})
@@ -215,7 +239,7 @@ class ReviewTransitionRuleTest(unittest.TestCase):
                 if identity:
                     current["metadataRevisions"].append({"revisionId": "derived-" + identity, "takeId": "take-a",
                         "rawAssetSha256": "b" * 64, "kind": "derived-take-inspection.v1",
-                        "values": {"derivedRevisionId": identity, "evidenceJson": "{}", "evidenceSha256": "0" * 64},
+                        "values": {"derivedRevisionId": identity, "evidenceJson": '{"inspectorId":"seam.take-inspector","inspectorVersion":"3"}', "evidenceSha256": "0" * 64},
                         "operatorId": "producer", "performedAtUtc": AT})
                 errors = review_transition_errors(current, _decide(current, "take-a"), "review", "g")
                 if identity == "latest-edit": self.assertEqual([], errors)
@@ -417,7 +441,7 @@ class CppReviewTransitionParityTest(unittest.TestCase):
             self.assertEqual(before["reviews"], latest["reviews"])
             self.assertEqual("MARKER_REVIEW", _take(latest, take_id)["state"])
             journal = json.loads((approved / "journal" / f"{latest['lastDurableGeneration']:020}.json").read_bytes())
-            self.assertEqual(2, journal["reviewInspectionPolicyVersion"])
+            self.assertEqual(3, journal["reviewInspectionPolicyVersion"])
             self.assertEqual("requires a new independent review", recorded["unitApproval"])
             self.assertEqual("APPROVED", recorded["previousState"])
             self.assertEqual("MARKER_REVIEW", recorded["state"])
@@ -463,7 +487,7 @@ class CppReviewTransitionParityTest(unittest.TestCase):
             root = Path(directory)
             workspace, inventory, _ = self._producer(root)
             generation = self._project(workspace)["lastDurableGeneration"]
-            for index, marker in enumerate((None, True, 2.0, "2", 1, 3)):
+            for index, marker in enumerate((None, True, 2.0, "2", 1, 4)):
                 with self.subTest(marker=marker):
                     target = root / f"bad-policy-{index}"
                     shutil.copytree(workspace, target)

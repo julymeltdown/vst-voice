@@ -379,6 +379,13 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
     if (technicalInspection->kind != kTakeInspectionRevisionKind)
       return core::failure<AssetRecord>(core::ErrorCode::Conflict,
           "This take was inspected by an older, voiced-only check. Inspect it again before import.");
+    const auto expectedInspection = technicalInspection->values.find("evidenceJson");
+    if (expectedInspection != technicalInspection->values.end()) {
+      const auto decoded = decodeTakeInspectionEvidence(expectedInspection->second);
+      if (decoded && !decoded.value().currentAlgorithm())
+        return core::failure<AssetRecord>(core::ErrorCode::Conflict,
+            "This take was inspected by an older inspector. Inspect it again before import.");
+    }
     if (!sameMetadataRevision(*technicalInspection, receipt))
       return core::failure<AssetRecord>(core::ErrorCode::Conflict,
           "The take audio, its assignment or its QC policy changed after inspection. Inspect it again before import.");

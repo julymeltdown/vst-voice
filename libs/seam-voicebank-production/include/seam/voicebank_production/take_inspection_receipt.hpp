@@ -39,6 +39,13 @@ struct TakeInspectionBinding final {
 struct TakeInspectionEvidence final {
   TakeInspectionBinding binding;
   voicebank::TakeInspection inspection;
+  // Preserve the encoded algorithm identity: version 2 is readable history,
+  // while only the compiled version may admit a new approval or publication.
+  std::string inspectorVersion{voicebank::kTakeInspectorVersion};
+
+  [[nodiscard]] bool currentAlgorithm() const noexcept {
+    return inspectorVersion == voicebank::kTakeInspectorVersion;
+  }
 };
 
 // The request that applies to a unit: the policy its coverage key selects and,

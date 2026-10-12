@@ -46,7 +46,8 @@ std::string generationFilename(std::uint64_t generation) {
 
 core::Result<void> validateInspectionPolicy(const J& journal) {
   const auto* policy = journal.find("reviewInspectionPolicyVersion");
-  if (policy && (!policy->isInteger() || policy->asInt64() != kCurrentReviewInspectionPolicyVersion))
+  if (policy && (!policy->isInteger() ||
+      (policy->asInt64() != 2 && policy->asInt64() != kCurrentReviewInspectionPolicyVersion)))
     return core::failure(core::ErrorCode::Unsupported, "Unsupported production review inspection policy");
   return core::success();
 }

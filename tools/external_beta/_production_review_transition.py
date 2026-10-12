@@ -20,7 +20,8 @@ REVIEW_MATERIAL_VALUES = frozenset({"unitId", "reviewId", "audioSha256", "unitMa
 REVIEW_BASIS_PREFIX = "sample-candidate-review-basis-v2\n"
 TAKE_INSPECTION_KIND = "take-inspection.v2"  # kTakeInspectionRevisionKind; _production_draft_validation checks its content
 DERIVED_TAKE_INSPECTION_KIND = "derived-take-inspection.v1"
-REVIEW_INSPECTION_POLICY_VERSION = 2
+REVIEW_INSPECTION_POLICY_VERSION = 3
+CURRENT_TAKE_INSPECTOR_VERSION = "3"
 _LEVELS = {"APPROVED": 2, "PITCH_REVIEW": 1}
 _PRODUCER_FIELDS = ("schemaVersion", "projectId", "inventoryId", "inventorySha256", "selectedSourceStrategyId",
                     "licenseLocator", "licenseSha256", "immutableAssetRoot", "language", "sourceStrategies",
@@ -149,11 +150,21 @@ def _history_errors(previous: dict[str, Any], project: dict[str, Any], action: s
     return errors
 
 
-def _has_current_inspection(project: dict[str, Any], take: dict[str, Any]) -> bool:
+def _has_current_inspection(project: dict[str, Any], take: dict[str, Any], inspector_version: str) -> bool:
     """Presence rule only; draft validation checks canonical bytes, output lineage, assignment and QC outcomes."""
     chain = take["derivedRevisionIds"]
     for row in project["metadataRevisions"]:
         if row["takeId"] != take["takeId"] or row["rawAssetSha256"] != take["rawAssetSha256"]:
+            continue
+        try:
+            encoded = row.get("values", {}).get("evidenceJson")
+            if not isinstance(encoded, str) or len(encoded) > 64 * 1024:
+                continue
+            evidence = json.loads(encoded)
+        except (ValueError, RecursionError):
+            continue
+        if (not isinstance(evidence, dict) or evidence.get("inspectorId") != "seam.take-inspector"
+                or evidence.get("inspectorVersion") != inspector_version):
             continue
         if not chain and row["kind"] == TAKE_INSPECTION_KIND:
             return True
@@ -163,7 +174,7 @@ def _has_current_inspection(project: dict[str, Any], take: dict[str, Any]) -> bo
     return False
 
 
-def review_inspection_policy(journal: dict[str, Any], active: bool, label: str) -> tuple[bool, list[str]]:
+def review_inspection_policy(journal: dict[str, Any], active: int, label: str) -> tuple[int, list[str]]:
     """Committed history activates the rule permanently, including later unmarked older-writer saves.
 
     This is a declaration, not timestamp/build authentication. Absence after activation cannot
@@ -172,13 +183,13 @@ def review_inspection_policy(journal: dict[str, Any], active: bool, label: str) 
     if "reviewInspectionPolicyVersion" not in journal:
         return active, []
     value = journal["reviewInspectionPolicyVersion"]
-    if type(value) is not int or value != REVIEW_INSPECTION_POLICY_VERSION:
+    if type(value) is not int or value not in (2, REVIEW_INSPECTION_POLICY_VERSION):
         return active, [f"{label} journal has an unsupported review inspection policy"]
-    return True, []
+    return max(active, value), []
 
 
 def _decision_errors(previous: dict[str, Any], project: dict[str, Any], granted: set[str],
-                     require_current_inspection: bool) -> list[str]:
+                     require_current_inspection: bool, inspector_version: str) -> list[str]:
     decisions: dict[str, dict[str, Any]] = {}
     for review in project["reviews"][len(previous["reviews"]):]:
         if review["takeId"] in decisions:
@@ -205,7 +216,7 @@ def _decision_errors(previous: dict[str, Any], project: dict[str, Any], granted:
             errors.append(f"review decision for {take_id} {independence}")
             continue
         passed = review["result"] == "PASS"
-        inspected = _has_current_inspection(project, take) if require_current_inspection else any(
+        inspected = _has_current_inspection(project, take, inspector_version) if require_current_inspection else any(
             row["takeId"] == take_id and row["kind"] == TAKE_INSPECTION_KIND and
             row["rawAssetSha256"] == take["rawAssetSha256"] for row in project["metadataRevisions"])
         if passed and not inspected:
@@ -257,7 +268,8 @@ def _affected(previous: dict[str, Any], project: dict[str, Any]) -> set[str] | N
 
 
 def review_transition_errors(previous: dict[str, Any] | None, project: dict[str, Any], action: str,
-                             label: str, *, require_current_inspection: bool = True) -> list[str]:
+                             label: str, *, require_current_inspection: bool = True,
+                             inspector_version: str = CURRENT_TAKE_INSPECTOR_VERSION) -> list[str]:
     """applyReviewTransition from previous (None for a new producer) to project, as the journal action wrote it.
 
     C++ lowers a stale approval before it commits, so a generation it wrote never carries one; a stale approval
@@ -284,7 +296,7 @@ def review_transition_errors(previous: dict[str, Any] | None, project: dict[str,
                     any(row["kind"] in REVIEW_MATERIAL_KINDS
                         for row in project["metadataRevisions"][len(previous["metadataRevisions"]):]))
         if action == "review":
-            errors.extend(_decision_errors(previous, project, granted, require_current_inspection))
+            errors.extend(_decision_errors(previous, project, granted, require_current_inspection, inspector_version))
         elif appended:
             errors.append("records review decisions or material outside an independent review")
         elif granted:

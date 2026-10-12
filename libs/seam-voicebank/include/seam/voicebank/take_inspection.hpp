@@ -49,7 +49,7 @@ inline constexpr std::array<TakeCheck, kTakeCheckCount> kTakeChecks{
 
 inline constexpr std::string_view kTakeInspectorId = "seam.take-inspector";
 // The measurement algorithm. A new value means old receipts are not current.
-inline constexpr std::string_view kTakeInspectorVersion = "2";
+inline constexpr std::string_view kTakeInspectorVersion = "3";
 // The applicability matrix and thresholds below.
 inline constexpr std::int64_t kTakeQcPolicyVersion = 1;
 

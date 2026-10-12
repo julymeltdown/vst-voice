@@ -15,6 +15,7 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/resource_candidate.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -398,6 +399,10 @@ core::Result<void> validateReviewedBinding(const VoicebankProductionProject& pro
   if (assignment == project.unitAssignments.end() || assignment->state != UnitQueueState::Approved ||
       take.value()->state != UnitQueueState::Approved || !assignment->markerReviewed || !assignment->pitchReviewed)
     return core::failure(core::ErrorCode::Conflict, "Candidate take lacks completed marker and pitch review", binding.takeId);
+  const auto inspected = currentActiveTakeInspection(project, binding.takeId);
+  if (!inspected || inspected->inspection.sourceSha256 != binding.audioSha256)
+    return core::failure(core::ErrorCode::Conflict,
+        "Candidate take needs current automated inspection for its reviewed audio", binding.takeId);
   const auto review = std::find_if(project.reviews.begin(), project.reviews.end(),
       [&](const auto& value) { return value.reviewId == binding.reviewId; });
   const auto metadata = std::find_if(project.metadataRevisions.begin(), project.metadataRevisions.end(),
