@@ -694,3 +694,24 @@ TEST_CASE("new production journals declare their current inspection admission po
     CHECK(marker->isInteger());CHECK(marker->asInt64()==2);
   }
 }
+
+TEST_CASE("native verification reports unsupported inspection policy rather than another refusal") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);
+  name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"journal"/name;
+  const auto original=seam::core::readTextFileLimited(path,1024U*1024U);CHECK(original);
+  for (const auto* literal:{"null","true","2.0","\"2\"","1","3"}) {
+    auto journal=seam::formats::parseJson(original.value());CHECK(journal);
+    journal.value().asObject().erase("reviewInspectionPolicyVersion");
+    auto text=seam::formats::stringifyJson(journal.value(),true);
+    // Preserve the wire spelling 2.0; stringifyJson canonically emits double 2 as integer 2.
+    text.insert(1U,std::string{"\n  \"reviewInspectionPolicyVersion\": "}+literal+",");
+    CHECK(seam::core::durableAtomicWriteText(path,text+"\n"));
+    const auto refused=fixture.repository.verify(fixture.project);CHECK(!refused);
+    CHECK(refused.error().code==seam::core::ErrorCode::Unsupported);
+    CHECK(refused.error().message=="Unsupported production review inspection policy");
+  }
+  CHECK(seam::core::durableAtomicWriteText(path,original.value()));
+  CHECK(fixture.repository.verify(fixture.project));
+}

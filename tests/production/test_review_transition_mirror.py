@@ -436,7 +436,7 @@ class CppReviewTransitionParityTest(unittest.TestCase):
             path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
             result = validate_production_draft_workspace(dropped, inventory)
             # This first marker has no marked parent, so removing every marker is indistinguishable
-            # from legacy bytes; no authentication of the archive is claimed. Test a later drop instead.
+            # from legacy bytes; no authentication of the archive is claimed.
             self.assertTrue(result.passed, result.errors)
             later_drop = root / "later-dropped-marker"
             shutil.copytree(newer, later_drop)
@@ -445,8 +445,18 @@ class CppReviewTransitionParityTest(unittest.TestCase):
             document = json.loads(path.read_bytes()); document.pop("reviewInspectionPolicyVersion")
             path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
             result = validate_production_draft_workspace(later_drop, inventory)
+            # Older builds omit the field on ordinary writes. The already activated
+            # policy remains strict, but omission alone must not invalidate that history.
+            self.assertTrue(result.passed, result.errors)
+            unmarked_approval = root / "unmarked-uninspected-approval"
+            shutil.copytree(forged, unmarked_approval)
+            generation = self._project(forged)["lastDurableGeneration"]
+            path = unmarked_approval / "journal" / f"{generation:020}.json"
+            document = json.loads(path.read_bytes()); document.pop("reviewInspectionPolicyVersion")
+            path.write_text(json.dumps(document, sort_keys=True, indent=2) + "\n")
+            result = validate_production_draft_workspace(unmarked_approval, inventory)
             self.assertFalse(result.passed)
-            self.assertTrue(any("drops" in error and "inspection policy" in error for error in result.errors), result.errors)
+            self.assertTrue(any("without current automated inspection" in error for error in result.errors), result.errors)
 
     def test_unknown_or_malformed_policy_markers_refuse_in_native_and_python(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -466,6 +476,10 @@ class CppReviewTransitionParityTest(unittest.TestCase):
                     native = subprocess.run([str(CLI), "inspect-source-quality", str(target), "procedural-a"],
                         capture_output=True, text=True, timeout=60)
                     self.assertEqual(2, native.returncode, native.stderr)
+                    # Recovery skips the invalid newest journal, then the read-only
+                    # source inspector refuses its stale pointer. The direct native
+                    # verify test asserts the underlying marker-specific error.
+                    self.assertIn("Production project pointer is stale or invalid", native.stderr)
 
     def test_cli_decisions_bind_the_mirrored_basis_through_retake_and_selection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

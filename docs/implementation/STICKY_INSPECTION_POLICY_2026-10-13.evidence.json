@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "unit": "sticky-inspection-policy",
+  "sourceBase": "9085c686c3a6e95e8cdaa2bb91d9394032e8a1e8",
+  "manifest": {
+    "path": "out/evidence/sticky-inspection-policy-2026-10-13/manifest.json",
+    "sizeBytes": 10182,
+    "sha256": "a6d5a9bcd39cb2a34746b2bc1fcfdb0490c637e0bcf5e7e3ac8eb3688e0b2a62"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_production_review_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.0389303749980172
+  },
+  "nativeCaseCount": 13,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.006535042004543
+  },
+  "pythonCaseCount": 50,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "policy": "Activation remains true for later omitted markers; unsupported present values refuse",
+  "failedQcPolicy": "UNCHANGED; owner decision pending",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

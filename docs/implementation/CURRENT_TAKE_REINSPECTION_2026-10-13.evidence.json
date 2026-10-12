@@ -51,12 +51,12 @@
     "sizeBytes": 8569,
     "sha256": "552354a6dd377d3b0e22f0f3f7511a549eb3d18c26f1caecbd0d1f58f04a005c"
   },
-  "historyReplayP2": "ADDRESSED LOCALLY in INSPECTION_POLICY_HISTORY_2026-10-13; independent recheck/integration pending",
+  "historyReplayP2": "RESOLVED by independent d0a9f3d3 review; original b9 REVISE retained",
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false,
   "p3Remediation": {
     "report": "docs/implementation/INSPECTION_WRITER_BOUNDARY_2026-10-13.md",
-    "status": "LOCALLY VERIFIED; independent review/integration pending"
+    "status": "CLOSED by independent technical APPROVE for 9085c686"
   }
 }

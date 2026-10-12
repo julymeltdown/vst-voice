@@ -37,11 +37,19 @@
   },
   "pythonCaseCount": 50,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "reviewedCommit": "9085c686c3a6e95e8cdaa2bb91d9394032e8a1e8",
+    "record": {
+      "path": "out/evidence/sticky-inspection-policy-2026-10-13/writer-independent-review.md",
+      "sizeBytes": 4929,
+      "sha256": "62ec159b7fb584fb385883afe6fe213fb0d2d0e1f02b700e7e09e5c312bd38cf"
+    },
+    "scope": "six exact committed snapshots; both original e14 P3s closed"
   },
   "apiBoundary": "Only the generic annotation method reserves receipt kinds; generic save and unsigned archives are outside this guard",
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "optionalFollowUp": "Refuse legacy dry-take-inspection.v1 through the generic annotation API; current approval admission already refuses it"
 }

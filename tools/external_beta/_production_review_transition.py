@@ -164,9 +164,13 @@ def _has_current_inspection(project: dict[str, Any], take: dict[str, Any]) -> bo
 
 
 def review_inspection_policy(journal: dict[str, Any], active: bool, label: str) -> tuple[bool, list[str]]:
-    """Only committed, ancestry-checked history activates the new rule; no timestamp/build authentication."""
+    """Committed history activates the rule permanently, including later unmarked older-writer saves.
+
+    This is a declaration, not timestamp/build authentication. Absence after activation cannot
+    restore the raw rule; present unsupported markers still refuse.
+    """
     if "reviewInspectionPolicyVersion" not in journal:
-        return active, [f"{label} journal drops the active review inspection policy"] if active else []
+        return active, []
     value = journal["reviewInspectionPolicyVersion"]
     if type(value) is not int or value != REVIEW_INSPECTION_POLICY_VERSION:
         return active, [f"{label} journal has an unsupported review inspection policy"]

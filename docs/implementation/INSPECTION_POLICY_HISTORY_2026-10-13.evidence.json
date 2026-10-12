@@ -37,12 +37,20 @@
   },
   "pythonCaseCount": 50,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "reviewedCommit": "d0a9f3d34588a0933676af2ccb099243db64259e",
+    "record": {
+      "path": "out/evidence/inspection-policy-history-2026-10-13/independent-review.md",
+      "sizeBytes": 6698,
+      "sha256": "824258124fc8ccb643b1978c1b36100fbee94ae74c9d06684fbd654ebda1dfac"
+    },
+    "scope": "ten exact committed snapshots; original history replay P2 resolved"
   },
-  "historyReplayP2": "ADDRESSED LOCALLY; independent recheck/integration pending",
+  "historyReplayP2": "RESOLVED by independent d0a9f3d3 technical review",
   "markerAuthentication": "DECLARATIVE ONLY; removing all markers is indistinguishable from unsigned legacy history",
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "olderWriterFollowUp": "Sticky activation accepts later omission; STICKY_INSPECTION_POLICY_2026-10-13 locally verified, independent review/integration pending"
 }
