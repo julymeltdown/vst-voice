@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "unit": "source-analysis-identity",
+  "sourceHead": "eb12026f8eb4ed00be59bffddf0f462c730ee8e9",
+  "manifest": {
+    "path": "out/evidence/source-analysis-identity-2026-10-13/manifest.json",
+    "sizeBytes": 66195,
+    "sha256": "af563a7db3214c245d6c6d26bbda4aa76a1e24edbbe920da9c6d3b4f796f86ab"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/source-analysis-identity-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/source-analysis-identity-2026-10-13/verification.log",
+      "sizeBytes": 216,
+      "sha256": "844a9b8680afa2e18dce64aa99730da002e778eb5ae11c2026a301abee6ad15d"
+    }
+  },
+  "reproducedBaseline": {
+    "methods": 2,
+    "failedRefusalAssertions": 7,
+    "testErrors": 0,
+    "initialHarnessAttempt": "Separate four-failure/three-error attempt retained; not counted as product errors"
+  },
+  "focusedCTestEntriesPassed": 3,
+  "pythonMethodsPassed": 15,
+  "pythonSkippedTests": 0,
+  "nativePitchCasesPassed": 10,
+  "actualTrainingCliIntegration": "PASS",
+  "currentNativeCli": {
+    "path": "out/evidence/source-analysis-identity-2026-10-13/binaries/seam_voicebank_cli",
+    "sizeBytes": 9718128,
+    "sha256": "3d4d8c96fb3ed1cd946234f2c94102e38f5517e535afe1be3ae4e7338cadfacf"
+  },
+  "analysisFormatId": "com.project-seam.voicebank-analysis",
+  "analysisSchemaVersion": 2,
+  "planAndCutsSchemaVersion": 2,
+  "analysisContract": {
+    "command": "seam_voicebank_cli analyze",
+    "algorithm": "direct-autocorrelation-v3",
+    "windowFrames": 2048,
+    "hopFrames": 256,
+    "coverage": "CompleteWindows",
+    "minimumHz": 60,
+    "maximumHz": 1200,
+    "voicingThreshold": 0.32
+  },
+  "realSourceRuntime": {
+    "sourceBase": "eb12026f8eb4ed00be59bffddf0f462c730ee8e9",
+    "nativeCli": {
+      "path": "out/evidence/source-analysis-identity-2026-10-13/binaries/seam_voicebank_cli",
+      "sizeBytes": 9718128,
+      "sha256": "3d4d8c96fb3ed1cd946234f2c94102e38f5517e535afe1be3ae4e7338cadfacf"
+    },
+    "nativeAnalyzeInvocations": 15,
+    "selectedSources": 15,
+    "cutCount": 73,
+    "observedNearestMidi": [
+      60,
+      62,
+      64,
+      65,
+      67,
+      69,
+      71,
+      72,
+      74,
+      77
+    ],
+    "observedNote66Cuts": 0,
+    "durationSeconds": 37.70920634920635,
+    "exactOriginalIntervals": 73,
+    "repeatOutputsByteIdentical": true,
+    "existingOutputRefusedUnchanged": true,
+    "legacyPlanRefusedWithoutOutput": true,
+    "preservedOriginalBindings": 565,
+    "originalMediaAndHistoricalPlansUnchanged": true,
+    "bankAdmission": "NOT_APPROVED",
+    "humanListening": "NOT_RUN",
+    "betaPromotion": false
+  },
+  "preservedParentEvidenceBindings": 486,
+  "preservedAuditionAndParentBindings": 26,
+  "retainedArtifacts": 258,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Source-analysis identity and unassigned preparation only"
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "fullGoal": "ACTIVE",
+  "overallImplementationPercentage": "NOT_ESTABLISHED",
+  "betaPromotion": false
+}

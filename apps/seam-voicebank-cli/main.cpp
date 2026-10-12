@@ -174,7 +174,9 @@ int extractPitchCommand(const std::filesystem::path& path) {
 
 int analyzeCommand(const std::filesystem::path& wavPath,
                    const std::filesystem::path& outputDirectory) {
-  const auto audio = seam::voicebank::readWav(wavPath);
+  const auto bytes = seam::core::readFileBytesLimited(wavPath, seam::voicebank::kMaximumSupportedWavBytes);
+  if (!bytes) { printError(bytes.error()); return 2; }
+  const auto audio = seam::voicebank::readWav(bytes.value(), wavPath.generic_string());
   if (!audio) {
     printError(audio.error());
     return 2;
@@ -196,7 +198,10 @@ int analyzeCommand(const std::filesystem::path& wavPath,
     printError(spectrogram.error());
     return 4;
   }
-  const auto pitch = seam::voicebank::analyzePitch(mono, audio.value().sampleRate);
+  seam::voicebank::PitchConfig pitchConfig;
+  pitchConfig.correlationMethod = seam::voicebank::PitchCorrelationMethod::Direct;
+  pitchConfig.coverage = seam::voicebank::PitchFrameCoverage::CompleteWindows;
+  const auto pitch = seam::voicebank::analyzePitch(mono, audio.value().sampleRate, pitchConfig);
   if (!pitch) {
     printError(pitch.error());
     return 5;
@@ -232,7 +237,15 @@ int analyzeCommand(const std::filesystem::path& wavPath,
   }
   const auto stats = seam::voicebank::analyzeAudio(mono);
   const seam::formats::JsonValue result{seam::formats::JsonValue::Object{
+      {"formatId", "com.project-seam.voicebank-analysis"}, {"schemaVersion", std::int64_t{2}},
       {"source", wavPath.generic_string()},
+      {"sourceSha256", seam::core::sha256Hex(bytes.value())},
+      {"pitchAnalysis", seam::formats::JsonValue::Object{
+          {"algorithm", std::string{seam::voicebank::kDirectPitchAnalysisAlgorithm}},
+          {"windowFrames", static_cast<std::int64_t>(pitchConfig.frameSize)},
+          {"hopFrames", static_cast<std::int64_t>(pitchConfig.hopSize)}, {"coverage", "CompleteWindows"},
+          {"minimumHz", pitchConfig.minimumHz}, {"maximumHz", pitchConfig.maximumHz},
+          {"voicingThreshold", pitchConfig.voicingThreshold}}},
       {"sampleRate", static_cast<std::int64_t>(audio.value().sampleRate)},
       {"channels", static_cast<std::int64_t>(audio.value().channels)},
       {"frames", static_cast<std::int64_t>(audio.value().frameCount())},

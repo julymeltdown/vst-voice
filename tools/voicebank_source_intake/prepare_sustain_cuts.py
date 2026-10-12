@@ -21,6 +21,9 @@ TOLERANCE_CENTS = 40.0
 MINIMUM_SECONDS = 0.20
 MAXIMUM_AUDIO_BYTES = 64 * 1024 * 1024
 MAXIMUM_JSON_BYTES = 8 * 1024 * 1024
+PITCH_ANALYSIS = {"algorithm": "direct-autocorrelation-v3", "windowFrames": WINDOW, "hopFrames": HOP,
+                  "coverage": "CompleteWindows", "minimumHz": 60, "maximumHz": 1200, "voicingThreshold": 0.32}
+ANALYSIS_CONTRACT = {"command": "seam_voicebank_cli analyze", **PITCH_ANALYSIS}
 
 
 def require(condition: bool, message: str) -> None:
@@ -83,6 +86,10 @@ def proposal_rows(source_path: Path, audio: bytes, analysis: dict) -> tuple[list
         frames = wav.getnframes()
         pcm = wav.readframes(frames)
     require(8000 <= rate <= 192000 and len(pcm) == frames * 2, "Invalid or truncated PCM extent")
+    require(analysis.get("formatId") == "com.project-seam.voicebank-analysis" and
+            type(analysis.get("schemaVersion")) is int and analysis.get("schemaVersion") == 2 and
+            analysis.get("pitchAnalysis") == PITCH_ANALYSIS, "Analysis identity mismatch; regenerate current analysis")
+    require(analysis.get("sourceSha256") == digest(audio), "Analysis source digest mismatch")
     require(all(type(analysis.get(key)) is int for key in ("sampleRate", "channels", "frames")) and
             analysis.get("sampleRate") == rate and analysis.get("channels") == 1 and
             analysis.get("frames") == frames, "Analysis/audio extent or format mismatch")
@@ -102,6 +109,8 @@ def proposal_rows(source_path: Path, audio: bytes, analysis: dict) -> tuple[list
         require(finite_number(f0) and f0 >= 0 and finite_number(confidence) and
                 0 <= confidence <= 1 and type(voiced) is bool, "Invalid pitch measurement")
         require(not voiced or f0 > 0, "Voiced pitch must be positive")
+        require((PITCH_ANALYSIS["minimumHz"] <= f0 <= PITCH_ANALYSIS["maximumHz"]) if voiced else f0 == 0,
+                "Pitch frame violates current analysis bounds")
         midi = 69 + 12 * math.log2(f0 / 440) if voiced else None
         pitch = round(midi) if midi is not None else None
         accepted = (pitch is not None and 0 <= pitch <= 127 and confidence >= CONFIDENCE and
@@ -146,10 +155,9 @@ def prepare(plan_path: Path, output: Path) -> dict:
     require(plan_path.is_file() and plan_path.stat().st_size <= MAXIMUM_JSON_BYTES, "Missing or oversized plan")
     raw_plan = plan_path.read_bytes()
     plan = strict_json(raw_plan)
-    require(type(plan.get("schemaVersion")) is int and plan.get("schemaVersion") == 1 and
-            plan.get("analysisContract") == {"command": "seam_voicebank_cli analyze",
-                                              "windowFrames": WINDOW, "hopFrames": HOP,
-                                              "coverage": "CompleteWindows"}, "Unsupported analysis contract")
+    require(type(plan.get("schemaVersion")) is int and plan.get("schemaVersion") == 2 and
+            plan.get("analysisContract") == ANALYSIS_CONTRACT,
+            "Unsupported analysis contract; regenerate current analyses and use plan schema 2")
     sources = plan.get("sources")
     require(isinstance(sources, list) and 1 <= len(sources) <= 32, "Expected 1 to 32 source records")
     root = plan_path.resolve().parent
@@ -206,8 +214,9 @@ def prepare(plan_path: Path, output: Path) -> dict:
                      "sourceVowel": source["sourceVowel"], "sourceTechnique": source["sourceTechnique"],
                      "assignment": "NOT_ASSIGNED", "pitchReview": "NOT_REVIEWED",
                      "phoneticReview": "NOT_REVIEWED", "listeningReview": "NOT_REVIEWED"})
-    result = {"schemaVersion": 1, "documentKind": "UnassignedVocalCutProposals",
+    result = {"schemaVersion": 2, "documentKind": "UnassignedVocalCutProposals",
               "status": "UNAPPROVED", "planSha256": digest(raw_plan),
+              "analysisContract": ANALYSIS_CONTRACT,
               "license": license_record, "retainedLicensePath": "license-source.txt",
               "changeNotice": "Original PCM intervals copied into new RIFF/WAV containers. Ancillary chunks removed; "
                               "no resampling, normalization, pitch shift or phoneme assignment.",

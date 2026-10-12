@@ -13,7 +13,9 @@ import unittest
 import wave
 from unittest.mock import patch
 
-from tools.voicebank_source_intake.prepare_sustain_cuts import prepare
+from tools.voicebank_source_intake.prepare_sustain_cuts import prepare, ANALYSIS_CONTRACT, PITCH_ANALYSIS
+
+CLI = Path(__file__).resolve().parents[1] / "build/release/seam_voicebank_cli"
 
 
 class SustainIntakeTests(unittest.TestCase):
@@ -31,7 +33,12 @@ class SustainIntakeTests(unittest.TestCase):
             wav.setframerate(self.rate)
             wav.writeframes(pcm)
         self.original_pcm = pcm
-        self.analysis = {"source": str(self.audio), "sampleRate": self.rate, "channels": 1,
+        self.analysis = {"formatId": "com.project-seam.voicebank-analysis", "schemaVersion": 2,
+                         "sourceSha256": hashlib.sha256(self.audio.read_bytes()).hexdigest(),
+                         "pitchAnalysis": {"algorithm": "direct-autocorrelation-v3", "windowFrames": 2048,
+                                           "hopFrames": 256, "coverage": "CompleteWindows", "minimumHz": 60,
+                                           "maximumHz": 1200, "voicingThreshold": 0.32},
+                         "source": str(self.audio), "sampleRate": self.rate, "channels": 1,
                          "frames": self.frames,
                          "pitchFrames": [{"sourceFrame": i, "f0Hz": 440.0, "confidence": 0.99,
                                           "voiced": True}
@@ -39,9 +46,8 @@ class SustainIntakeTests(unittest.TestCase):
         self.analysis_path = self.root / "analysis.json"
         self.legal = self.root / "license.txt"
         self.legal.write_text("Synthetic test license; this is no provider approval.\n")
-        self.plan = {"schemaVersion": 1,
-                     "analysisContract": {"command": "seam_voicebank_cli analyze", "windowFrames": 2048,
-                                          "hopFrames": 256, "coverage": "CompleteWindows"},
+        self.plan = {"schemaVersion": 2,
+                     "analysisContract": copy.deepcopy(ANALYSIS_CONTRACT),
                      "license": {**self.binding(self.legal), "sourceUrl": "https://example.invalid/license",
                                  "attribution": "Synthetic test fixture"},
                      "sources": [{"id": "fixture-a", "sourceVowel": "a", "sourceTechnique": "straight",
@@ -63,6 +69,8 @@ class SustainIntakeTests(unittest.TestCase):
         prepare(self.plan_path, self.root / "two")
         self.assertEqual(initial, self.audio.read_bytes())
         self.assertEqual("UNAPPROVED", first["status"])
+        self.assertEqual(2, first["schemaVersion"])
+        self.assertEqual(self.plan["analysisContract"], first["analysisContract"])
         self.assertEqual("NOT_APPROVED", first["bankAdmission"])
         self.assertNotIn("inputRoot", first)
         self.assertNotIn(str(self.root), json.dumps(first))
@@ -77,6 +85,69 @@ class SustainIntakeTests(unittest.TestCase):
         for path in (self.root / "one").iterdir():
             self.assertEqual(path.read_bytes(), (self.root / "two" / path.name).read_bytes())
         self.assertFalse((self.root / "one" / "INCOMPLETE").exists())
+
+    def test_refuses_unversioned_or_wrong_analysis_identity_before_writing(self) -> None:
+        original = copy.deepcopy(self.analysis)
+        for name, mutate in (
+            ("legacy", lambda a: a.pop("pitchAnalysis")),
+            ("old-direct", lambda a: a["pitchAnalysis"].update(algorithm="direct-autocorrelation-v2")),
+            ("other-method", lambda a: a["pitchAnalysis"].update(algorithm="fft-autocorrelation-v3")),
+            ("wrong-config", lambda a: a["pitchAnalysis"].update(maximumHz=2400)),
+            ("wrong-source-hash", lambda a: a.update(sourceSha256="0" * 64))):
+            with self.subTest(name=name):
+                self.analysis = copy.deepcopy(original)
+                mutate(self.analysis)
+                self.save()
+                target = self.root / name
+                with self.assertRaisesRegex(ValueError, "Analysis (identity|source digest) mismatch"):
+                    prepare(self.plan_path, target)
+                self.assertFalse(target.exists())
+                self.analysis = original
+
+    def test_refuses_pitch_frames_outside_current_invariants(self) -> None:
+        original = copy.deepcopy(self.analysis)
+        for name, values in (("off-range", {"f0Hz": 1225.0, "voiced": True}),
+                             ("unvoiced-value", {"f0Hz": 440.0, "voiced": False})):
+            with self.subTest(name=name):
+                self.analysis = copy.deepcopy(original)
+                self.analysis["pitchFrames"][0].update(values)
+                self.save()
+                target = self.root / name
+                with self.assertRaisesRegex(ValueError, "Pitch frame violates current analysis bounds"):
+                    prepare(self.plan_path, target)
+                self.assertFalse(target.exists())
+                self.analysis = original
+
+    def test_legacy_plan_is_not_reused_for_new_cuts(self) -> None:
+        self.plan["schemaVersion"] = 1
+        self.plan["analysisContract"] = {"command": "seam_voicebank_cli analyze", "windowFrames": 2048,
+                                         "hopFrames": 256, "coverage": "CompleteWindows"}
+        self.save()
+        target = self.root / "old-plan"
+        with self.assertRaisesRegex(ValueError, "regenerate current analyses and use plan schema 2"):
+            prepare(self.plan_path, target)
+        self.assertFalse(target.exists())
+
+    @unittest.skipUnless(CLI.is_file(), "Build the actual CLI for analysis/cut integration")
+    def test_native_analysis_binds_decoded_source_and_current_cut_contract(self) -> None:
+        captured = self.audio.read_bytes()
+        native = self.root / "native-analysis"
+        result = subprocess.run([str(CLI), "analyze", str(self.audio), str(native)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        analysis_path = native / "analysis.json"
+        analysis = json.loads(analysis_path.read_bytes())
+        self.assertEqual("com.project-seam.voicebank-analysis", analysis["formatId"])
+        self.assertEqual(2, analysis["schemaVersion"])
+        self.assertEqual(hashlib.sha256(captured).hexdigest(), analysis["sourceSha256"])
+        self.assertEqual(PITCH_ANALYSIS, analysis["pitchAnalysis"])
+        self.plan["sources"][0]["analysis"] = {"path": "native-analysis/analysis.json",
+                                              "sha256": hashlib.sha256(analysis_path.read_bytes()).hexdigest()}
+        self.plan_path.write_text(json.dumps(self.plan))
+        cuts = prepare(self.plan_path, self.root / "native-cuts")
+        self.assertEqual([69], [row["observedNearestMidi"] for row in cuts["cuts"]])
+        self.assertEqual(captured, self.audio.read_bytes())
+        self.assertEqual("NOT_REVIEWED", cuts["cuts"][0]["listeningReview"])
 
     def test_low_confidence_gap_splits_same_pitch_without_bridging(self) -> None:
         for frame in self.analysis["pitchFrames"]:

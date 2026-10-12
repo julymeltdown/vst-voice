@@ -17,6 +17,7 @@ enum class PitchFrameCoverage { CompleteWindows, FullHopGrid };
 
 // Version 3 enforces the Hz interval while preserving boundary-peak neighbors.
 inline constexpr std::string_view kPitchAnalysisAlgorithm = "fft-autocorrelation-v3";
+inline constexpr std::string_view kDirectPitchAnalysisAlgorithm = "direct-autocorrelation-v3";
 
 struct PitchConfig final {
   std::size_t frameSize{2048};
