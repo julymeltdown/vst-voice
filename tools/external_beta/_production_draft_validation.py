@@ -32,6 +32,7 @@ HEX64_LOWER = re.compile(r"^[0-9a-f]{64}$")
 # receipt in libs/seam-voicebank-production: the same bounds, policy map, outcome rules and canonical bytes, so
 # this accepts exactly the receipts the C++ codec accepts. A receipt is technical evidence, never a review.
 TAKE_INSPECTION_KIND = "take-inspection.v2"
+DERIVED_TAKE_INSPECTION_KIND = "derived-take-inspection.v1"
 TAKE_INSPECTOR = ("seam.take-inspector", "2")
 TAKE_CHECKS = ("format", "finite", "clipping", "dcOffset", "signalPresent", "quiet", "unvoiced", "rootPitch")
 TAKE_OUTCOMES = ("PASS", "FAIL", "INAPPLICABLE")
@@ -136,6 +137,8 @@ def _cpp_json(value: Any) -> str:
         return format(value, ".17g")  # std::setprecision(17) in the default floating-point format
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)  # the escapes writeEscaped uses
+    if isinstance(value, list):
+        return "[" + ",".join(_cpp_json(item) for item in value) + "]"
     if isinstance(value, dict):
         return "{" + ",".join(f"{_cpp_json(key)}:{_cpp_json(value[key])}" for key in sorted(value)) + "}"
     raise ValueError("take inspection evidence holds a value its codec never writes")
@@ -149,7 +152,7 @@ def canonical_take_evidence(evidence: dict[str, Any]) -> str:
 
 
 def take_inspection_errors(revision: dict[str, Any], take: dict[str, Any], assets: dict[str, dict[str, Any]],
-                           label: str) -> list[str]:
+                           label: str, *, derived_revisions: dict[str, dict[str, Any]] | None = None) -> list[str]:
     """decodeTakeInspectionEvidence plus validateTakeInspectionRevision for one receipt bound to take."""
     def invalid(message: str) -> list[str]:
         return [f"{label} take inspection {message}"]
@@ -157,10 +160,18 @@ def take_inspection_errors(revision: dict[str, Any], take: dict[str, Any], asset
     values = revision.get("values")
     text = values.get("evidenceJson") if isinstance(values, dict) else None
     digest = values.get("evidenceSha256") if isinstance(values, dict) else None
+    derived = revision.get("kind") == DERIVED_TAKE_INSPECTION_KIND
+    expected_keys = {"evidenceJson", "evidenceSha256", "derivedRevisionId"} if derived else {"evidenceJson", "evidenceSha256"}
     encoded = _utf8(text)
-    if (not isinstance(values, dict) or set(values) != {"evidenceJson", "evidenceSha256"} or encoded is None or
+    if (revision.get("kind") not in (TAKE_INSPECTION_KIND, DERIVED_TAKE_INSPECTION_KIND) or
+            not isinstance(values, dict) or set(values) != expected_keys or encoded is None or
             not isinstance(digest, str) or HEX64_LOWER.fullmatch(digest) is None or
-            hashlib.sha256(encoded).hexdigest() != digest or revision.get("revisionId") != "take-inspection-" + digest[:32]):
+            hashlib.sha256(encoded).hexdigest() != digest or
+            (derived and (not _json_text(values["derivedRevisionId"]) or not values["derivedRevisionId"]))):
+        return invalid("receipt digest or identity is invalid")
+    identity_hash = hashlib.sha256(_cpp_json([digest, values["derivedRevisionId"]]).encode()).hexdigest() if derived else digest
+    prefix = "derived-take-inspection-" if derived else "take-inspection-"
+    if revision.get("revisionId") != prefix + identity_hash[:32]:
         return invalid("receipt digest or identity is invalid")
     if len(encoded) > 64 * 1024:
         return invalid("evidence is too large")
@@ -207,9 +218,27 @@ def take_inspection_errors(revision: dict[str, Any], take: dict[str, Any], asset
     if any(type(binding[name]) is not type(identity[name]) or binding[name] != identity[name] for name in TAKE_BINDING):
         return invalid("receipt was made for a different assignment")
     raw = take.get("rawAssetSha256")
-    if evidence["takeSha256"] != revision.get("rawAssetSha256") or revision.get("rawAssetSha256") != raw:
+    if revision.get("rawAssetSha256") != raw:
         return invalid("receipt does not describe the stored take bytes")
-    asset = assets.get(raw) if isinstance(raw, str) else None
+    inspected_sha = raw
+    if derived:
+        chain = take.get("derivedRevisionIds")
+        if not isinstance(chain, list) or not isinstance(derived_revisions, dict):
+            return invalid("derived processing lineage is incomplete")
+        found = False
+        for step_id in chain:
+            step = derived_revisions.get(step_id) if isinstance(step_id, str) else None
+            if not isinstance(step, dict) or step.get("inputSha256") != inspected_sha:
+                return invalid("derived processing lineage is incomplete")
+            inspected_sha = step.get("outputSha256")
+            if step_id == values["derivedRevisionId"]:
+                found = True
+                break
+        if not found:
+            return invalid("derived receipt names no revision owned by this take")
+    if evidence["takeSha256"] != inspected_sha:
+        return invalid("receipt does not describe the stored take bytes")
+    asset = assets.get(inspected_sha) if isinstance(inspected_sha, str) else None
     if not isinstance(asset, dict) or not _integer(asset.get("byteSize"), 1) or asset["byteSize"] != evidence["byteSize"]:
         return invalid("receipt byte size differs from the stored asset")
     pitch = identity["pitchLayer"]
@@ -617,8 +646,8 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         values = revision.get("values")
         if not take or revision.get("rawAssetSha256") != take.get("rawAssetSha256") or revision.get("operatorId") not in operators or not _utc(revision.get("performedAtUtc")) or not isinstance(values, dict) or not values or any(not isinstance(value, str) for value in values.values()) or not isinstance(revision.get("kind"), str) or not revision["kind"]:
             errors.append(f"{label} metadata is not bound to its immutable take and operator")
-        elif revision["kind"] == TAKE_INSPECTION_KIND:
-            errors.extend(take_inspection_errors(revision, take, assets, label))
+        elif revision["kind"] in (TAKE_INSPECTION_KIND, DERIVED_TAKE_INSPECTION_KIND):
+            errors.extend(take_inspection_errors(revision, take, assets, label, derived_revisions=revisions))
     for review in reviews.values():
         if review.get("takeId") not in takes or review.get("result") not in ("PASS", "REJECTED") or not isinstance(review.get("reviewerId"), str) or not review["reviewerId"] or not _utc(review.get("reviewedAtUtc")):
             errors.append(f"{label} review record is invalid")

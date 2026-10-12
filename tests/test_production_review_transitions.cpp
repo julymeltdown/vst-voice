@@ -635,7 +635,7 @@ TEST_CASE("an approval needs the take's current take-inspection receipt; a rejec
   auto uninspected = handDecided(legacy, packet, "a-69", "reviewer", "2026-09-28T10:01:00Z");
   const auto refused = internal::applyReviewTransition(&legacy, uninspected, event, false);
   CHECK(!refused);
-  CHECK(refused.error().message.find("take-inspection.v2 receipt") != std::string::npos);
+  CHECK(refused.error().message.find("current") != std::string::npos);
   // A rejection admits nothing, so it needs no receipt.
   auto rejected = uninspected;
   rejected.reviews.back().result = "REJECTED";
@@ -646,5 +646,42 @@ TEST_CASE("an approval needs the take's current take-inspection receipt; a rejec
       assignment.state = production::UnitQueueState::Rejected;
       assignment.markerReviewed = assignment.pitchReviewed = false;
     }
+  CHECK(internal::applyReviewTransition(&legacy, rejected, event, false));
+}
+
+TEST_CASE("edited approval requires the latest diagnostic even when output bytes repeat") {
+  namespace internal = production::review_internal;
+  ReviewFixture fixture;
+  for (const auto& [id, parent] : {std::pair{"first-edit", ""}, std::pair{"second-edit", "first-edit"}}) {
+    const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", parent,
+        {.kind = production::OperationKind::NormalizeGain, .targetPeak = 0.15F}, std::string{id} + "-stage");
+    CHECK(staged);
+    CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), id, "producer",
+        "2026-09-28T10:01:00Z", "take-a", parent));
+  }
+  CHECK(fixture.project.derivedRevisions[0].outputSha256 == fixture.project.derivedRevisions[1].outputSha256);
+  const auto packet = fixture.packet();
+  const auto event = ReviewFixture::event("review", "take-a", "reviewer", "2026-09-28T10:02:00Z");
+  auto accepted = handDecided(fixture.project, packet, "a-69", "reviewer", event.occurredAtUtc);
+  CHECK(internal::applyReviewTransition(&fixture.project, accepted, event, false));
+  auto legacy = fixture.project;
+  std::erase_if(legacy.metadataRevisions, [](const auto& revision) {
+    return revision.kind == production::kDerivedTakeInspectionRevisionKind &&
+           revision.values.at("derivedRevisionId") == "second-edit";
+  });
+  CHECK(production::currentTakeInspection(legacy, "take-a"));
+  CHECK(!production::currentActiveTakeInspection(legacy, "take-a"));
+  CHECK(production::validateProductionProject(legacy));
+  auto missing = handDecided(legacy, packet, "a-69", "reviewer", event.occurredAtUtc);
+  const auto refused = internal::applyReviewTransition(&legacy, missing, event, false);
+  CHECK(!refused);
+  CHECK(refused.error().message.find("current") != std::string::npos);
+  auto rejected = missing;
+  rejected.reviews.back().result = "REJECTED";
+  for (auto& take : rejected.takes) if (take.takeId == "take-a") take.state = production::UnitQueueState::Rejected;
+  for (auto& assignment : rejected.unitAssignments) if (assignment.takeId == "take-a") {
+    assignment.state = production::UnitQueueState::Rejected;
+    assignment.markerReviewed = assignment.pitchReviewed = false;
+  }
   CHECK(internal::applyReviewTransition(&legacy, rejected, event, false));
 }

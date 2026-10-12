@@ -206,14 +206,14 @@ core::Result<void> checkDecisions(const VoicebankProductionProject& current,
     const auto independent = independentReviewer(proposed, *take, review->reviewerId);
     if (!independent) return independent;
     const bool pass = review->result == "PASS";
-    // An approval admits the take's stored bytes, so the reviewer must have had their current
-    // automated inspection. A rejection admits nothing and needs none.
-    if (pass && std::none_of(proposed.metadataRevisions.begin(), proposed.metadataRevisions.end(), [&](const auto& revision) {
-          return revision.takeId == takeId && revision.kind == kTakeInspectionRevisionKind &&
-                 revision.rawAssetSha256 == take->rawAssetSha256;
-        }))
-      return refuse("An approval needs the take's current take-inspection.v2 receipt for its stored bytes",
-                    std::string{takeId});
+    // Presence of diagnostics for this audio is separate from pass/override policy.
+    // A rejection admits nothing and needs no inspection.
+    if (pass) {
+      const auto inspected = currentActiveTakeInspection(proposed, takeId);
+      if (!inspected || inspected->inspection.sourceSha256 != material.audio(*take))
+        return refuse("An approval needs current automated inspection for the reviewed audio",
+                      std::string{takeId});
+    }
     const auto& values = found->second->values;
     std::set<std::string, std::less<>> keys;
     for (const auto& entry : values) keys.insert(entry.first);

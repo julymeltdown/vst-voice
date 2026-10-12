@@ -65,7 +65,12 @@ struct Fixture final {
     if (openManifest) CHECK(controller.openManifest(root / "manifest.json"));
     CHECK(controller.openProductionProject(root / "producer", project.inventorySha256, "producer"));
   }
-  void capture() { CHECK(controller.beginSelectedSampleReview()); CHECK(collect(controller)); CHECK(controller.sampleReviewInspection()); }
+  void capture() {
+    CHECK(controller.beginSelectedSampleReview());
+    const auto collected = collect(controller);
+    if (!collected) throw test::Failure{"review capture: " + collected.error().message};
+    CHECK(controller.sampleReviewInspection());
+  }
   void choose() { CHECK(controller.selectSampleReviewer(controller.sampleReviewInspection()->context, "reviewer")); }
   void decide(Decision decision) {
     const auto context = controller.sampleReviewInspection()->context;
@@ -147,6 +152,37 @@ TEST_CASE("Studio human sample review exposes matching automated signal checks w
     return value.find("HUMAN REVIEW PASS") != std::string::npos;
   }));
   CHECK(fixture.project.reviews.empty());
+  CHECK(fixture.controller.sampleReviewerId().empty());
+}
+
+TEST_CASE("legacy edited audio always warns when current diagnostics are missing") {
+  Fixture fixture;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::NormalizeGain, .targetPeak=0.15F}, "legacy-stage");
+  CHECK(staged);
+  // Reproduce the pre-diagnostic edit writer through generic save, without rewriting history.
+  production::ImmutableAssetStore assets{fixture.root / "producer" / "assets"};
+  const auto asset = assets.importFile(staged.value().path, production::AssetKind::Derived); CHECK(asset);
+  fixture.project.assets.push_back(asset.value());
+  fixture.project.derivedRevisions.push_back({.revisionId="legacy-edit", .inputSha256=staged.value().inputSha256,
+      .outputSha256=staged.value().outputSha256, .operation=production::OperationKind::NormalizeGain,
+      .operationVersion="seam-pcm-ops-1", .parameters={{"targetPeak", "0.15"}},
+      .operatorId="producer", .performedAtUtc="2026-09-09T10:02:00Z"});
+  fixture.project.takes.front().derivedRevisionIds.push_back("legacy-edit");
+  CHECK(fixture.repository.save(fixture.project, {"transform", "legacy-edit", "producer", "2026-09-09T10:02:00Z"}));
+  CHECK(fixture.repository.verify(fixture.project));
+  CHECK(production::currentTakeInspection(fixture.project, "take-a"));
+  CHECK(!production::currentActiveTakeInspection(fixture.project, "take-a"));
+  CHECK(fixture.controller.openProductionProject(fixture.root / "producer", fixture.project.inventorySha256, "producer"));
+  fixture.capture();
+  const auto& details = fixture.controller.sampleReviewInspection()->details;
+  CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
+    return value == "NO CURRENT AUTOMATED CHECKS FOR THIS AUDIO / HUMAN REVIEW STILL REQUIRED";
+  }));
+  CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) {
+    return value.starts_with("AUTOMATED CHECK ") || value.find("COVER THE RAW TAKE") != std::string::npos;
+  }));
+  CHECK(!fixture.controller.sampleReviewReceipt());
   CHECK(fixture.controller.sampleReviewerId().empty());
 }
 

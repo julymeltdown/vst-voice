@@ -94,8 +94,8 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
   const auto currentInspection = production::currentActiveTakeInspection(project, binding.takeId);
   if (currentInspection && currentInspection->inspection.sourceSha256 == binding.audioSha256) {
     appendTakeInspectionDetails(result, currentInspection->inspection);
-  } else if (production::currentTakeInspection(project, binding.takeId)) {
-    result.push_back("AUTOMATED SIGNAL CHECKS COVER THE RAW TAKE, NOT THIS PROCESSED AUDIO / HUMAN REVIEW STILL REQUIRED");
+  } else {
+    result.push_back("NO CURRENT AUTOMATED CHECKS FOR THIS AUDIO / HUMAN REVIEW STILL REQUIRED");
   }
   const auto dryTakeInspection = std::find_if(
       project.metadataRevisions.rbegin(), project.metadataRevisions.rend(),

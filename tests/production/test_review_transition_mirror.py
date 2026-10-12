@@ -177,6 +177,10 @@ class ReviewTransitionRuleTest(unittest.TestCase):
             "operation": "NORMALIZE_GAIN", "operationVersion": "1", "parameters": {"targetPeak": "0.15"},
             "operatorId": "reviewer", "performedAtUtc": AT})
         _take(processed, "take-a")["derivedRevisionIds"] = ["a-gain"]
+        processed["metadataRevisions"].append({"revisionId": "derived-fixture", "takeId": "take-a",
+            "rawAssetSha256": "b" * 64, "kind": "derived-take-inspection.v1",
+            "values": {"derivedRevisionId": "a-gain", "evidenceJson": "{}", "evidenceSha256": "0" * 64},
+            "operatorId": "producer", "performedAtUtc": AT})
         self.assertRefused(review_transition_errors(processed, _decide(processed, "take-a"), "review", "g"),
                            "processed the take's audio")
         self.assertEqual([], review_transition_errors(processed, _decide(processed, "take-a", "second-reviewer"),
@@ -190,12 +194,33 @@ class ReviewTransitionRuleTest(unittest.TestCase):
         legacy = _with(_producer(), lambda p: p.update(metadataRevisions=[
             row for row in p["metadataRevisions"] if row["kind"] != "take-inspection.v2"]))
         self.assertRefused(review_transition_errors(legacy, _decide(legacy, "take-a"), "review", "g"),
-                           "without its current take-inspection.v2 receipt")
+                           "without current automated inspection")
         self.assertEqual([], review_transition_errors(legacy, _decide(legacy, "take-a", result="REJECTED"), "review", "g"))
         stale = _with(_producer(), lambda p: p["metadataRevisions"][0].update(rawAssetSha256="c" * 64))
         self.assertRefused(review_transition_errors(stale, _decide(stale, "take-a"), "review", "g"),
-                           "without its current take-inspection.v2 receipt")
+                           "without current automated inspection")
         self.assertEqual([], review_transition_errors(_producer(), _decide(_producer(), "take-a"), "review", "g"))
+
+    def test_edited_approval_cannot_substitute_raw_or_earlier_diagnostics(self) -> None:
+        project = _producer()
+        project["assets"].append({"sha256": "e" * 64, "relativePath": "derived/e.wav", "byteSize": 100, "kind": "DERIVED"})
+        for identity, parent in (("first-edit", "b" * 64), ("latest-edit", "e" * 64)):
+            project["derivedRevisions"].append({"revisionId": identity, "inputSha256": parent, "outputSha256": "e" * 64,
+                "operation": "NORMALIZE_GAIN", "operationVersion": "1", "parameters": {}, "operatorId": "producer", "performedAtUtc": AT})
+        _take(project, "take-a")["derivedRevisionIds"] = ["first-edit", "latest-edit"]
+        # Receipt content is validated by the draft validator; these are presence-rule fixtures only.
+        for identity in (None, "first-edit", "latest-edit"):
+            with self.subTest(identity=identity):
+                current = copy.deepcopy(project)
+                if identity:
+                    current["metadataRevisions"].append({"revisionId": "derived-" + identity, "takeId": "take-a",
+                        "rawAssetSha256": "b" * 64, "kind": "derived-take-inspection.v1",
+                        "values": {"derivedRevisionId": identity, "evidenceJson": "{}", "evidenceSha256": "0" * 64},
+                        "operatorId": "producer", "performedAtUtc": AT})
+                errors = review_transition_errors(current, _decide(current, "take-a"), "review", "g")
+                if identity == "latest-edit": self.assertEqual([], errors)
+                else: self.assertRefused(errors, "without current automated inspection")
+                self.assertEqual([], review_transition_errors(current, _decide(current, "take-a", result="REJECTED"), "review", "g"))
 
     def test_history_and_manual_work_are_append_only(self) -> None:
         decided = _decide(_annotate(_producer(), "take-a"), "take-a")

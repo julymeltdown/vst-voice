@@ -19,6 +19,7 @@ REVIEW_MATERIAL_KIND = "sample-candidate-review-v2"
 REVIEW_MATERIAL_VALUES = frozenset({"unitId", "reviewId", "audioSha256", "unitManifestSha256", "reviewBasisSha256"})
 REVIEW_BASIS_PREFIX = "sample-candidate-review-basis-v2\n"
 TAKE_INSPECTION_KIND = "take-inspection.v2"  # kTakeInspectionRevisionKind; _production_draft_validation checks its content
+DERIVED_TAKE_INSPECTION_KIND = "derived-take-inspection.v1"
 _LEVELS = {"APPROVED": 2, "PITCH_REVIEW": 1}
 _PRODUCER_FIELDS = ("schemaVersion", "projectId", "inventoryId", "inventorySha256", "selectedSourceStrategyId",
                     "licenseLocator", "licenseSha256", "immutableAssetRoot", "language", "sourceStrategies",
@@ -147,6 +148,20 @@ def _history_errors(previous: dict[str, Any], project: dict[str, Any], action: s
     return errors
 
 
+def _has_current_inspection(project: dict[str, Any], take: dict[str, Any]) -> bool:
+    """Presence rule only; draft validation checks canonical bytes, output lineage, assignment and QC outcomes."""
+    chain = take["derivedRevisionIds"]
+    for row in project["metadataRevisions"]:
+        if row["takeId"] != take["takeId"] or row["rawAssetSha256"] != take["rawAssetSha256"]:
+            continue
+        if not chain and row["kind"] == TAKE_INSPECTION_KIND:
+            return True
+        if (chain and row["kind"] == DERIVED_TAKE_INSPECTION_KIND and
+                isinstance(row.get("values"), dict) and row["values"].get("derivedRevisionId") == chain[-1]):
+            return True
+    return False
+
+
 def _decision_errors(previous: dict[str, Any], project: dict[str, Any], granted: set[str]) -> list[str]:
     decisions: dict[str, dict[str, Any]] = {}
     for review in project["reviews"][len(previous["reviews"]):]:
@@ -174,9 +189,8 @@ def _decision_errors(previous: dict[str, Any], project: dict[str, Any], granted:
             errors.append(f"review decision for {take_id} {independence}")
             continue
         passed = review["result"] == "PASS"
-        if passed and not any(row["takeId"] == take_id and row["kind"] == TAKE_INSPECTION_KIND and
-                              row["rawAssetSha256"] == take["rawAssetSha256"] for row in project["metadataRevisions"]):
-            errors.append(f"review decision for {take_id} approves a take without its current take-inspection.v2 receipt")
+        if passed and not _has_current_inspection(project, take):
+            errors.append(f"review decision for {take_id} approves a take without current automated inspection for the reviewed audio")
             continue
         values = material["values"]
         if (set(values) != REVIEW_MATERIAL_VALUES or values["reviewId"] != review["reviewId"] or

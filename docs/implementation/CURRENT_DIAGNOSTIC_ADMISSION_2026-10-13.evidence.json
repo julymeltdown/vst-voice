@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "unit": "current-diagnostic-admission",
+  "sourceBase": "d814a130b914bd756bd411dcf55771ead02ced0c",
+  "manifest": {
+    "path": "out/evidence/current-diagnostic-admission-2026-10-13/manifest.json",
+    "sizeBytes": 23162,
+    "sha256": "4b118e36639abb7dbc3cda8708cbe4548f48e332e8543cbb03a7fb53527f9e99"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 15.418849792004039
+  },
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.0977917080017505
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "failedQcPolicy": "UNCHANGED; owner decision pending",
+  "legacyReinspection": "NOT_IMPLEMENTED in this unit",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

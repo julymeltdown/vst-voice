@@ -173,6 +173,39 @@ class TakeQcPolicyTest(unittest.TestCase):
 
 
 class TakeInspectionReceiptTest(unittest.TestCase):
+    def test_derived_receipt_binds_owned_history_output_and_assignment(self) -> None:
+        output = "e" * 64
+        take = dict(VOICED_TAKE, derivedRevisionIds=["first-edit", "latest-edit"])
+        revisions = {"first-edit": {"inputSha256": TAKE_SHA, "outputSha256": output},
+                     "latest-edit": {"inputSha256": output, "outputSha256": "f" * 64}}
+        assets = {**ASSETS, output: {"byteSize": 96044}, "f" * 64: {"byteSize": 96044}}
+        text = _edit(lambda e: e.update(takeSha256=output))(VOICED_RECEIPT)
+        receipt = _revision(text, take["takeId"])
+        receipt["kind"] = "derived-take-inspection.v1"
+        receipt["values"]["derivedRevisionId"] = "first-edit"
+        def identify(row):
+            pair = [row["values"]["evidenceSha256"], row["values"]["derivedRevisionId"]]
+            row["revisionId"] = "derived-take-inspection-" + hashlib.sha256(
+                json.dumps(pair, separators=(",", ":")).encode()).hexdigest()[:32]
+        identify(receipt)
+        self.assertEqual([], take_inspection_errors(receipt, take, assets, "fixture", derived_revisions=revisions))
+        self.assertEqual("SIGNAL_CHECKS_NEED_REVIEW", json.loads(text)["status"])
+        for name, mutate, expected in (
+            ("rebound revision", lambda row, t, a, r: (row["values"].update(derivedRevisionId="latest-edit"), identify(row)), "stored take bytes"),
+            ("unowned revision", lambda row, t, a, r: (row["values"].update(derivedRevisionId="other"), identify(row)), "owned"),
+            ("broken input", lambda row, t, a, r: r["first-edit"].update(inputSha256="0" * 64), "lineage"),
+            ("missing revision", lambda row, t, a, r: r.pop("first-edit"), "lineage"),
+            ("wrong assignment", lambda row, t, a, r: t.update(pitchLayer=66), "different assignment"),
+            ("wrong size", lambda row, t, a, r: a[output].update(byteSize=96043), "byte size"),
+            ("wrong raw identity", lambda row, t, a, r: row.update(rawAssetSha256=output), "stored take bytes"),
+            ("extra envelope key", lambda row, t, a, r: row["values"].update(extra="x"), "digest or identity")):
+            with self.subTest(name=name):
+                row, t, a, r = map(copy.deepcopy, (receipt, take, assets, revisions))
+                mutate(row, t, a, r)
+                errors = take_inspection_errors(row, t, a, "fixture", derived_revisions=r)
+                self.assertEqual(1, len(errors), errors)
+                self.assertIn(expected, errors[0])
+
     def test_cpp_receipts_are_accepted_and_reencoded_byte_for_byte(self) -> None:
         for text, take in ((VOICED_RECEIPT, VOICED_TAKE), (BREATH_RECEIPT, BREATH_TAKE)):
             self.assertEqual([], take_inspection_errors(_revision(text, take["takeId"]), take, ASSETS, "fixture"))
@@ -253,13 +286,14 @@ class CppTakeInspectionParityTest(unittest.TestCase):
 
     @staticmethod
     def _rewrite(source: Path, target: Path, generation: int, revision_id: str, text: str,
-                 keep_digest: bool = False) -> Path:
+                 keep_digest: bool = False, kind: str = TAKE_INSPECTION_KIND) -> Path:
         """A copy whose newest generation carries this receipt text, with its journal rehashed to match."""
         shutil.copytree(source, target)
         project = json.loads((source / "project.json").read_text())
         row = next(item for item in project["metadataRevisions"] if item["revisionId"] == revision_id)
         digest = row["values"]["evidenceSha256"] if keep_digest else hashlib.sha256(text.encode()).hexdigest()
-        row.update(revisionId="take-inspection-" + digest[:32], values={"evidenceJson": text, "evidenceSha256": digest})
+        row.update(revisionId="take-inspection-" + digest[:32], kind=kind,
+                   values={"evidenceJson": text, "evidenceSha256": digest})
         payload = (json.dumps(project, sort_keys=True, indent=2) + "\n").encode()
         name = f"{generation:020}.json"
         journal = json.loads((source / "journal" / name).read_text())
@@ -307,6 +341,12 @@ class CppTakeInspectionParityTest(unittest.TestCase):
             control = self._rewrite(workspace, root / "control", generation, newest["revisionId"], original)
             self.assertTrue(self._cpp_accepts(control))
             self.assertTrue(validate_production_draft_workspace(control, inventory).passed)
+            malformed_derived = self._rewrite(workspace, root / "malformed-derived", generation,
+                newest["revisionId"], original, kind="derived-take-inspection.v1")
+            self.assertFalse(self._cpp_accepts(malformed_derived))
+            malformed_result = validate_production_draft_workspace(malformed_derived, inventory)
+            self.assertFalse(malformed_result.passed)
+            self.assertTrue(any("receipt digest or identity" in error for error in malformed_result.errors), malformed_result.errors)
             for index, (name, forge, message) in enumerate(FORGERIES):
                 with self.subTest(name):
                     target = self._rewrite(workspace, root / f"forged-{index}", generation, newest["revisionId"],
