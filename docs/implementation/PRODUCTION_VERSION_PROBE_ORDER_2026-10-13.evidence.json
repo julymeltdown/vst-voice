@@ -47,8 +47,16 @@
   },
   "pythonCaseCount": 50,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "sourceCommit": "8b92033e27f3e0e29f857d4adcd43b0d61cea5e3",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/production-version-probe-order-2026-10-13/review-8b92033e.md",
+      "sizeBytes": 4312,
+      "sha256": "f26df28679408696fb8285b4e9be2d264496507819772d4895a0182ffabab17e"
+    },
+    "p3FollowUp": "Supported-version complements added in separate test-only control unit",
+    "scope": "Exact committed library/test sources; no human/source acceptance"
   },
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false

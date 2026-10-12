@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "unit": "production-supported-version-controls",
+  "sourceBase": "cb3a19a3903ffcd9bb143d808b0ae9868fcf7088",
+  "manifest": {
+    "path": "out/evidence/production-supported-version-controls-2026-10-13/manifest.json",
+    "sizeBytes": 3739,
+    "sha256": "54d46073c01b0d1e5cb170266b089634bd5f2cc59d6c2be1e78a7804da142052"
+  },
+  "focusedBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "--target",
+      "seam_production_review_tests",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.370523625002534
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_production_review_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.6842709170014132
+  },
+  "nativeCaseCount": 22,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

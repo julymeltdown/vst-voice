@@ -1,6 +1,6 @@
 # Recognize production versions before interpreting their fields
 
-Date: 2026-10-13, Asia/Seoul. Base: `fa78dcc2e49e82e04ff860a619d01f653c6de97b`. [Evidence index](PRODUCTION_VERSION_PROBE_ORDER_2026-10-13.evidence.json) retains five exact tested/base source pairs, reproducing baseline and final executables/logs. Independent review of this follow-up is PENDING. The preceding recovery 394a29b8 and legacy guard 1352ca87 have technical APPROVE; their exact verdict is indexed separately.
+Date: 2026-10-13, Asia/Seoul. Base: `fa78dcc2e49e82e04ff860a619d01f653c6de97b`. [Evidence index](PRODUCTION_VERSION_PROBE_ORDER_2026-10-13.evidence.json) retains five exact tested/base source pairs, reproducing baseline and final executables/logs. Independent technical review is APPROVE for 8b92033e; all four preceding P3s closed. The preceding recovery 394a29b8 and legacy guard 1352ca87 have technical APPROVE; their exact verdict is indexed separately.
 
 The reviewer identified four P3 follow-ups. Two changed-field regressions reproduce silent recovery fallback despite a parseable unknown schema/policy marker. The original project decoder read all core header fields before rejecting an unknown schema; journal verification checked format/schema/action/operator before recognizing its policy marker. A newer contract that also changed those fields could therefore look like corrupt supported data.
 
@@ -18,3 +18,5 @@ Verification:
 The recovery ledger's earlier mixed-run timing is corrected to the actual 141-case CTest-reported 18.91 seconds; the initial 140-case run remains separately retained. Recovery/guard reports now cite their build logs for rebuild evidence. The verbatim two-unit APPROVE is bound in both indexes without altering tested manifests.
 
 Recognition requires safely parseable data. Invalid/unrecognized format, malformed version fields, parser-limit failures, or an unknown enum under a supported schema retain their existing supported-data error paths. No universal future-format migration/refusal or archive authentication is claimed. The shared policy helper reserves only its current explicit marker checks. Rights/real actors/listening/failed-QC owner decisions and frozen-kit observation remain missing; no source, human or Beta acceptance advances. Actual media/null worksheet/95-file kit/stash remain unchanged, .github untouched and Windows TODO retained. Alpha 0/20 recorded PASS, External Beta BLOCKED; full goal ACTIVE.
+
+The separately verified [supported-version controls](SUPPORTED_VERSION_RECOVERY_CONTROLS_2026-10-13.md) address the remaining test P3 without changing library behavior; their review is separately pending.

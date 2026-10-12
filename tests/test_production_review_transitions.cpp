@@ -838,3 +838,39 @@ TEST_CASE("project parser depth limit remains a recoverable supported-data failu
   CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
   CHECK(seam::core::readTextFileLimited(path,64U*1024U*1024U).value()==text);
 }
+
+TEST_CASE("supported project schema with damaged core header still recovers its predecessor") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"generations"/name;
+  auto damaged=seam::formats::parseJson(seam::core::readTextFileLimited(path,64U*1024U*1024U).value());CHECK(damaged);
+  damaged.value().asObject().insert_or_assign("projectId",seam::formats::JsonValue{std::int64_t{42}});
+  const auto text=seam::formats::stringifyJson(damaged.value(),true)+"\n";
+  const auto decoded=production::decodeProductionProject(text);CHECK(!decoded);
+  CHECK(decoded.error().code==seam::core::ErrorCode::ParseError);
+  CHECK(seam::core::durableAtomicWriteText(path,text));
+  const auto recovered=fixture.repository.recover();CHECK(recovered);
+  CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
+  CHECK(seam::core::readTextFileLimited(path,64U*1024U*1024U).value()==text);
+}
+
+TEST_CASE("supported and unmarked journal policies with damaged bindings still recover their predecessor") {
+  for (const bool marked:{false,true}) {
+    for (const auto* field:{"format","schemaVersion","action"}) {
+      ReviewFixture fixture;
+      auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+      const auto path=fixture.root/"workspace"/"journal"/name;
+      auto damaged=seam::formats::parseJson(seam::core::readTextFileLimited(path,1024U*1024U).value());CHECK(damaged);
+      if (!marked) damaged.value().asObject().erase("reviewInspectionPolicyVersion");
+      damaged.value().asObject().insert_or_assign(field,seam::formats::JsonValue{std::string{"future-contract"}});
+      const auto text=seam::formats::stringifyJson(damaged.value(),true)+"\n";
+      CHECK(seam::core::durableAtomicWriteText(path,text));
+      const auto verified=fixture.repository.verify(fixture.project);CHECK(!verified);
+      CHECK(verified.error().code==seam::core::ErrorCode::InvariantViolation);
+      CHECK(verified.error().message=="Production journal binding is invalid");
+      const auto recovered=fixture.repository.recover();CHECK(recovered);
+      CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
+      CHECK(seam::core::readTextFileLimited(path,1024U*1024U).value()==text);
+    }
+  }
+}
