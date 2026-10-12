@@ -36,9 +36,16 @@
   "retainedArtifacts": 19,
   "preservedBindings": 4,
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Configured target and native integration test routing only"
+    "scope": "Configured target and native integration test routing only",
+    "reviewedCommit": "11241210dbb3dc9b5c3c82e0732dc3a0e655e325",
+    "verdict": {
+      "path": "out/evidence/source-review-closeout-2026-10-13/review-59ddc63e-11241210.txt",
+      "sizeBytes": 12992,
+      "sha256": "9ac50a8177bec16599ded0b5cc0286798765b309c5c844d55ad805d8d2bdf6be"
+    },
+    "reviewMethod": "Independent Git-blob, hash, source and retained-data recomputation; no native execution or build by reviewer"
   },
   "alphaRecordedPasses": [
     0,
