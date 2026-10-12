@@ -125,6 +125,9 @@ public:
   [[nodiscard]] core::Result<void> save(
       VoicebankProductionProject& project,
       const ProductionJournalEvent& event, std::stop_token stopToken = {});
+  // Supported corrupt/incomplete/over-limit files may fall back to the last valid one.
+  // An encountered unsupported project schema or inspection policy refuses instead of
+  // silently presenting an older generation as current. No stored bytes change.
   [[nodiscard]] core::Result<VoicebankProductionProject> recover() const;
   // Read a specific verified historical state without changing the current pointer.
   [[nodiscard]] core::Result<VoicebankProductionProject> recoverGeneration(
@@ -256,7 +259,7 @@ private:
       std::uint64_t generation) const;
   [[nodiscard]] core::Result<void> verifyGeneration(
       const VoicebankProductionProject& project,
-      bool requireCurrentPointer) const;
+      bool requireCurrentPointer, bool* unsupportedInspectionPolicy = nullptr) const;
 
   std::filesystem::path root_;
   ImmutableAssetStore assetStore_;

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "unit": "unsupported-production-recovery",
+  "sourceBase": "67a031573b91a0f03b215166ec5aa2498be18e89",
+  "manifest": {
+    "path": "out/evidence/unsupported-production-recovery-2026-10-13/format-classification/manifest.json",
+    "sizeBytes": 14893,
+    "sha256": "94d955b63ef40ea55d0d25481c1bfb7a12077a299b7c3e456c4d8c6f67bd4705"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.934508624995942
+  },
+  "nativeCaseCount": 141,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 3.830160874997091
+  },
+  "pythonCaseCount": 50,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "supportedCorruptionRecovery": "PRESERVED; synthetic corrupt and over-limit generation/journal cases",
+  "unsupportedRecovery": "REFUSED; unknown project schema or inspection-policy marker; read-limit Unsupported remains recoverable",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false,
+  "initialSnapshotManifest": {
+    "path": "out/evidence/unsupported-production-recovery-2026-10-13/manifest.json",
+    "sizeBytes": 14475,
+    "sha256": "523494e3035f2903881d1148783dd6c7ad4e90ea8d09200d47366ef4bb2c33bf"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 46.255725791997975
+  }
+}

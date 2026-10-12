@@ -226,7 +226,8 @@ core::Result<void> ProductionProjectRepository::verify(
 
 core::Result<void> ProductionProjectRepository::verifyGeneration(
     const VoicebankProductionProject& project,
-    bool requireCurrentPointer) const {
+    bool requireCurrentPointer, bool* unsupportedInspectionPolicy) const {
+  if (unsupportedInspectionPolicy) *unsupportedInspectionPolicy = false;
   auto valid = validateProductionProject(project);
   if (!valid) return valid;
   if (project.schemaVersion == 1) {
@@ -303,7 +304,13 @@ core::Result<void> ProductionProjectRepository::verifyGeneration(
                          "Production journal binding is invalid");
   }
   const auto ancestry = history_internal::verifyAncestry(root_, parsed.value(), project.projectId, project.lastDurableGeneration);
-  if (!ancestry) return core::Result<void>{ancestry.error()};
+  if (!ancestry) {
+    // verifyAncestry uses Unsupported only for its inspection-policy marker.
+    // Bounded file reads also use Unsupported, but remain recoverable damaged data.
+    if (unsupportedInspectionPolicy)
+      *unsupportedInspectionPolicy = ancestry.error().code == core::ErrorCode::Unsupported;
+    return core::Result<void>{ancestry.error()};
+  }
   return core::success();
 }
 

@@ -476,10 +476,8 @@ class CppReviewTransitionParityTest(unittest.TestCase):
                     native = subprocess.run([str(CLI), "inspect-source-quality", str(target), "procedural-a"],
                         capture_output=True, text=True, timeout=60)
                     self.assertEqual(2, native.returncode, native.stderr)
-                    # Recovery skips the invalid newest journal, then the read-only
-                    # source inspector refuses its stale pointer. The direct native
-                    # verify test asserts the underlying marker-specific error.
-                    self.assertIn("Production project pointer is stale or invalid", native.stderr)
+                    # An unsupported newest generation must not silently expose an older one.
+                    self.assertIn("Unsupported production review inspection policy", native.stderr)
 
     def test_cli_decisions_bind_the_mirrored_basis_through_retake_and_selection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

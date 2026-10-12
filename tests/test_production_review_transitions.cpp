@@ -715,3 +715,79 @@ TEST_CASE("native verification reports unsupported inspection policy rather than
   CHECK(seam::core::durableAtomicWriteText(path,original.value()));
   CHECK(fixture.repository.verify(fixture.project));
 }
+
+TEST_CASE("recovery refuses unsupported newest journal policy without exposing an older generation") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"journal"/name;
+  auto journal=seam::formats::parseJson(seam::core::readTextFileLimited(path,1024U*1024U).value());CHECK(journal);
+  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{3}});
+  CHECK(seam::core::durableAtomicWriteText(path,seam::formats::stringifyJson(journal.value(),true)+"\n"));
+  const auto files=[&] {
+    std::map<std::filesystem::path,std::string> result;
+    for (const auto& entry:std::filesystem::recursive_directory_iterator(fixture.root/"workspace"))
+      if (entry.is_regular_file()) result.emplace(entry.path(),seam::core::sha256File(entry.path()).value());
+    return result;
+  };
+  const auto stored=files();
+  const auto before=production::encodeProductionProject(fixture.project);
+  const auto recovered=fixture.repository.recover();CHECK(!recovered);
+  CHECK(recovered.error().code==seam::core::ErrorCode::Unsupported);
+  CHECK(recovered.error().message=="Unsupported production review inspection policy");
+  const auto saved=fixture.repository.save(fixture.project,ReviewFixture::event("save",fixture.project.projectId));CHECK(!saved);
+  CHECK(saved.error().code==seam::core::ErrorCode::Unsupported);
+  CHECK(production::encodeProductionProject(fixture.project)==before);CHECK(files()==stored);
+}
+
+TEST_CASE("recovery refuses an unsupported newest project schema without rewriting its bytes") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"generations"/name;
+  auto future=seam::formats::parseJson(seam::core::readTextFileLimited(path,64U*1024U*1024U).value());CHECK(future);
+  future.value().asObject().insert_or_assign("schemaVersion",seam::formats::JsonValue{std::int64_t{99}});
+  CHECK(seam::core::durableAtomicWriteText(path,seam::formats::stringifyJson(future.value(),true)+"\n"));
+  const auto files=[&] {
+    std::map<std::filesystem::path,std::string> result;
+    for (const auto& entry:std::filesystem::recursive_directory_iterator(fixture.root/"workspace"))
+      if (entry.is_regular_file()) result.emplace(entry.path(),seam::core::sha256File(entry.path()).value());
+    return result;
+  };
+  const auto stored=files();const auto before=production::encodeProductionProject(fixture.project);
+  const auto recovered=fixture.repository.recover();CHECK(!recovered);
+  CHECK(recovered.error().code==seam::core::ErrorCode::Unsupported);
+  CHECK(recovered.error().message=="Production project schema is unsupported");
+  const auto saved=fixture.repository.save(fixture.project,ReviewFixture::event("save",fixture.project.projectId));CHECK(!saved);
+  CHECK(saved.error().code==seam::core::ErrorCode::Unsupported);
+  CHECK(production::encodeProductionProject(fixture.project)==before);CHECK(files()==stored);
+}
+
+TEST_CASE("supported corrupt generation or journal data still recovers the last valid snapshot") {
+  for (const auto* directory:{"generations","journal"}) {
+    ReviewFixture fixture;
+    auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+    const auto path=fixture.root/"workspace"/directory/name;
+    const auto original=seam::core::readTextFileLimited(path,64U*1024U*1024U);CHECK(original);
+    CHECK(seam::core::durableAtomicWriteText(path,"{interrupted supported-format JSON"));
+    const auto recovered=fixture.repository.recover();CHECK(recovered);
+    CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
+    CHECK(seam::core::readTextFileLimited(path,64U*1024U*1024U).value()=="{interrupted supported-format JSON");
+    CHECK(seam::core::durableAtomicWriteText(path,original.value()));CHECK(fixture.repository.verify(fixture.project));
+  }
+}
+
+TEST_CASE("over-limit newest generation and journal files remain supported-data recovery failures") {
+  for (const auto* directory:{"generations","journal"}) {
+    ReviewFixture fixture;
+    auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+    const auto path=fixture.root/"workspace"/directory/name;
+    const auto original=seam::core::readTextFileLimited(path,64U*1024U*1024U);CHECK(original);
+    const std::uintmax_t limit=std::string_view{directory}=="generations"?64U*1024U*1024U:1024U*1024U;
+    std::filesystem::resize_file(path,limit+1U);
+    const auto before=seam::core::sha256File(path);CHECK(before);
+    const auto recovered=fixture.repository.recover();CHECK(recovered);
+    CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
+    CHECK(std::filesystem::file_size(path)==limit+1U);
+    CHECK(seam::core::sha256File(path).value()==before.value());
+    CHECK(seam::core::durableAtomicWriteText(path,original.value()));CHECK(fixture.repository.verify(fixture.project));
+  }
+}

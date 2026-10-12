@@ -372,6 +372,8 @@ ProductionProjectRepository::recover() const {
     }
     auto decoded = decodeProductionProject(text.value());
     if (!decoded) {
+      // Unsupported versions need a compatible reader, not a rollback over newer work.
+      if (decoded.error().code == core::ErrorCode::Unsupported) return decoded;
       lastError = decoded.error();
       continue;
     }
@@ -382,8 +384,11 @@ ProductionProjectRepository::recover() const {
           generationPath(generation).string()};
       continue;
     }
-    auto verified = verifyGeneration(decoded.value(), false);
+    bool unsupportedInspectionPolicy = false;
+    auto verified = verifyGeneration(decoded.value(), false, &unsupportedInspectionPolicy);
     if (verified) return decoded;
+    if (unsupportedInspectionPolicy)
+      return core::Result<VoicebankProductionProject>{verified.error()};
     lastError = verified.error();
   }
   if (lastError.has_value()) {

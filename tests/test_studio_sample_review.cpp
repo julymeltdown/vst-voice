@@ -98,6 +98,29 @@ struct Dialog final : platform::IFileDialog {
 };
 } // namespace
 
+TEST_CASE("Studio refuses an unsupported newest workspace without replacing the open project") {
+  Fixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"producer"/"journal"/name;
+  auto journal=formats::parseJson(core::readTextFileLimited(path,1024U*1024U).value());CHECK(journal);
+  journal.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",formats::JsonValue{std::int64_t{3}});
+  CHECK(core::durableAtomicWriteText(path,formats::stringifyJson(journal.value(),true)+"\n"));
+  const auto journalHash=core::sha256File(path).value();
+  const auto pointerHash=core::sha256File(fixture.root/"producer"/"project.json").value();
+  const auto before=production::encodeProductionProject(*fixture.controller.productionProject());
+  const auto epoch=fixture.controller.productionSessionEpoch();
+  const auto refused=fixture.controller.openProductionProject(fixture.root/"producer",fixture.project.inventorySha256,"producer");
+  CHECK(!refused);CHECK(refused.error().code==core::ErrorCode::Unsupported);
+  CHECK(refused.error().message=="Unsupported production review inspection policy");
+  CHECK(fixture.controller.productionSessionEpoch()==epoch);
+  CHECK(production::encodeProductionProject(*fixture.controller.productionProject())==before);
+  Controller fresh;
+  CHECK(!fresh.openProductionProject(fixture.root/"producer",fixture.project.inventorySha256,"producer"));
+  CHECK(!fresh.productionProject());
+  CHECK(core::sha256File(path).value()==journalHash);
+  CHECK(core::sha256File(fixture.root/"producer"/"project.json").value()==pointerHash);
+}
+
 TEST_CASE("native review shows current derivative inspection instead of a raw-only warning") {
   Fixture fixture;
   const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
