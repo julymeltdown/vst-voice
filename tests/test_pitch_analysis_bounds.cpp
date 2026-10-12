@@ -63,6 +63,24 @@ TEST_CASE("interpolation outside the frequency interval is unvoiced rather than 
   }
 }
 
+TEST_CASE("valid pitch near the upper frequency bound keeps its fundamental") {
+  using namespace seam::voicebank;
+  for (const auto rate : {22050U, 44100U, 48000U}) {
+    for (const auto method : {PitchCorrelationMethod::Direct, PitchCorrelationMethod::Fft}) {
+      PitchConfig config;
+      config.hopSize = config.frameSize;
+      config.correlationMethod = method;
+      const auto samples = seam::test::support::sineWave(rate, 1199.0, 0.2, 0.25F);
+      const auto result = analyzePitch(samples, rate, config); CHECK(result);
+      CHECK(!result.value().empty());
+      for (const auto& frame : result.value()) {
+        CHECK(frame.voiced);
+        CHECK_NEAR(frame.f0Hz, 1199.0, 2.0);
+      }
+    }
+  }
+}
+
 TEST_CASE("Full hop pitch coverage includes bounded zero padded tail frames") {
   using namespace seam::voicebank;
   for (const auto count : {1U, 255U, 256U, 257U, 4097U}) {
@@ -164,8 +182,9 @@ TEST_CASE("pitch analysis admits exact correlation budgets before allocating res
   using namespace seam::voicebank;
   const auto samples = seam::test::support::sineWave(48000U, 220.0, 0.2, 0.25F);
   const auto frames = 1U + (samples.size() - 2048U) / 256U;
-  // Default lag interval is [40, 800], inclusive.
-  const auto terms = std::uint64_t{761} * (2048U - 420U) * frames;
+  // The [40, 800] interval plus lag 39 needed to bracket its boundary peak.
+  // The extra neighbor must be charged even for silence, before allocation.
+  const auto terms = (std::uint64_t{761} * (2048U - 420U) + (2048U - 39U)) * frames;
   const auto exact = analyzePitch(samples, 48000U, {}, {}, {frames, terms}); CHECK(exact);
   CHECK(exact.value().size() == frames);
   CHECK(!analyzePitch(samples, 48000U, {}, {}, {frames - 1U, terms}));

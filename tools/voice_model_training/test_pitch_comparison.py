@@ -17,7 +17,7 @@ def track(pitches, *, digest="a" * 64, confidence=.95):
     return dict(formatId="com.project-seam.training-pitch-features", schemaVersion=1,
         sourceSha256=digest, sampleRate=48000, frameCount=len(pitches) * 256,
         windowFrames=2048, hopSize=256, minimumHz=60, maximumHz=1200,
-        voicingThreshold=.32, algorithm="fft-autocorrelation-v2", coverage="full-hop-zero-padded",
+        voicingThreshold=.32, algorithm="fft-autocorrelation-v3", coverage="full-hop-zero-padded",
         trainingAdmitted=False, releaseEligible=False,
         pitchFrames=[dict(sourceFrame=i * 256, f0Hz=p, voiced=p > 0,
                           confidence=confidence if p > 0 else 0.) for i, p in enumerate(pitches)])
@@ -95,7 +95,8 @@ class PitchComparisonTests(unittest.TestCase):
                         dict(windowFrames=1024), dict(sourceSha256="b" * 64),
                         dict(coverage="complete-windows"), dict(schemaVersion=True),
                         dict(minimumHz=50), dict(trainingAdmitted=True),
-                        dict(algorithm="fft-autocorrelation-v1")):
+                        dict(algorithm="fft-autocorrelation-v1"),
+                        dict(algorithm="fft-autocorrelation-v2")):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 compare_pitch_tracks(source, source | changes, reference_sha256="a" * 64,
                     candidate_sha256="a" * 64, sample_rate=48000, frame_count=8192)

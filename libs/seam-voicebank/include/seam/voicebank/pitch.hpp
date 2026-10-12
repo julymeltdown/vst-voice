@@ -15,8 +15,8 @@ namespace seam::voicebank {
 enum class PitchCorrelationMethod { Direct, Fft };
 enum class PitchFrameCoverage { CompleteWindows, FullHopGrid };
 
-// Version 2 enforces the configured Hz interval after lag interpolation.
-inline constexpr std::string_view kPitchAnalysisAlgorithm = "fft-autocorrelation-v2";
+// Version 3 enforces the Hz interval while preserving boundary-peak neighbors.
+inline constexpr std::string_view kPitchAnalysisAlgorithm = "fft-autocorrelation-v3";
 
 struct PitchConfig final {
   std::size_t frameSize{2048};

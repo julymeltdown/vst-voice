@@ -1,6 +1,6 @@
 # Pitch estimates respect the declared frequency interval
 
-Date: 2026-10-13, Asia/Seoul. Baseline HEAD: `73b309f0083b2d481282dede1c683bf9e5c1f884`. Fetch and fast-forward pull preceded this unit; existing stash and source evidence were preserved. The [evidence index](PITCH_DECLARED_RANGE_2026-10-13.evidence.json) binds the retained baseline, full build, tests, exact binaries, source snapshots and fresh original-recording measurements. Independent implementation review is PENDING.
+Date: 2026-10-13, Asia/Seoul. Baseline HEAD: `73b309f0083b2d481282dede1c683bf9e5c1f884`. Fetch and fast-forward pull preceded this unit; existing stash and source evidence were preserved. The [evidence index](PITCH_DECLARED_RANGE_2026-10-13.evidence.json) binds the retained baseline, full build, tests, exact binaries, source snapshots and fresh original-recording measurements. This first candidate is superseded by the [boundary-neighborhood follow-up](PITCH_UPPER_NEIGHBORHOOD_2026-10-13.md) after a newly reproduced octave regression; independent review remains PENDING. Its build/measurements below are retained historical execution, not the current analyzer.
 
 ## Defect and repair
 

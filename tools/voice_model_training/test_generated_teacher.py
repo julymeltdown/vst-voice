@@ -42,7 +42,7 @@ def captured_pitch(payload, frames, rate=48000):
     return dict(formatId='com.project-seam.training-pitch-features', schemaVersion=1,
         sourceSha256=hashlib.sha256(payload).hexdigest(), sampleRate=rate, frameCount=frames,
         windowFrames=2048, hopSize=256, minimumHz=60, maximumHz=1200, voicingThreshold=0.32,
-        algorithm='fft-autocorrelation-v2', coverage='full-hop-zero-padded',
+        algorithm='fft-autocorrelation-v3', coverage='full-hop-zero-padded',
         trainingAdmitted=False, releaseEligible=False,
         pitchFrames=[dict(sourceFrame=i * 256, f0Hz=220.0, confidence=0.9, voiced=True)
                      for i in range((frames + 255) // 256)])

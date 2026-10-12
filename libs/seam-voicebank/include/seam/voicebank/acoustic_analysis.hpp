@@ -43,7 +43,9 @@ inline constexpr std::string_view kAcousticAnalysisAlgorithmId =
 // Version 3 also rejects pitch proposals outside the declared frequency bounds.
 // Version 2 could report >1200 Hz at 44.1 kHz or below a configured minimum;
 // derivatives from it must be remeasured instead of claiming current analysis.
-inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "3";
+// Version 4 restores the boundary-peak neighborhood; version 3 could select an
+// octave-low estimate for an otherwise valid 1199 Hz fundamental at 44.1 kHz.
+inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "4";
 inline constexpr std::string_view kAcousticAnalysisFormatId =
     "com.project-seam.acoustic-analysis";
 

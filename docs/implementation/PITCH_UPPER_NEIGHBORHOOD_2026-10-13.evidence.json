@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "unit": "pitch-upper-neighborhood",
+  "sourceHead": "9b1002dda9bfd0883bab651853129a1d201b859e",
+  "manifest": {
+    "path": "out/evidence/pitch-upper-neighborhood-2026-10-13/manifest.json",
+    "sizeBytes": 32744,
+    "sha256": "003a56d0a66d69d451b7bdec28464e619936bad1e627b3e8b9c27569a3d61673"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/pitch-upper-neighborhood-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/pitch-upper-neighborhood-2026-10-13/verification.log",
+      "sizeBytes": 310,
+      "sha256": "d020f7609245afe82c5c86d41af8fc898f89a24b7bd7265aee9f7f3dfb2e3f5c"
+    }
+  },
+  "nativeCasesPassed": 179,
+  "focusedCTestEntriesPassed": 7,
+  "pythonPassedCases": 22,
+  "pythonSkippedCases": 1,
+  "additionalNativeControlPassed": 1,
+  "newOriginalNativeInvocations": 20,
+  "oldOutOfRangeVoicedFrames": 106,
+  "newOutOfRangeVoicedFrames": 0,
+  "changedOriginalF0Frames": 1088,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "takeInspectorIdentity": "OPEN_COMPATIBILITY_FOLLOWUP",
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaPromotion": false
+}

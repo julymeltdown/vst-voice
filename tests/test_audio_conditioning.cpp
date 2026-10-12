@@ -298,7 +298,7 @@ TEST_CASE("acoustic analysis refuses a record from a different algorithm revisio
   CHECK(analysis);
 
   // A future revision of the analyser must invalidate what the old one recorded.
-  for (const auto oldVersion : {"0", "2"}) {
+  for (const auto oldVersion : {"0", "2", "3"}) {
     auto stale = analysis.value();
     stale.algorithmVersion = oldVersion;
     CHECK(!stale.currentAlgorithm());

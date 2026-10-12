@@ -54,11 +54,14 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
     return core::failure<std::vector<PitchFrame>>(
         core::ErrorCode::InvalidArgument, "Pitch analysis configuration is invalid");
   }
-  const auto minimumLagValue = std::ceil(static_cast<double>(sampleRate) / config.maximumHz);
+  // Keep the neighboring lag needed to bracket an in-range boundary peak.
+  // The final frequency guard, after interpolation, enforces the Hz interval.
+  const auto minimumLagValue = std::floor(static_cast<double>(sampleRate) / config.maximumHz);
   if (!std::isfinite(minimumLagValue) || minimumLagValue >= static_cast<double>(config.frameSize / 2U)) {
     return core::failure<std::vector<PitchFrame>>(core::ErrorCode::InvalidArgument, "Pitch lag range is outside the analysis window");
   }
-  const auto minimumLag = std::max<std::size_t>(1, static_cast<std::size_t>(minimumLagValue));
+  const auto boundaryLag = static_cast<std::size_t>(minimumLagValue);
+  const auto minimumLag = boundaryLag > 1U ? boundaryLag - 1U : 1U;
   const auto maximumLag = std::min<std::size_t>(config.frameSize / 2U,
       static_cast<std::size_t>(std::min(static_cast<double>(config.frameSize / 2U),
           std::ceil(static_cast<double>(sampleRate) / config.minimumHz))));

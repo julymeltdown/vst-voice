@@ -41,5 +41,7 @@
     20
   ],
   "betaStatus": "BLOCKED",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "implementationDisposition": "SUPERSEDED_BOUNDARY_REGRESSION",
+  "followup": "docs/implementation/PITCH_UPPER_NEIGHBORHOOD_2026-10-13.evidence.json"
 }

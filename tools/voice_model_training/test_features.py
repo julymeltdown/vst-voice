@@ -28,7 +28,7 @@ class FeatureTests(unittest.TestCase):
             f0Hz=[0, 0], voiced=[False, False], reviewRevision="old")
         features = dict(formatId="com.project-seam.training-pitch-features", schemaVersion=1,
             sourceSha256="a" * 64, sampleRate=48000, frameCount=257, windowFrames=2048, hopSize=256,
-            minimumHz=60, maximumHz=1200, voicingThreshold=0.32, algorithm="fft-autocorrelation-v2",
+            minimumHz=60, maximumHz=1200, voicingThreshold=0.32, algorithm="fft-autocorrelation-v3",
             coverage="full-hop-zero-padded", trainingAdmitted=False, releaseEligible=False,
             pitchFrames=[dict(sourceFrame=i * 256, f0Hz=220, voiced=True, confidence=0.9) for i in range(2)])
         def apply(value):
@@ -44,7 +44,8 @@ class FeatureTests(unittest.TestCase):
         self.assertTrue(queue["reviewRequired"])
         for key, value in (("hopSize", 128), ("windowFrames", 1024), ("sampleRate", 44100),
                            ("schemaVersion", True), ("voicingThreshold", 0.5), ("coverage", "complete"),
-                           ("algorithm", "fft-autocorrelation-v1")):
+                           ("algorithm", "fft-autocorrelation-v1"),
+                           ("algorithm", "fft-autocorrelation-v2")):
             with self.assertRaises(ValueError): apply(dict(features, **{key: value}))
         for key, value in (("sourceFrame", 1), ("f0Hz", float("nan")), ("voiced", False),
                            ("confidence", float("inf")), ("confidence", -1),
