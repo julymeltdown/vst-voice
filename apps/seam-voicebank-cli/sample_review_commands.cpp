@@ -114,16 +114,29 @@ int recordCurrentTakeInspection(int argc, char** argv) {
   if (!cancellation.install()) return fail({core::ErrorCode::IoError,"Cannot install inspection cancellation handlers",{}});
   production::ProductionProjectRepository repository{argv[2]};
   auto project = repository.recover(); if (!project) return fail(project.error(), &cancellation);
+  const auto previousTake = std::find_if(project.value().takes.begin(), project.value().takes.end(),
+      [&](const auto& take) { return take.takeId == argv[4]; });
+  if (previousTake == project.value().takes.end())
+    return fail({core::ErrorCode::NotFound,"Inspection take is unavailable",{}}, &cancellation);
+  const auto previousState = previousTake->state;
   const auto committed = repository.recordCurrentTakeInspection(project.value(), argv[4], argc == 8 ? argv[7] : "",
       argv[3], argv[5], argv[6], cancellation.token());
   if (!committed) return fail(committed.error(), &cancellation);
   const auto evidence = formats::parseJson(committed.value().values.at("evidenceJson"));
   if (!evidence) return fail(evidence.error(), &cancellation);
+  const auto currentTake = std::find_if(project.value().takes.begin(), project.value().takes.end(),
+      [&](const auto& take) { return take.takeId == argv[4]; });
+  if (currentTake == project.value().takes.end())
+    return fail({core::ErrorCode::InvariantViolation,"Committed inspection take is unavailable",{}}, &cancellation);
+  const bool approvalLowered = previousState == production::UnitQueueState::Approved &&
+      currentTake->state != production::UnitQueueState::Approved;
   print({{"result","TakeInspectionCommitted"},{"takeId",argv[4]},{"revisionId",committed.value().revisionId},
       {"kind",committed.value().kind},{"generation",std::to_string(committed.value().committedGeneration)},
       {"projectSha256",committed.value().committedProjectSha256},{"inspection",evidence.value()},
       {"durabilityConfirmed",committed.value().durabilityConfirmed},{"diagnostic",committed.value().diagnostic},
-      {"sourcePermissions","unchanged"},{"unitApproval","not granted"},{"releaseEligible",false}});
+      {"sourcePermissions","unchanged"},{"previousState",production::toString(previousState)},
+      {"state",production::toString(currentTake->state)},{"approvalLowered",approvalLowered},
+      {"unitApproval",approvalLowered ? "requires a new independent review" : "not granted"},{"releaseEligible",false}});
   return 0;
 }
 
@@ -385,6 +398,7 @@ void printSampleReviewUsage() {
     << "    take returns to marker review. Only a new independent review approves it again.\n"
     << "  seam_voicebank_cli record-current-take-inspection WORKSPACE PROJECT_SHA256 TAKE PRODUCER UTC [ACTIVE_REVISION]\n"
     << "    Appends missing automated diagnostics for exact stored audio, without DSP or approval.\n"
+    << "    Invalidates an affected approval and reports the resulting state; a new independent review is required.\n"
     << "    Omit ACTIVE_REVISION only for raw audio; edited audio requires its captured latest revision ID.\n"
     << "    Refuses existing current diagnostics, stale captures, unauthorized sources and non-producer identities.\n"
     << "  seam_voicebank_cli migrate-style WORKSPACE PLAN_JSON PROJECT_SHA256 PRODUCER UTC\n"

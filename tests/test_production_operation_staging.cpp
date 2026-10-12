@@ -72,6 +72,39 @@ struct StagingFixture final {
 
 }  // namespace
 
+TEST_CASE("annotation API refuses an internally valid caller-supplied raw diagnostic") {
+  StagingFixture fixture;
+  auto evidence=production::currentTakeInspection(fixture.project,"take-a"); CHECK(evidence);
+  // Internally consistent but not measured RMS. Content validation is not evidence origin.
+  evidence->inspection.measurements.rms*=0.99;
+  const auto revision=production::makeTakeInspectionRevision(*evidence,"producer","2026-09-09T10:02:00Z");
+  CHECK(production::validateTakeInspectionRevision(fixture.project,revision));
+  const auto before=production::encodeProductionProject(fixture.project);
+  const auto refused=fixture.repository.recordMetadataRevision(fixture.project,revision,
+      {"marker",revision.revisionId,"producer","2026-09-09T10:02:00Z"});
+  CHECK(!refused); CHECK(refused.error().message.find("stored-audio inspection")!=std::string::npos);
+  CHECK(production::encodeProductionProject(fixture.project)==before);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==before);
+}
+
+TEST_CASE("annotation API refuses a caller-supplied current derived diagnostic") {
+  StagingFixture fixture;
+  const auto asset=fixture.legacyEdit();
+  const auto request=production::takeInspectionRequestFor("sustain:a",69);CHECK(request);
+  const auto inspected=seam::voicebank::inspectTake(fixture.repository.assetPath(asset),request.value());CHECK(inspected);
+  const auto revision=production::makeDerivedTakeInspectionRevision(
+      {{"take-a","a","sustain:a",69},inspected.value()},fixture.raw.sha256,"legacy-edit",
+      "producer","2026-09-09T10:02:00Z");
+  CHECK(production::validateTakeInspectionRevision(fixture.project,revision));
+  const auto before=production::encodeProductionProject(fixture.project);
+  const auto refused=fixture.repository.recordMetadataRevision(fixture.project,revision,
+      {"marker",revision.revisionId,"producer","2026-09-09T10:02:00Z"});
+  CHECK(!refused); CHECK(refused.error().message.find("stored-audio inspection")!=std::string::npos);
+  CHECK(production::encodeProductionProject(fixture.project)==before);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==before);
+  CHECK(!production::currentActiveTakeInspection(fixture.project,"take-a"));
+}
+
 TEST_CASE("explicit legacy reinspection preserves bytes lineage and failed diagnostics without approval") {
   StagingFixture fixture;
   const auto audio = fixture.legacyEdit();

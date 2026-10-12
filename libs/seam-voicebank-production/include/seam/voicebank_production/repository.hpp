@@ -168,6 +168,7 @@ public:
       // Captured before staging. Empty identifies the raw parent, not any
       // revision with matching bytes; equal hashes do not identify ownership.
       std::string_view expectedParentRevisionId);
+  // Annotation writer; diagnostic receipts require the stored-audio inspection path.
   [[nodiscard]] core::Result<CommittedMetadataRevision> recordMetadataRevision(
       VoicebankProductionProject& project,
       MetadataRevision revision,
@@ -175,7 +176,9 @@ public:
   // Fill a missing current diagnostic from exact stored audio, without a DSP edit.
   // Requires the registered producer, captured current project and active revision
   // (empty means raw). Existing current receipts are preserved and refused, not
-  // rewritten. Failed QC stays failed; no review or source permission is granted.
+  // rewritten. The appended receipt lowers affected approvals to marker review;
+  // a new independent review is required. Failed QC stays failed; no review or
+  // source permission is granted.
   [[nodiscard]] core::Result<CommittedMetadataRevision> recordCurrentTakeInspection(
       VoicebankProductionProject& project, std::string_view takeId,
       std::string_view expectedActiveRevisionId, std::string_view expectedProjectSha256,
@@ -226,6 +229,11 @@ public:
       const AssetRecord& asset) const;
 
 private:
+  // Shared durable append after the caller-facing writer has checked its kind,
+  // or recordCurrentTakeInspection has measured the exact stored audio.
+  [[nodiscard]] core::Result<CommittedMetadataRevision> recordMetadataRevisionBound(
+      VoicebankProductionProject& project, MetadataRevision revision,
+      const ProductionJournalEvent& event);
   // The single durable append path. Only the evidence-backed style migration may cross from
   // legacy bytes into style ownership; every other writer passes false and keeps the refusal.
   [[nodiscard]] core::Result<void> writeGeneration(

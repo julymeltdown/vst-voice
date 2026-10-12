@@ -54,5 +54,9 @@
   "historyReplayP2": "ADDRESSED LOCALLY in INSPECTION_POLICY_HISTORY_2026-10-13; independent recheck/integration pending",
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "p3Remediation": {
+    "report": "docs/implementation/INSPECTION_WRITER_BOUNDARY_2026-10-13.md",
+    "status": "LOCALLY VERIFIED; independent review/integration pending"
+  }
 }

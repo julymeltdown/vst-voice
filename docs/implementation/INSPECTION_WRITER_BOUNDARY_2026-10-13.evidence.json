@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "unit": "inspection-writer-boundary",
+  "sourceBase": "d0a9f3d34588a0933676af2ccb099243db64259e",
+  "manifest": {
+    "path": "out/evidence/inspection-writer-boundary-2026-10-13/manifest.json",
+    "sizeBytes": 15527,
+    "sha256": "b565a361239d6627a19f2beaac08a0950f651b964b2490caba5713460f9ea43a"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 17.772715750004863
+  },
+  "nativeCaseCount": 135,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 3.8912546659994405
+  },
+  "pythonCaseCount": 50,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "apiBoundary": "Only the generic annotation method reserves receipt kinds; generic save and unsigned archives are outside this guard",
+  "failedQcPolicy": "UNCHANGED; owner input pending",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

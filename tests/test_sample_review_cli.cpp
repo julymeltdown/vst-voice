@@ -257,6 +257,10 @@ TEST_CASE("CLI records missing current diagnostics without processing or approvi
   CHECK(recorded.find("result")->asString()=="TakeInspectionCommitted");
   CHECK(recorded.find("kind")->asString()=="derived-take-inspection.v1");
   CHECK(recorded.find("unitApproval")->asString()=="not granted");
+  CHECK(recorded.find("previousState")); CHECK(recorded.find("state")); CHECK(recorded.find("approvalLowered"));
+  CHECK(recorded.find("previousState")->asString()==production::toString(before.takes.front().state));
+  CHECK(recorded.find("state")->asString()=="MARKER_REVIEW");
+  CHECK(!recorded.find("approvalLowered")->asBool());
   CHECK(!recorded.find("releaseEligible")->asBool());
   CHECK(recorded.find("inspection")->find("takeSha256")->asString()==asset.value().sha256);
   const auto recovered = fixture.repository.recover(); CHECK(recovered);

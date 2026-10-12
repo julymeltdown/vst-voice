@@ -418,7 +418,10 @@ class CppReviewTransitionParityTest(unittest.TestCase):
             self.assertEqual("MARKER_REVIEW", _take(latest, take_id)["state"])
             journal = json.loads((approved / "journal" / f"{latest['lastDurableGeneration']:020}.json").read_bytes())
             self.assertEqual(2, journal["reviewInspectionPolicyVersion"])
-            self.assertEqual("not granted", recorded["unitApproval"])
+            self.assertEqual("requires a new independent review", recorded["unitApproval"])
+            self.assertEqual("APPROVED", recorded["previousState"])
+            self.assertEqual("MARKER_REVIEW", recorded["state"])
+            self.assertIs(recorded["approvalLowered"], True)
             self.assertTrue(validate_production_draft_workspace(approved, inventory).passed)
             # A later edit makes the native receipt historical; omission cannot switch the rule off.
             newer = self._append(approved, root / "new-edited", edit, "transform", "legacy-edit-1")

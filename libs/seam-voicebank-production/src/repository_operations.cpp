@@ -229,10 +229,19 @@ core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordCurre
   const ProductionJournalEvent event{"marker", revision.revisionId, producerId, occurredAtUtc};
   // The existing durable annotation writer rechecks the generation and makes this
   // diagnostic a review-basis change, preserving history and lowering affected approvals.
-  return recordMetadataRevision(project, std::move(revision), event);
+  return recordMetadataRevisionBound(project, std::move(revision), event);
 }
 
 core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetadataRevision(
+    VoicebankProductionProject& project, MetadataRevision revision,
+    const ProductionJournalEvent& event) {
+  if (revision.kind == kTakeInspectionRevisionKind || revision.kind == kDerivedTakeInspectionRevisionKind)
+    return core::failure<CommittedMetadataRevision>(core::ErrorCode::InvalidArgument,
+        "Diagnostic receipts require the stored-audio inspection path, not an annotation");
+  return recordMetadataRevisionBound(project, std::move(revision), event);
+}
+
+core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetadataRevisionBound(
     VoicebankProductionProject& project, MetadataRevision revision,
     const ProductionJournalEvent& event) {
   if (revision.revisionId.empty() || revision.takeId.empty() ||
