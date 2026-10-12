@@ -52,5 +52,5 @@
   "failedQcPolicy": "UNCHANGED; owner input pending",
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false,
-  "olderWriterFollowUp": "Sticky activation accepts later omission; STICKY_INSPECTION_POLICY_2026-10-13 locally verified, independent review/integration pending"
+  "olderWriterFollowUp": "CLOSED by independently approved 4ed8606f sticky-policy follow-up"
 }

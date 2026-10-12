@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "4ed8606f03e9f92baac9c2280f1f9c65deb295e5",
+  "artifacts": [
+    {
+      "path": "out/evidence/internet-female-route-closeout-2026-10-13/status.json",
+      "sizeBytes": 998,
+      "sha256": "73afdc99ec4ceb3b979540c0ccc60ac09930e1aa68afa1a2c42f0a7ebce10997"
+    },
+    {
+      "path": "out/evidence/internet-female-route-closeout-2026-10-13/intake-integrity.log",
+      "sizeBytes": 194,
+      "sha256": "73309f758908f584e3b84b20597276a90fb517555216a309eb35b698f40a6f97"
+    },
+    {
+      "path": "out/evidence/internet-female-route-closeout-2026-10-13/sticky-independent-review.md",
+      "sizeBytes": 4351,
+      "sha256": "a96305954940496f095205ccb5438a7f45c6d675a8c1a37b3d568facace3193f"
+    }
+  ],
+  "scope": "Read-only integrity and canonical acceptance snapshot; no new native full-suite run or source admission",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "overallImplementationPercentage": "NOT_ESTABLISHED",
+  "fullGoal": "ACTIVE",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

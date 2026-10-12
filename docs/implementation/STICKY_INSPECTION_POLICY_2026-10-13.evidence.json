@@ -37,11 +37,22 @@
   },
   "pythonCaseCount": 50,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "reviewedCommit": "4ed8606f03e9f92baac9c2280f1f9c65deb295e5",
+    "record": {
+      "path": "out/evidence/internet-female-route-closeout-2026-10-13/sticky-independent-review.md",
+      "sizeBytes": 4351,
+      "sha256": "a96305954940496f095205ccb5438a7f45c6d675a8c1a37b3d568facace3193f"
+    },
+    "scope": "three exact committed code/test snapshots; all three original d0 P3s closed"
   },
   "policy": "Activation remains true for later omitted markers; unsupported present values refuse",
   "failedQcPolicy": "UNCHANGED; owner decision pending",
   "humanAcceptance": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "remainingFollowUps": [
+    "Unknown policy in newest journal causes recovery to show an older valid generation as current in Studio",
+    "Public annotation API still accepts legacy dry-take-inspection.v1; it cannot satisfy current approval admission"
+  ]
 }
