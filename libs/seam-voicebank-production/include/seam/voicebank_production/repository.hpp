@@ -171,7 +171,8 @@ public:
       // Captured before staging. Empty identifies the raw parent, not any
       // revision with matching bytes; equal hashes do not identify ownership.
       std::string_view expectedParentRevisionId);
-  // Annotation writer; diagnostic receipts require the stored-audio inspection path.
+  // Annotation writer; current and legacy diagnostic receipt kinds are reserved.
+  // New diagnostics require the stored-audio inspection path; old receipts stay readable.
   [[nodiscard]] core::Result<CommittedMetadataRevision> recordMetadataRevision(
       VoicebankProductionProject& project,
       MetadataRevision revision,

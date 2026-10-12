@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "unit": "legacy-diagnostic-annotation-guard",
+  "sourceBase": "394a29b8ba0cf66b920a0825cfa66866ee9a802b",
+  "manifest": {
+    "path": "out/evidence/legacy-diagnostic-annotation-guard-2026-10-13/manifest.json",
+    "sizeBytes": 10142,
+    "sha256": "315ffe1e54d3f71d4763ff708faf0c5eb405fa93ab592b449c3582e9e65cb2df"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 54.82867241699569
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.30670708300022
+  },
+  "nativeCaseCount": 143,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.5669743750040652
+  },
+  "pythonCaseCount": 23,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

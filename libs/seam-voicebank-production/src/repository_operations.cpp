@@ -235,7 +235,8 @@ core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordCurre
 core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetadataRevision(
     VoicebankProductionProject& project, MetadataRevision revision,
     const ProductionJournalEvent& event) {
-  if (revision.kind == kTakeInspectionRevisionKind || revision.kind == kDerivedTakeInspectionRevisionKind)
+  if (revision.kind == kTakeInspectionRevisionKind || revision.kind == kDerivedTakeInspectionRevisionKind ||
+      revision.kind == kLegacyDryTakeInspectionRevisionKind)
     return core::failure<CommittedMetadataRevision>(core::ErrorCode::InvalidArgument,
         "Diagnostic receipts require the stored-audio inspection path, not an annotation");
   return recordMetadataRevisionBound(project, std::move(revision), event);

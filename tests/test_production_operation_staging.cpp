@@ -9,6 +9,7 @@
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <barrier>
+#include <map>
 #include <optional>
 #include <thread>
 
@@ -68,6 +69,14 @@ struct StagingFixture final {
     CHECK(!production::currentActiveTakeInspection(project,"take-a"));
     return asset.value();
   }
+  production::MetadataRevision legacyReceipt() const {
+    // Caller-authored synthetic measurements: valid shape/digest, not measured evidence.
+    const auto evidence=std::string{R"({"schemaVersion":1,"inspectorId":"seam.dry-take-inspector","inspectorVersion":"1","takeSha256":")"}+
+        raw.sha256+R"(","sampleRate":48000,"channels":1,"bitsPerSample":24,"expectedRootMidi":69,"analyzedRootMidi":69,"peak":0.25,"rms":0.123,"dcOffset":0.0,"status":"SIGNAL_CHECKS_PASSED","quality":{"formatValid":true,"finite":true,"clippingFree":true,"silenceFree":true,"dcOffsetFree":true,"rootPitchValid":true}})";
+    return {"legacy-dry-receipt","take-a",raw.sha256,std::string{production::kLegacyDryTakeInspectionRevisionKind},
+        {{"evidenceJson",evidence},{"evidenceSha256",seam::core::sha256Hex(evidence)}},
+        "producer","2026-09-09T10:02:00Z"};
+  }
 };
 
 }  // namespace
@@ -103,6 +112,58 @@ TEST_CASE("annotation API refuses a caller-supplied current derived diagnostic")
   CHECK(production::encodeProductionProject(fixture.project)==before);
   CHECK(production::encodeProductionProject(fixture.repository.recover().value())==before);
   CHECK(!production::currentActiveTakeInspection(fixture.project,"take-a"));
+}
+
+TEST_CASE("annotation API refuses an internally valid legacy diagnostic without changing any workspace file") {
+  StagingFixture fixture;
+  const auto revision=fixture.legacyReceipt();
+  auto proposed=fixture.project;proposed.metadataRevisions.push_back(revision);
+  CHECK(production::validateProductionProject(proposed));
+  const auto files=[&] {
+    std::map<std::filesystem::path,std::string> result;
+    for (const auto& entry:std::filesystem::recursive_directory_iterator(fixture.root/"workspace"))
+      if (entry.is_regular_file()) result.emplace(entry.path(),seam::core::sha256File(entry.path()).value());
+    return result;
+  };
+  const auto stored=files();const auto before=production::encodeProductionProject(fixture.project);
+  const auto refused=fixture.repository.recordMetadataRevision(fixture.project,revision,
+      {"marker",revision.revisionId,"producer",revision.performedAtUtc});
+  CHECK(!refused);CHECK(refused.error().code==seam::core::ErrorCode::InvalidArgument);
+  CHECK(refused.error().message.find("stored-audio inspection")!=std::string::npos);
+  CHECK(production::encodeProductionProject(fixture.project)==before);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==before);
+  CHECK(files()==stored);
+}
+
+TEST_CASE("legacy receipts stay readable but need actual stored-audio reinspection for current QC") {
+  StagingFixture fixture;
+  auto historical=fixture.project;historical.lastDurableGeneration=0U;
+  std::erase_if(historical.metadataRevisions,[](const auto& revision) {
+    return revision.kind==production::kTakeInspectionRevisionKind;
+  });
+  const auto legacy=fixture.legacyReceipt();historical.metadataRevisions.push_back(legacy);
+  const auto root=fixture.root/"historical-dry-only";production::ProductionProjectRepository repository{root};
+  for (const auto& asset:historical.assets) {
+    const auto destination=repository.assetPath(asset);std::filesystem::create_directories(destination.parent_path());
+    std::filesystem::copy_file(fixture.repository.assetPath(asset),destination);
+  }
+  std::filesystem::copy(fixture.root/"workspace"/"source-evidence",root/"source-evidence",std::filesystem::copy_options::recursive);
+  // A separate synthetic pre-current-QC workspace, never a rewrite of real history.
+  CHECK(repository.save(historical,StagingFixture::event("create",historical.projectId)));
+  const auto reopened=repository.recover();CHECK(reopened);CHECK(repository.verify(reopened.value()));
+  CHECK(!production::currentActiveTakeInspection(reopened.value(),"take-a"));
+  CHECK(reopened.value().metadataRevisions.front().values==legacy.values);
+  historical=reopened.value();
+  const auto result=repository.recordCurrentTakeInspection(historical,"take-a","",
+      seam::core::sha256Hex(production::encodeProductionProject(historical)),"producer","2026-09-09T10:03:00Z");CHECK(result);
+  CHECK(result.value().kind==production::kTakeInspectionRevisionKind);
+  CHECK(historical.metadataRevisions.size()==2U);
+  CHECK(historical.metadataRevisions.front().values==legacy.values);
+  CHECK(historical.metadataRevisions.front().kind==production::kLegacyDryTakeInspectionRevisionKind);
+  CHECK(production::currentActiveTakeInspection(historical,"take-a")->inspection.sourceSha256==fixture.raw.sha256);
+  CHECK(historical.reviews.empty());CHECK(repository.verify(historical));
+  CHECK(seam::core::sha256File(repository.assetPath(fixture.raw)).value()==fixture.raw.sha256);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==production::encodeProductionProject(fixture.project));
 }
 
 TEST_CASE("explicit legacy reinspection preserves bytes lineage and failed diagnostics without approval") {
