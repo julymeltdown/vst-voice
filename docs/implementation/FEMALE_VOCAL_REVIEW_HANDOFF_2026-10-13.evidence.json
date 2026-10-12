@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-vocal-review-handoff",
+  "sourceBase": "81f07dd70ac1879352acae29f78df0e2bbfb88ca",
+  "evidenceRoot": "out/evidence/female-vocal-review-handoff-2026-10-13",
+  "manifest": {
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/manifest.json",
+    "sizeBytes": 5738,
+    "sha256": "637f354ce7ab3929a0f2f583a49bdd579676c921850bd6854d8ce71015cf25d6"
+  },
+  "verification": {
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/verification.log",
+    "sizeBytes": 132,
+    "sha256": "21497ea4ba3b0ea1a030ee4c12e71470c88cbe1bcbf3c714b9ec3d184bb1c299"
+  },
+  "result": "20 local artifacts and five input/code bindings verified; 15 exact audio copies and controls; all decision fields null",
+  "formatGap": "CONFIRMED_STATIC: original mono 44100 PCM16 fails the current 48000 mono PCM24/32 Format predicate; no assignment/QC executed",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Unapproved audition handoff and code-bound prerequisite mapping only"
+  },
+  "browserRendering": "NOT_RUN; open request queued",
+  "humanListening": "NOT_RUN",
+  "phoneticMapping": "NOT_REVIEWED",
+  "registeredProducer": "NOT_REGISTERED",
+  "performerRights": "NOT_ESTABLISHED",
+  "ownerAdmissionPolicy": "PENDING",
+  "import": "NOT_RUN",
+  "betaPromotion": false
+}
