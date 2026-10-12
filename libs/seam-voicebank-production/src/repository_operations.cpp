@@ -180,6 +180,58 @@ core::Result<CommittedDerivedRevision> ProductionProjectRepository::commitStaged
   return CommittedDerivedRevision{revision, receipt.value()};
 }
 
+core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordCurrentTakeInspection(
+    VoicebankProductionProject& project, std::string_view takeId,
+    std::string_view expectedActiveRevisionId, std::string_view expectedProjectSha256,
+    std::string producerId, std::string occurredAtUtc, std::stop_token stopToken) {
+  using Output = CommittedMetadataRevision;
+  if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Take inspection cancelled");
+  if (core::sha256Hex(encodeProductionProject(project)) != expectedProjectSha256)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Take inspection requires the captured current project digest");
+  if (!isProductionUtcTimestamp(occurredAtUtc) ||
+      std::none_of(project.operators.begin(), project.operators.end(), [&](const auto& actor) {
+        return actor.operatorId == producerId && actor.role == "PRODUCER";
+      }))
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Take inspection requires a registered producer and UTC time");
+  const auto verified = verify(project);
+  if (!verified) return core::Result<Output>{verified.error()};
+  const auto permitted = requireTakeSourceExecution(project, takeId);
+  if (!permitted) return core::Result<Output>{permitted.error()};
+  const auto take = std::find_if(project.takes.begin(), project.takes.end(),
+      [&](const auto& value) { return value.takeId == takeId; });
+  if (take == project.takes.end()) return core::failure<Output>(core::ErrorCode::NotFound, "Inspection take is unavailable");
+  const std::string_view active = take->derivedRevisionIds.empty() ? std::string_view{} : take->derivedRevisionIds.back();
+  if (active != expectedActiveRevisionId)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Take inspection requires the captured active revision");
+  if (currentActiveTakeInspection(project, takeId))
+    return core::failure<Output>(core::ErrorCode::Conflict, "This take already has current diagnostics; no receipt is rewritten");
+  auto audioSha = take->rawAssetSha256;
+  if (!active.empty()) {
+    const auto revision = std::find_if(project.derivedRevisions.begin(), project.derivedRevisions.end(),
+        [&](const auto& value) { return value.revisionId == active; });
+    if (revision == project.derivedRevisions.end())
+      return core::failure<Output>(core::ErrorCode::InvariantViolation, "Inspection active revision is unavailable");
+    audioSha = revision->outputSha256;
+  }
+  const auto asset = std::find_if(project.assets.begin(), project.assets.end(),
+      [&](const auto& value) { return value.sha256 == audioSha; });
+  if (asset == project.assets.end()) return core::failure<Output>(core::ErrorCode::NotFound, "Inspection asset is unavailable");
+  const auto request = takeInspectionRequestFor(take->coverageKey, take->pitchLayer);
+  if (!request) return core::Result<Output>{request.error()};
+  const auto inspected = voicebank::inspectTake(assetStore_.pathFor(*asset), request.value(), stopToken);
+  if (!inspected) return core::Result<Output>{inspected.error()};
+  if (inspected.value().sourceSha256 != audioSha || inspected.value().byteSize != asset->byteSize)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Stored audio changed during take inspection");
+  if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Take inspection cancelled before commit");
+  TakeInspectionEvidence evidence{{take->takeId, take->promptId, take->coverageKey, take->pitchLayer}, inspected.value()};
+  auto revision = active.empty() ? makeTakeInspectionRevision(evidence, producerId, occurredAtUtc) :
+      makeDerivedTakeInspectionRevision(evidence, take->rawAssetSha256, std::string{active}, producerId, occurredAtUtc);
+  const ProductionJournalEvent event{"marker", revision.revisionId, producerId, occurredAtUtc};
+  // The existing durable annotation writer rechecks the generation and makes this
+  // diagnostic a review-basis change, preserving history and lowering affected approvals.
+  return recordMetadataRevision(project, std::move(revision), event);
+}
+
 core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetadataRevision(
     VoicebankProductionProject& project, MetadataRevision revision,
     const ProductionJournalEvent& event) {

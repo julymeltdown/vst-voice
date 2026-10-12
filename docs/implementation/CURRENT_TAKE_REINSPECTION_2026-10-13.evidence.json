@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "unit": "current-take-reinspection",
+  "sourceBase": "b9e0e1019029f084fbb796ac552d293302e7f4c7",
+  "manifest": {
+    "path": "out/evidence/current-take-reinspection-2026-10-13/manifest.json",
+    "sizeBytes": 15171,
+    "sha256": "6af81b2bb0454a3f72b534e18ca72fc13e262d5f1a4e85721ce9625d5259dd7f"
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.114527416000783
+  },
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.2236435419981717
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "priorAdmissionReview": {
+    "path": "out/evidence/current-take-reinspection-2026-10-13/admission-independent-review.md",
+    "sizeBytes": 8569,
+    "sha256": "552354a6dd377d3b0e22f0f3f7511a549eb3d18c26f1caecbd0d1f58f04a005c"
+  },
+  "historyReplayP2": "OPEN; planned durable admission-policy marker, not repaired by reinspection",
+  "failedQcPolicy": "UNCHANGED; owner input pending",
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

@@ -108,6 +108,25 @@ int selectTake(int argc, char** argv) {
   return 0;
 }
 
+int recordCurrentTakeInspection(int argc, char** argv) {
+  if ((argc != 7 && argc != 8) || !digestValid(argv[3])) { printSampleReviewUsage(); return 1; }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError,"Cannot install inspection cancellation handlers",{}});
+  production::ProductionProjectRepository repository{argv[2]};
+  auto project = repository.recover(); if (!project) return fail(project.error(), &cancellation);
+  const auto committed = repository.recordCurrentTakeInspection(project.value(), argv[4], argc == 8 ? argv[7] : "",
+      argv[3], argv[5], argv[6], cancellation.token());
+  if (!committed) return fail(committed.error(), &cancellation);
+  const auto evidence = formats::parseJson(committed.value().values.at("evidenceJson"));
+  if (!evidence) return fail(evidence.error(), &cancellation);
+  print({{"result","TakeInspectionCommitted"},{"takeId",argv[4]},{"revisionId",committed.value().revisionId},
+      {"kind",committed.value().kind},{"generation",std::to_string(committed.value().committedGeneration)},
+      {"projectSha256",committed.value().committedProjectSha256},{"inspection",evidence.value()},
+      {"durabilityConfirmed",committed.value().durabilityConfirmed},{"diagnostic",committed.value().diagnostic},
+      {"sourcePermissions","unchanged"},{"unitApproval","not granted"},{"releaseEligible",false}});
+  return 0;
+}
+
 int initializeDraft(int argc, char** argv) {
   if (argc!=7) { printSampleReviewUsage(); return 1; }
   const auto definition=readCapturedText(argv[3],argv[4]); if (!definition) return fail(definition.error());
@@ -344,6 +363,7 @@ std::optional<int> runSampleReviewCommand(int argc, char** argv) {
   const std::string_view command{argv[1]};
   if (command=="register-source") return registerSource(argc,argv);
   if (command=="select-take") return selectTake(argc,argv);
+  if (command=="record-current-take-inspection") return recordCurrentTakeInspection(argc,argv);
   if (command=="migrate-style") return migrateStyle(argc,argv);
   if (command=="inspect-source-quality") return sourceQuality(argc,argv,false);
   if (command=="record-source-quality") return sourceQuality(argc,argv,true);
@@ -363,6 +383,10 @@ void printSampleReviewUsage() {
     << "  seam_voicebank_cli select-take WORKSPACE PROJECT_SHA256 TAKE PRODUCER UTC\n"
     << "    Fills an assignment with a retained alternative take; both takes keep their history and the selected\n"
     << "    take returns to marker review. Only a new independent review approves it again.\n"
+    << "  seam_voicebank_cli record-current-take-inspection WORKSPACE PROJECT_SHA256 TAKE PRODUCER UTC [ACTIVE_REVISION]\n"
+    << "    Appends missing automated diagnostics for exact stored audio, without DSP or approval.\n"
+    << "    Omit ACTIVE_REVISION only for raw audio; edited audio requires its captured latest revision ID.\n"
+    << "    Refuses existing current diagnostics, stale captures, unauthorized sources and non-producer identities.\n"
     << "  seam_voicebank_cli migrate-style WORKSPACE PLAN_JSON PROJECT_SHA256 PRODUCER UTC\n"
     << "    Applies one verified, resolved legacy style migration plan as a new generation; refuses ambiguous ownership.\n"
     << "  seam_voicebank_cli record-source-quality WORKSPACE STRATEGY PROJECT_SHA256 ID REVIEWER UTC COVERAGE LISTENING EVIDENCE EVIDENCE_SHA256\n"

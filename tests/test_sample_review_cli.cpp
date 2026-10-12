@@ -18,6 +18,7 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/resource_candidate.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include "seam/candidate_packaging/candidate_package.hpp"
 #include <algorithm>
 #include <map>
@@ -235,6 +236,44 @@ struct CliFixture final {
   }
 };
 } // namespace
+
+TEST_CASE("CLI records missing current diagnostics without processing or approving legacy audio") {
+  CliFixture fixture;
+  const auto staged = fixture.repository.stageOperation(fixture.project, "take-a", "",
+      {.kind=production::OperationKind::NormalizeGain, .targetPeak=0.15F}, "legacy-diagnostic-stage"); CHECK(staged);
+  production::ImmutableAssetStore store{fixture.root / "producer" / "assets"};
+  const auto asset = store.importFile(staged.value().path, production::AssetKind::Derived); CHECK(asset);
+  fixture.project.assets.push_back(asset.value());
+  fixture.project.derivedRevisions.push_back({.revisionId="legacy-diagnostic-edit", .inputSha256=staged.value().inputSha256,
+      .outputSha256=staged.value().outputSha256, .operation=production::OperationKind::NormalizeGain,
+      .operationVersion="seam-pcm-ops-1", .parameters={{"targetPeak","0.15"}},
+      .operatorId="producer", .performedAtUtc="2026-09-09T10:02:00Z"});
+  fixture.project.takes.front().derivedRevisionIds.push_back("legacy-diagnostic-edit");
+  CHECK(fixture.repository.save(fixture.project,{"transform","legacy-diagnostic-edit","producer","2026-09-09T10:02:00Z"}));
+  const auto before = fixture.project;
+  const std::vector<std::string> arguments{"record-current-take-inspection",(fixture.root/"producer").string(),
+      core::sha256Hex(production::encodeProductionProject(before)),"take-a","producer","2026-09-09T10:03:00Z","legacy-diagnostic-edit"};
+  const auto recorded = fixture.success(arguments);
+  CHECK(recorded.find("result")->asString()=="TakeInspectionCommitted");
+  CHECK(recorded.find("kind")->asString()=="derived-take-inspection.v1");
+  CHECK(recorded.find("unitApproval")->asString()=="not granted");
+  CHECK(!recorded.find("releaseEligible")->asBool());
+  CHECK(recorded.find("inspection")->find("takeSha256")->asString()==asset.value().sha256);
+  const auto recovered = fixture.repository.recover(); CHECK(recovered);
+  CHECK(recovered.value().lastDurableGeneration==before.lastDurableGeneration+1U);
+  CHECK(recovered.value().assets.size()==before.assets.size());
+  CHECK(recovered.value().derivedRevisions.size()==before.derivedRevisions.size());
+  CHECK(recovered.value().metadataRevisions.size()==before.metadataRevisions.size()+1U);
+  CHECK(recovered.value().reviews.empty());
+  CHECK(production::currentActiveTakeInspection(recovered.value(),"take-a"));
+  CHECK(core::sha256File(fixture.repository.assetPath(asset.value())).value()==asset.value().sha256);
+  requireCliRefusal(arguments,2U,"current project digest");
+  auto repeat=arguments;repeat[2]=core::sha256Hex(production::encodeProductionProject(recovered.value()));
+  requireCliRefusal(repeat,2U,"already has current diagnostics");
+  repeat[4]="reviewer";
+  requireCliRefusal(repeat,2U,"registered producer");
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==production::encodeProductionProject(recovered.value()));
+}
 
 TEST_CASE("CLI initializes and recovers a source-free draft without fabricated feasibility") {
 #if defined(__APPLE__) || defined(__linux__)

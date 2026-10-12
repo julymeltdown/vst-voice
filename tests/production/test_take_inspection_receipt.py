@@ -20,6 +20,7 @@ from tools.external_beta._production_draft_validation import (
     TAKE_INSPECTION_KIND, TAKE_QC_APPLICABLE, canonical_take_evidence, take_check_outcomes, take_inspection_errors,
     take_qc_policy)
 from tools.external_beta.voicebank_production import prepare_production_draft_definition, validate_production_draft_workspace
+from tools.external_beta._production_review_transition import production_project_json
 from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -305,6 +306,50 @@ class CppTakeInspectionParityTest(unittest.TestCase):
 
     def _cpp_accepts(self, workspace: Path) -> bool:
         return self._run("inspect-source-quality", str(workspace), "procedural-a").returncode == 0
+
+    def test_native_reinspection_writes_a_derived_receipt_the_full_python_validator_accepts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace, inventory = self._producer(root)
+            legacy = root / "legacy-edited"
+            shutil.copytree(workspace, legacy)
+            project = json.loads((workspace / "project.json").read_text())
+            take = next(row for row in project["takes"] if row["coverageKey"] == "cv:m:a" and row["pitchLayer"] == 60)
+            take["derivedRevisionIds"] = ["synthetic-legacy-edit"]
+            # A deliberately declared same-byte synthetic edit, without a diagnostic.
+            # No DSP performance or historical production acceptance is claimed.
+            project["derivedRevisions"].append({"revisionId": "synthetic-legacy-edit", "inputSha256": TAKE_SHA,
+                "outputSha256": TAKE_SHA, "operation": "NORMALIZE_GAIN", "operationVersion": "seam-pcm-ops-1",
+                "parameters": {"targetPeak": "0.027358368039131165"}, "operatorId": "producer",
+                "performedAtUtc": "2026-09-28T00:10:00Z"})
+            project["lastDurableGeneration"] += 1
+            payload = production_project_json(project).encode()
+            name = f"{project['lastDurableGeneration']:020}.json"
+            journal = {"format": "com.project-seam.voicebank-production-journal-event", "schemaVersion": 1,
+                "generation": project["lastDurableGeneration"], "projectSha256": hashlib.sha256(payload).hexdigest(),
+                "action": "transform", "subjectId": "synthetic-legacy-edit", "operatorId": "producer",
+                "occurredAtUtc": "2026-09-28T00:10:00Z"}
+            (legacy / "generations" / name).write_bytes(payload)
+            (legacy / "journal" / name).write_text(json.dumps(journal, sort_keys=True, indent=2) + "\n")
+            (legacy / "project.json").write_bytes(payload)
+            initial = validate_production_draft_workspace(legacy, inventory)
+            self.assertTrue(initial.passed, initial.errors)
+            done = self._run("record-current-take-inspection", str(legacy), hashlib.sha256(payload).hexdigest(),
+                take["takeId"], "producer", "2026-09-28T00:11:00Z", "synthetic-legacy-edit")
+            self.assertEqual(0, done.returncode, done.stderr)
+            report = json.loads(done.stdout)
+            self.assertEqual("derived-take-inspection.v1", report["kind"])
+            self.assertEqual("FAIL", report["inspection"]["checks"]["rootPitch"])
+            self.assertEqual("not granted", report["unitApproval"])
+            current = json.loads((legacy / "project.json").read_text())
+            native = next(row for row in current["metadataRevisions"] if row["revisionId"] == report["revisionId"])
+            self.assertEqual([], take_inspection_errors(native, take,
+                {row["sha256"]: row for row in current["assets"]}, "native",
+                derived_revisions={row["revisionId"]: row for row in current["derivedRevisions"]}))
+            verified = validate_production_draft_workspace(legacy, inventory)
+            self.assertTrue(verified.passed, verified.errors)
+            self.assertEqual([], current["reviews"])
+            self.assertEqual(len(project["assets"]), len(current["assets"]))
 
     def test_cli_receipts_match_the_mirror_and_both_refuse_the_same_forgeries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -172,6 +172,14 @@ public:
       VoicebankProductionProject& project,
       MetadataRevision revision,
       const ProductionJournalEvent& event);
+  // Fill a missing current diagnostic from exact stored audio, without a DSP edit.
+  // Requires the registered producer, captured current project and active revision
+  // (empty means raw). Existing current receipts are preserved and refused, not
+  // rewritten. Failed QC stays failed; no review or source permission is granted.
+  [[nodiscard]] core::Result<CommittedMetadataRevision> recordCurrentTakeInspection(
+      VoicebankProductionProject& project, std::string_view takeId,
+      std::string_view expectedActiveRevisionId, std::string_view expectedProjectSha256,
+      std::string producerId, std::string occurredAtUtc, std::stop_token stopToken = {});
   [[nodiscard]] std::vector<std::filesystem::path> inspectStaged(
       const VoicebankProductionProject& project) const;
   [[nodiscard]] core::Result<void> verify(

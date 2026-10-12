@@ -32,8 +32,15 @@
     "elapsedSeconds": 1.0977917080017505
   },
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "REVISE (narrow)",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "reviewedCommit": "b9e0e1019029f084fbb796ac552d293302e7f4c7",
+    "record": {
+      "path": "out/evidence/current-take-reinspection-2026-10-13/admission-independent-review.md",
+      "sizeBytes": 8569,
+      "sha256": "552354a6dd377d3b0e22f0f3f7511a549eb3d18c26f1caecbd0d1f58f04a005c"
+    },
+    "openFinding": "P2: strict Python history replay invalidates older edited approvals; a later diagnostic cannot repair past generations"
   },
   "failedQcPolicy": "UNCHANGED; owner decision pending",
   "legacyReinspection": "NOT_IMPLEMENTED in this unit",

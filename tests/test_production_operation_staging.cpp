@@ -51,9 +51,123 @@ struct StagingFixture final {
         {.kind=production::OperationKind::NormalizeGain, .targetPeak=0.15F}, std::move(id));
     CHECK(result); return result.value();
   }
+  production::AssetRecord legacyEdit() {
+    // Synthetic pre-diagnostic writer: an append-only edit without a receipt.
+    const auto staged = repository.stageOperation(project,"take-a","",
+        {.kind=production::OperationKind::Resample,.targetSampleRate=44100U},"legacy-stage"); CHECK(staged);
+    production::ImmutableAssetStore store{root/"workspace"/"assets"};
+    const auto asset=store.importFile(staged.value().path,production::AssetKind::Derived); CHECK(asset);
+    project.assets.push_back(asset.value());
+    project.derivedRevisions.push_back({.revisionId="legacy-edit",.inputSha256=staged.value().inputSha256,
+        .outputSha256=staged.value().outputSha256,.operation=production::OperationKind::Resample,
+        .operationVersion="seam-pcm-ops-1",.parameters={{"targetSampleRate","44100"}},
+        .operatorId="producer",.performedAtUtc="2026-09-09T10:01:00Z"});
+    project.takes.front().derivedRevisionIds.push_back("legacy-edit");
+    CHECK(repository.save(project,{"transform","legacy-edit","producer","2026-09-09T10:01:00Z"}));
+    CHECK(repository.verify(project));
+    CHECK(!production::currentActiveTakeInspection(project,"take-a"));
+    return asset.value();
+  }
 };
 
 }  // namespace
+
+TEST_CASE("explicit legacy reinspection preserves bytes lineage and failed diagnostics without approval") {
+  StagingFixture fixture;
+  const auto audio = fixture.legacyEdit();
+  const auto before = fixture.project;
+  const auto hash = seam::core::sha256Hex(production::encodeProductionProject(before));
+  const auto recorded = fixture.repository.recordCurrentTakeInspection(fixture.project,"take-a","legacy-edit",hash,
+      "producer","2026-09-09T10:02:00Z"); CHECK(recorded);
+  CHECK(recorded.value().kind==production::kDerivedTakeInspectionRevisionKind);
+  CHECK(recorded.value().committedGeneration==before.lastDurableGeneration+1U);
+  CHECK(recorded.value().committedProjectSha256==seam::core::sha256Hex(production::encodeProductionProject(fixture.project)));
+  CHECK(fixture.project.assets.size()==before.assets.size());
+  CHECK(fixture.project.derivedRevisions.size()==before.derivedRevisions.size());
+  CHECK(fixture.project.takes.front().derivedRevisionIds==before.takes.front().derivedRevisionIds);
+  CHECK(fixture.project.metadataRevisions.size()==before.metadataRevisions.size()+1U);
+  CHECK(std::equal(before.metadataRevisions.begin(),before.metadataRevisions.end(),fixture.project.metadataRevisions.begin(),production::sameMetadataRevision));
+  const auto current=production::currentActiveTakeInspection(fixture.project,"take-a"); CHECK(current);
+  CHECK(current->inspection.sourceSha256==audio.sha256);
+  CHECK(current->inspection.outcome(seam::voicebank::TakeCheck::Format)==seam::voicebank::TakeCheckOutcome::Fail);
+  CHECK(seam::core::sha256File(fixture.repository.assetPath(audio)).value()==audio.sha256);
+  CHECK(seam::core::sha256File(fixture.repository.assetPath(fixture.raw)).value()==fixture.raw.sha256);
+  CHECK(fixture.project.reviews.empty());
+  CHECK(!fixture.project.unitAssignments.front().markerReviewed);
+  CHECK(!fixture.project.unitAssignments.front().pitchReviewed);
+  CHECK(fixture.project.unitAssignments.front().state==production::UnitQueueState::MarkerReview);
+  const auto after=production::encodeProductionProject(fixture.project);
+  CHECK(!fixture.repository.recordCurrentTakeInspection(fixture.project,"take-a","legacy-edit",
+      seam::core::sha256Hex(after),"producer","2026-09-09T10:03:00Z"));
+  CHECK(production::encodeProductionProject(fixture.project)==after);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==after);
+}
+
+TEST_CASE("legacy reinspection refuses stale captures non-producers cancellation and revoked permission") {
+  StagingFixture fixture;
+  fixture.project.operators.push_back({"reviewer","REVIEWER"});
+  CHECK(fixture.repository.save(fixture.project,StagingFixture::event("save","reviewer-fixture")));
+  fixture.legacyEdit();
+  const auto before=production::encodeProductionProject(fixture.project);
+  const auto hash=seam::core::sha256Hex(before);
+  const auto attempt=[&](std::string_view take,std::string_view revision,std::string_view captured,std::string actor,std::string utc) {
+    CHECK(!fixture.repository.recordCurrentTakeInspection(fixture.project,take,revision,captured,std::move(actor),std::move(utc)));
+    CHECK(production::encodeProductionProject(fixture.project)==before);
+    CHECK(production::encodeProductionProject(fixture.repository.recover().value())==before);
+  };
+  attempt("take-a","legacy-edit",std::string(64U,'0'),"producer","2026-09-09T10:02:00Z");
+  attempt("take-a","",hash,"producer","2026-09-09T10:02:00Z");
+  attempt("take-a","other-edit",hash,"producer","2026-09-09T10:02:00Z");
+  attempt("take-a","legacy-edit",hash,"reviewer","2026-09-09T10:02:00Z");
+  attempt("take-a","legacy-edit",hash,"unknown","2026-09-09T10:02:00Z");
+  attempt("missing","",hash,"producer","2026-09-09T10:02:00Z");
+  attempt("take-a","legacy-edit",hash,"producer","not-a-utc");
+  std::stop_source cancelled;cancelled.request_stop();
+  CHECK(!fixture.repository.recordCurrentTakeInspection(fixture.project,"take-a","legacy-edit",hash,"producer",
+      "2026-09-09T10:02:00Z",cancelled.get_token()));
+  CHECK(production::encodeProductionProject(fixture.project)==before);
+  auto stale=fixture.project;
+  CHECK(fixture.repository.recordMetadataRevision(fixture.project,{"note","take-a",fixture.raw.sha256,
+      "MARKERS_AND_PITCH",{{"vowelOnset","120"}},"producer","2026-09-09T10:02:00Z"},
+      {"marker","note","producer","2026-09-09T10:02:00Z"}));
+  CHECK(!fixture.repository.recordCurrentTakeInspection(stale,"take-a","legacy-edit",hash,"producer","2026-09-09T10:03:00Z"));
+  CHECK(production::encodeProductionProject(stale)==before);
+  fixture.project.sourceStrategies.front().permissions.transformation=false;
+  CHECK(fixture.repository.save(fixture.project,StagingFixture::event("save","revoke-transform")));
+  const auto denied=production::encodeProductionProject(fixture.project);
+  CHECK(!fixture.repository.recordCurrentTakeInspection(fixture.project,"take-a","legacy-edit",seam::core::sha256Hex(denied),
+      "producer","2026-09-09T10:04:00Z"));
+  CHECK(production::encodeProductionProject(fixture.project)==denied);
+  CHECK(!production::currentActiveTakeInspection(fixture.project,"take-a"));
+}
+
+TEST_CASE("current inspection can fill an absent raw receipt in a separate synthetic workspace") {
+  StagingFixture fixture;
+  auto rawOnly=fixture.project;
+  rawOnly.lastDurableGeneration=0U;
+  std::erase_if(rawOnly.metadataRevisions,[](const auto& revision) {
+    return revision.kind==production::kTakeInspectionRevisionKind;
+  });
+  const auto root=fixture.root/"raw-without-diagnostics";
+  production::ProductionProjectRepository repository{root};
+  for (const auto& asset:rawOnly.assets) {
+    const auto destination=repository.assetPath(asset);
+    std::filesystem::create_directories(destination.parent_path());
+    std::filesystem::copy_file(fixture.repository.assetPath(asset),destination);
+  }
+  std::filesystem::copy(fixture.root/"workspace"/"source-evidence",root/"source-evidence",std::filesystem::copy_options::recursive);
+  CHECK(repository.save(rawOnly,StagingFixture::event("create",rawOnly.projectId)));
+  CHECK(repository.verify(rawOnly));
+  const auto before=production::encodeProductionProject(rawOnly);
+  const auto result=repository.recordCurrentTakeInspection(rawOnly,"take-a","",seam::core::sha256Hex(before),
+      "producer","2026-09-09T10:02:00Z");CHECK(result);
+  CHECK(result.value().kind==production::kTakeInspectionRevisionKind);
+  CHECK(production::currentActiveTakeInspection(rawOnly,"take-a")->inspection.sourceSha256==fixture.raw.sha256);
+  CHECK(rawOnly.derivedRevisions.empty());
+  CHECK(rawOnly.reviews.empty());
+  CHECK(seam::core::sha256File(repository.assetPath(fixture.raw)).value()==fixture.raw.sha256);
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==production::encodeProductionProject(fixture.project));
+}
 
 TEST_CASE("converted take inspection describes the derivative while preserving failing raw evidence") {
   StagingFixture fixture{44100U, seam::voicebank::WavSampleFormat::Pcm16};
