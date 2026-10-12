@@ -4,21 +4,27 @@
   "sourceBase": "81f07dd70ac1879352acae29f78df0e2bbfb88ca",
   "evidenceRoot": "out/evidence/female-vocal-review-handoff-2026-10-13",
   "manifest": {
-    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/manifest.json",
-    "sizeBytes": 5738,
-    "sha256": "637f354ce7ab3929a0f2f583a49bdd579676c921850bd6854d8ce71015cf25d6"
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/manifest-v2.json",
+    "sizeBytes": 6614,
+    "sha256": "17fce390735401fb34cc12dbbdc0a38a977ca5807ecf2c8eed97e2455d8f6b31"
   },
   "verification": {
-    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/verification.log",
-    "sizeBytes": 132,
-    "sha256": "21497ea4ba3b0ea1a030ee4c12e71470c88cbe1bcbf3c714b9ec3d184bb1c299"
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/verification-v2.log",
+    "sizeBytes": 131,
+    "sha256": "eee3eb5ef4be07907121f6448c4b3caae196014a96ffd9630f92cd141e37952d"
   },
-  "result": "20 local artifacts and five input/code bindings verified; 15 exact audio copies and controls; all decision fields null",
+  "result": "Corrected v2: 20 artifacts/eight inputs; original v1 intact; 15 unchanged WAVs and named controls; all person/decision fields null",
   "formatGap": "CONFIRMED_STATIC: original mono 44100 PCM16 fails the current 48000 mono PCM24/32 Format predicate; no assignment/QC executed",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "REVISE addressed; correction review PENDING",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Unapproved audition handoff and code-bound prerequisite mapping only"
+    "scope": "Unapproved audition handoff and code-bound prerequisite mapping only",
+    "reviewedCommit": "0043e5a8e6baf50f7ff1e7ccaf34e0a3a01fe4ea",
+    "record": {
+      "path": "out/evidence/female-vocal-review-handoff-2026-10-13/independent-review.md",
+      "sizeBytes": 6729,
+      "sha256": "8d03172e17e73b88fab1f83cc06104ced994b381b77cd6a01949bcff21bade31"
+    }
   },
   "browserRendering": "NOT_RUN; open request queued",
   "humanListening": "NOT_RUN",
@@ -27,5 +33,16 @@
   "performerRights": "NOT_ESTABLISHED",
   "ownerAdmissionPolicy": "PENDING",
   "import": "NOT_RUN",
-  "betaPromotion": false
+  "betaPromotion": false,
+  "originalManifest": {
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/manifest.json",
+    "sizeBytes": 5738,
+    "sha256": "637f354ce7ab3929a0f2f583a49bdd579676c921850bd6854d8ce71015cf25d6"
+  },
+  "originalVerification": {
+    "path": "out/evidence/female-vocal-review-handoff-2026-10-13/verification.log",
+    "sizeBytes": 132,
+    "sha256": "21497ea4ba3b0ea1a030ee4c12e71470c88cbe1bcbf3c714b9ec3d184bb1c299"
+  },
+  "engineeringGap": "CONFIRMED_STATIC: no derived-audio QC receipt; raw receipt existence permits human approval over failing outcomes, while active audio has finite/mono/rate checks. Derived bit depth/clipping/DC/root pitch are not rechecked."
 }
