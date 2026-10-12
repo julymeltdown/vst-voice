@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scope": "OWNER_OBSERVATION_ENGINEERING_ONLY",
+  "manifestSha256": "953a3fd997e8f2db2daca8ef381846beb2d125b3463efc7b8ae8ccda5acffed4",
+  "observerName": "",
+  "sessionStartedAtUtc": "",
+  "elapsedMinutes": null,
+  "steps": [
+    {
+      "step": "Open, Save As and identify voice",
+      "result": "NOT_OBSERVED",
+      "expected": "Prepared score and exact installed singer are visible; working copy protects the frozen reference",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Compose new phrase (if attempted)",
+      "result": "NOT_OBSERVED",
+      "expected": "An unfamiliar phrase can be entered; otherwise leave this unobserved",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Choose singer",
+      "result": "NOT_OBSERVED",
+      "expected": "Intended installed singer is selected without unexpected help",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Native preview/listening",
+      "result": "NOT_OBSERVED",
+      "expected": "Voice is audible; person describes intelligibility and artifacts",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Expressive edit and Undo",
+      "result": "NOT_OBSERVED",
+      "expected": "One intended audible edit and reversal are understood",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Save and reopen working copy",
+      "result": "NOT_OBSERVED",
+      "expected": "Notes, voice and expression survive reopening",
+      "observed": "",
+      "helpOrProblem": ""
+    },
+    {
+      "step": "Export and external playback",
+      "result": "NOT_OBSERVED",
+      "expected": "Master and stem are audibly played outside the app",
+      "observed": "",
+      "helpOrProblem": ""
+    }
+  ],
+  "rankedProblems": [],
+  "largerObstacle": "UNDECIDED",
+  "selectedRepairCriterion": "",
+  "releaseEligible": false,
+  "monitoringLevelAndAdjustments": ""
+}

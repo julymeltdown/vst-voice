@@ -1,0 +1,522 @@
+{
+  "schemaVersion": 1,
+  "scope": "ENGINEERING_ONLY",
+  "sourceHead": "feaa3056202d8137be529baa157bef20eebf391e",
+  "createdAtUtc": "2026-10-12T13:36:03.643587+00:00",
+  "scoreSeconds": 30,
+  "audioFrames": 1440000,
+  "sampleRate": 48000,
+  "channels": 2,
+  "singer": {
+    "candidateSha256": "dda34f78cd7748cdbfc350698cd380536082ed7421cc6e350e9ad8971f1709c1",
+    "contentHash": "23424e02d013eda8d29956ef345af02640784329aa6bf0db5cc691cd2c8ba972",
+    "descriptorReconfirmed": true,
+    "diagnostic": "",
+    "durabilityConfirmed": true,
+    "installDirectory": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/observation/native-song-2026-10-12/app-support/Data/Singers/seam-pilot-01-voiced-stop-diagnostic/0.1.0-observation",
+    "packageDigest": "5c71cdc49d53648f48f4e28d0c6554a3fecef502b5040a56955f686d0f948965",
+    "payloadFamily": "recipe",
+    "releaseEligible": false,
+    "replacedExisting": false,
+    "resourceId": "seam-pilot-01-voiced-stop-diagnostic",
+    "resourceKind": "recipe-original",
+    "resourceVersion": "0.1.0-observation",
+    "result": "InstallCommitted",
+    "signerKeyId": "1f418664f0e1dc1f15116bd6c7c333118a89a0ccc22e33777a2f32093aca988c"
+  },
+  "candidateSha256": "dda34f78cd7748cdbfc350698cd380536082ed7421cc6e350e9ad8971f1709c1",
+  "recipeSha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+  "nativeReceipt": "out/observation/native-song-2026-10-12/native-final-30s/receipt.json",
+  "launch": {
+    "executable": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/MacOS/Project SEAM",
+    "project": "out/observation/native-song-2026-10-12/Native Observation 30s.seam",
+    "publicKey": "out/observation/native-song-2026-10-12/keys/public.json",
+    "applicationSupportRoot": "out/observation/native-song-2026-10-12/app-support"
+  },
+  "humanListening": "NOT_OBSERVED",
+  "unaidedCreator": "NOT_OBSERVED",
+  "externalPlayback": "NOT_OBSERVED",
+  "canonicalUA": "NOT_RUN",
+  "productionApproval": "NOT_RUN",
+  "releaseEligible": false,
+  "files": [
+    {
+      "path": "docs/voicebank/BETA_VOICE_SOURCE_STRATEGIES.json",
+      "bytes": 3194,
+      "sha256": "8edb7fa39d8468e42de87ab149d0cdb04d1a1fee7e8216847aca6745e7c45171"
+    },
+    {
+      "path": "docs/voicebank/beta-voicebank-01-dossier.json",
+      "bytes": 2265,
+      "sha256": "256dce6d3e89dca424c4e82c0dbdadbfa494b1e70acbf41e30d3ba0c6819938e"
+    },
+    {
+      "path": "out/evidence/full-scope-development-2026-10-12/observation-focused-tests.log",
+      "bytes": 550,
+      "sha256": "f68c1f46fc01f5fde98e1cc51f5f5a45ccfbc13eee7653cc9ccaadf1d149b9f4"
+    },
+    {
+      "path": "out/evidence/full-scope-development-2026-10-12/observation-review-verdict.md",
+      "bytes": 7249,
+      "sha256": "33199a7f1824abc45e1e68bf5425981fb275dc02cc05200a2cb7193b8c92a968"
+    },
+    {
+      "path": "out/evidence/full-scope-development-2026-10-12/start-build-complete.log",
+      "bytes": 63,
+      "sha256": "c2ed93ffd93c840755c0e91392ae593b1b52de9b7aaf6c208123feaceb1dde2e"
+    },
+    {
+      "path": "out/evidence/full-scope-development-2026-10-12/start-build.log",
+      "bytes": 23189,
+      "sha256": "2c99f5f950ee2a95778a01e87ae73852d880353f8caf48cd866e9da4079a053c"
+    },
+    {
+      "path": "out/evidence/u14-installed-audit-2026-10-09/sample/installed/cli.published.fixture/0.1.0/candidate.json",
+      "bytes": 7478,
+      "sha256": "1b59624665898c6c1f6a834aa9fe150977ba7840c16bbcaa26b56b9e78962d63"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/Native Observation 30s.seam",
+      "bytes": 27458,
+      "sha256": "cea99e35da7dc50a11d746563aebcf59b55a6e174ba40cc7f6ea59484e35266f"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/app-support/Data/Singers/seam-pilot-01-voiced-stop-diagnostic/0.1.0-observation/candidate.json",
+      "bytes": 1287,
+      "sha256": "dda34f78cd7748cdbfc350698cd380536082ed7421cc6e350e9ad8971f1709c1"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/app-support/Data/Singers/seam-pilot-01-voiced-stop-diagnostic/0.1.0-observation/install-receipt.json",
+      "bytes": 638,
+      "sha256": "1c13a33d8b37fa7f135257d5e8a423f6572f6e7be17c5efa7ebee0603997c4ad"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/app-support/Data/Singers/seam-pilot-01-voiced-stop-diagnostic/0.1.0-observation/manifest.json",
+      "bytes": 861,
+      "sha256": "251df0aa11fede4bf7a20ded978c32506e1a85d504da488861ba636572bd0ef0"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/app-support/Data/Singers/seam-pilot-01-voiced-stop-diagnostic/0.1.0-observation/recipe.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Info.plist",
+      "bytes": 2192,
+      "sha256": "8dcb0162ab0794686c3c9ded0d82411b64fde0aca89bf47caed42aa553c030e3"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/MacOS/Project SEAM",
+      "bytes": 13894560,
+      "sha256": "b588a21dbacf0f4d7550c2d5ee5dc5dd67ec001be365ae82901e8c7d66b6a26c"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/BETA_TESTER_CHECKLIST.md",
+      "bytes": 1183,
+      "sha256": "435f3765f5d7db1abbcb9f14515787a3cbeb44bc83c04ad3b8703270c0875f66"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/EULA.md",
+      "bytes": 1465,
+      "sha256": "8c59f21d4640ee71e83152c88d6cdc7de8c67d5d798a5110b323e6f1bac18681"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/ExternalBetaAcceptance.md",
+      "bytes": 5840,
+      "sha256": "d9645bc3673bea9d078ff8fafd8e5d71638de34cac9e6a0670f017ba060ab53d"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/KNOWN_LIMITATIONS.md",
+      "bytes": 1378,
+      "sha256": "3168a027303dc767ca81cddbcc3ce5695a7ac539aa426b923feafa057854f729"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/PRIVACY.md",
+      "bytes": 1619,
+      "sha256": "f79211eb1baaf64068196e12640ee5dee50aab8a509135c33d22dd3c07a99917"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/QUICK_START.md",
+      "bytes": 1967,
+      "sha256": "56edd1ca2dae264607a87ec07b62d30418c443d06035c51a8d8f8be9b300b7e9"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/Support/SECURITY_RESPONSE.md",
+      "bytes": 1664,
+      "sha256": "9d346b57dbede115e53347f6fe20463f35c04596cbb28da819f2353eb6f41d55"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/Support/SUPPORT.md",
+      "bytes": 2316,
+      "sha256": "1469ad1df2abd310795393f964e30056ee4cfa72824d728ac282a8363dd74911"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/UPDATE_AND_ROLLBACK.md",
+      "bytes": 1403,
+      "sha256": "9a0d8ced9ae8607081385e5c93c84f88863ad8af44a94facaa148a5e6d266c16"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/USER_MANUAL.md",
+      "bytes": 2632,
+      "sha256": "908e5fd512d4558cd640e7558ecd69c087338ae14b6bd3e6bd5f6987b5a0edf6"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/Manual/external-beta-documentation.json",
+      "bytes": 1251,
+      "sha256": "1d741f968347031ee1f871c4581bc1966d5c9813b748ad52b6fc595ef00733d3"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/SBOM.spdx.json",
+      "bytes": 8863,
+      "sha256": "e2ec22db2f65e06a832d70fac2198ab42cf890461e476110509719e1173bcce7"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/THIRD_PARTY_NOTICES.md",
+      "bytes": 10094,
+      "sha256": "5ac16125c0e36963530fa65f958e537a8d0c70c2a68285dd1d8440c5f38a2c4d"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/README.md",
+      "bytes": 1278,
+      "sha256": "fef2a634fc6f0bb6151bfc732ec08000bf48d8fb6220345d4280a7e331008ba6"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow-condensed/BarlowCondensed-SemiBold.ttf",
+      "bytes": 109428,
+      "sha256": "7b619d14bc2327509a9ef32b0890f709626f7ecc9ff61191c2a4314c5499d2d9"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow-condensed/OFL.txt",
+      "bytes": 4377,
+      "sha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Bold.ttf",
+      "bytes": 108220,
+      "sha256": "84e6a4d61e7c3e21f3c50ea6a4f7e5303a3467864c038be6ea3759bab8d547f9"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Medium.ttf",
+      "bytes": 103536,
+      "sha256": "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Regular.ttf",
+      "bytes": 104068,
+      "sha256": "95aa02c7c43096e0dd44d787ba6216864a67157e402adab59b35572e0c1577ea"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-SemiBold.ttf",
+      "bytes": 108348,
+      "sha256": "86577cb32f8abe3673db53ca0f4221e6856751a4f6730c867e00f720f8bb1fc5"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/barlow/OFL.txt",
+      "bytes": 4377,
+      "sha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/dm-mono/DMMono-Medium.ttf",
+      "bytes": 50360,
+      "sha256": "fd327daf461db87b44a87def475d251bf03b997f7c07d9680592d75dbbfaad0b"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/dm-mono/OFL.txt",
+      "bytes": 4484,
+      "sha256": "2bada5ea45c3c63b7f1ea1f88ce9672c9e4f0c42b2c3b7378949084fe55a3066"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/fredoka/Fredoka-Variable.ttf",
+      "bytes": 159184,
+      "sha256": "2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/fredoka/OFL.txt",
+      "bytes": 4388,
+      "sha256": "5c9e7eee5c6b25f4b05b8d53b2e470ea4962f9ced742d044a98f7d95d1375bab"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/fonts/manifest.json",
+      "bytes": 4520,
+      "sha256": "b21c4239b7832021b08244d082d34e91354d060e2b2535b6f661a222a4565929"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/l10n/ko.json",
+      "bytes": 34564,
+      "sha256": "863b8b010b3ed5cf52d01020ff1f7755a10038873e4038d1f6b7a0cad0ac096b"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/release-resource-inventory.json",
+      "bytes": 676,
+      "sha256": "f0b02a7991d67c2ddb5b709620f58b0bc2ce20fadc8f3f301e957576f69665cc"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/PROVENANCE.md",
+      "bytes": 2132,
+      "sha256": "1861ca54c453ef97e3223aa85397dcbe9bf9e3c3e7bf57359e0efdc05b4c2ce8"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/emo/portrait.png",
+      "bytes": 1245372,
+      "sha256": "1469593c48a0b5d4f8c4790df3399f79511ff5d8ca296f430185800df64f4754"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/emo/splash.png",
+      "bytes": 2376669,
+      "sha256": "483314645c8d4bf2d09eca07eb23c7a1bb02f6478a0b5335319d1e6875457f6c"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/emo/stage.png",
+      "bytes": 574930,
+      "sha256": "da9a56a047b0327aa28b18004ac7be74c96bcf351b1e1cae57305ab2903d8409"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/emo/wordmark.png",
+      "bytes": 140232,
+      "sha256": "a2b8a3d828503ef3680b4a5f650e58b91fafe46f4e273d5f8b0a224587bceec7"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/manifest.json",
+      "bytes": 2976,
+      "sha256": "6255544e21e5871ab31e6d4816cfdfe93dc5da88b0f21021f45145532df5b8a8"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/scene/portrait.png",
+      "bytes": 1241878,
+      "sha256": "8774f44a9bd729921be96dff9b5e223957388af600046504eb74610da91d1576"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/scene/splash.png",
+      "bytes": 2842634,
+      "sha256": "99e13b831ef40cec1a858025f9126afbaf9d9a767577f84a8293c37d8bc011a2"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/scene/stage.png",
+      "bytes": 639317,
+      "sha256": "db0e843046a81c85a08d1b37bde2cfcae4ef6f6aef369958af244fd36f22c3c3"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/Project SEAM.app/Contents/Resources/ui-design/scene/wordmark.png",
+      "bytes": 230271,
+      "sha256": "532ad7d0784f2b90bff46b07a760c439ac6f1c18febce4e02312622821dff544"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/SEAM Voicebank Studio.app/Contents/Info.plist",
+      "bytes": 1311,
+      "sha256": "562f1888f9ecebbd3a335286b6a22a6e74c63794ccd3a3f72dee80d55444afb8"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/apps/SEAM Voicebank Studio.app/Contents/MacOS/SEAM Voicebank Studio",
+      "bytes": 11831208,
+      "sha256": "88a11d7146d1821001676417a403029b8256235a930ac8a95c338e4fd7492c33"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bank-route-draft/assignments.json",
+      "bytes": 225841,
+      "sha256": "25286aa99e194fa42763b3d6cc80188f5cb3725fb8e7c804500c451cabc58fb3"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bank-route-draft/inventory.json",
+      "bytes": 839914,
+      "sha256": "cd08efb6f34e9f69c4df46197b84ebf934472222d75340c0b0edd140c7b64cb8"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bank-route-draft/operator-script.csv",
+      "bytes": 483178,
+      "sha256": "1184fd97f90e8e2870e07da9f277ceeb6976cfe51a42ddb0ef8654e6645bbb9b"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bank-route-draft/profile.json",
+      "bytes": 859,
+      "sha256": "8d4c694f32d385f173feaf38e603ff6e98e136bf32a587eaf5446c82f2f0e579"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bin/seam_bank_tool",
+      "bytes": 1042512,
+      "sha256": "d77e10d3de8b5c90e688c86b724ebb7b6b234ab3bf34e409e308c335a18a9fcb"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bin/seam_singer_pilot",
+      "bytes": 6878032,
+      "sha256": "5cec1b9d502babde5d17b70915ea8fc2c19406e5eb60151fb57650a2b03d7376"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/bin/seam_voicebank_cli",
+      "bytes": 9675088,
+      "sha256": "3bf1b99e8246b4994c5d4b1c5906a68d8de74689e78e210c830f10521b558a20"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/editor-30s-reopen-evidence/font-identity.json",
+      "bytes": 1943,
+      "sha256": "ee324d9a6852d335d88a148fa9a7d15dc205124c598f9fe9471e5e14640177af"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/editor-30s-reopen-evidence/geometry.json",
+      "bytes": 3721,
+      "sha256": "5454a1ede76453367191db584fd6b88d25fe778b714afa46cec9613cd87b4134"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/editor-30s-reopen-evidence/performance.json",
+      "bytes": 404,
+      "sha256": "7e399e9ebfb23bb417c1076ec0c054b7404508924b514111bcc4762855fb6e25"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/editor-30s-reopen-evidence/semantic-bounds.json",
+      "bytes": 31459,
+      "sha256": "bcf95af520bd2e96d4268d48d3367969586bccf9366c3ab20b1b46226cec3443"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/editor-30s-reopen.ppm",
+      "bytes": 15552017,
+      "sha256": "ff982bec65cb6f7e9e19612f09c9577cafc06ea5212964d5f61b19525095528c"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/keys/public.json",
+      "bytes": 216,
+      "sha256": "0bc38fbf6e5670776db0301a77d2ffabac83ef1d3312132016ed9d0adcce5f29"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-export-30s/master.wav",
+      "bytes": 8640044,
+      "sha256": "609c21b492aef8d4d919166011871b4a3bc1a4f6e45fcde46696b01cd7506231"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-export-30s/project.seam",
+      "bytes": 27325,
+      "sha256": "3622a8f84050cdee8bfcaf1b7f61f3d68249a079abf8ad5440bf0fb9b17013bc"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-export-30s/receipt.json",
+      "bytes": 1756,
+      "sha256": "a01b5d45469c50118b3b3ad98b92ba1635f16a7ba73a21613cb78c28d76f9cbb"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-export-30s/recipes/7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-export-30s/stems/Original_procedural_pilot-0000000000016379.wav",
+      "bytes": 8640044,
+      "sha256": "609c21b492aef8d4d919166011871b4a3bc1a4f6e45fcde46696b01cd7506231"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-final-30s/master.wav",
+      "bytes": 8640044,
+      "sha256": "609c21b492aef8d4d919166011871b4a3bc1a4f6e45fcde46696b01cd7506231"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-final-30s/project.seam",
+      "bytes": 27348,
+      "sha256": "c03b556921bd22cf20bf53a58eb81c589f94e416ff20afc00a44181113f7e29a"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-final-30s/receipt.json",
+      "bytes": 1756,
+      "sha256": "4e023876b0023cae1ed994fa8e92e48f5fd1a013dce4a3b8b40f111bdba45799"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-final-30s/recipes/7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/native-final-30s/stems/Original_procedural_pilot-0000000000016379.wav",
+      "bytes": 8640044,
+      "sha256": "609c21b492aef8d4d919166011871b4a3bc1a4f6e45fcde46696b01cd7506231"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/observation-singer.seamsinger",
+      "bytes": 19826,
+      "sha256": "5c71cdc49d53648f48f4e28d0c6554a3fecef502b5040a56955f686d0f948965"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/preparation.json",
+      "bytes": 3953,
+      "sha256": "f1b1704a8426f4871a6b93f4733cdf11188eba5143bd74ea357fb3feb6c4b700"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/bank-route-draft.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/bank-route-draft.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/editor-30s-reopen.log",
+      "bytes": 513,
+      "sha256": "be4c24748b5afedaf4998366edf78904e01d1ad1be956c27ec40996687d3bd59"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/install-native-root.stdout",
+      "bytes": 888,
+      "sha256": "348faaf067dfa580869d92422cb9cb853ce119858092b261ff40f877426d03a9"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/native-rehearsal.json",
+      "bytes": 1240,
+      "sha256": "f8ef19570d1a71c4c04434c6552b8f7b9c9340be22509f0b8b7fcffc9e2c9b4f"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/package.stdout",
+      "bytes": 976,
+      "sha256": "9aea9e796570bdc102a1a4bd5d9f1e82a7d64684a05831f06549ff14f920319a"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/pilot-30s.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/pilot-30s.stdout",
+      "bytes": 904,
+      "sha256": "9ea37be2f61bf99819d26e851b5d7371bd25a9823f9d6a51f08defd247e6f1fc"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/publish.stdout",
+      "bytes": 698,
+      "sha256": "488586723436c29ec86586603faad2cc933491c934e4166e428353dc61ab1921"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/studio-start.log",
+      "bytes": 131,
+      "sha256": "147c1c17a622f146e2fefc5367a141dafb24816be33263904700351f6e2d8d57"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/verify-native-project.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/receipts/verify-native-project.stdout",
+      "bytes": 3195,
+      "sha256": "1f0f62e0ae497c7683f990b01dd3e44958473c056feb8372c1584184228aab21"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/source-30s/baseline-recipe.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/source-30s/baseline.seam",
+      "bytes": 26731,
+      "sha256": "b30d111aeab9681861b4561469d5e843162621ce86465bbdc7cabf57fdd6916c"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/source-30s/pilot.json",
+      "bytes": 2838,
+      "sha256": "90b831fbf549fcc82595245ff6b309ad2e4a5fed7550c67ce61a039626c0d76d"
+    },
+    {
+      "path": "out/observation/native-song-2026-10-12/studio-start.ppm",
+      "bytes": 15552017,
+      "sha256": "80065d4a458d12a2f04b89ffadb13c0d1e4f4a20ad26c848425e3a22bf62b343"
+    }
+  ],
+  "binaryRetention": "Copied rebuilt bundles and CLIs byte-for-byte before later development; build directory may change without changing this baseline.",
+  "audioPeakDbfs": -19.837706853193495,
+  "audioRmsDbfs": -36.532040273575554
+}
