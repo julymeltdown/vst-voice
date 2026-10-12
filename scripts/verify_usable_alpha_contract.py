@@ -38,6 +38,58 @@ def _load_json(path: Path, errors: list[str]) -> dict[str, Any] | None:
     return value
 
 
+def validate_requirement_evidence(
+    root: Path, requirement_id: str, status: str, evidence: Any
+) -> list[str]:
+    """Validate one row with the canonical path/hash policy, without accepting a human run."""
+    root = root.resolve()
+    errors: list[str] = []
+    if not isinstance(evidence, list):
+        errors.append(f"{requirement_id}: evidence must be an array")
+        return errors
+    if status == "PASS" and not evidence:
+        errors.append(f"{requirement_id}: PASS requires evidence path and sha256")
+    for evidence_index, entry in enumerate(evidence):
+        prefix = f"{requirement_id}: evidence[{evidence_index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        relative_path = entry.get("path")
+        expected_hash = entry.get("sha256")
+        if not isinstance(relative_path, str) or not relative_path:
+            errors.append(f"{prefix} path is required")
+            continue
+        evidence_path = Path(relative_path)
+        if evidence_path.is_absolute() or ".." in evidence_path.parts:
+            errors.append(f"{prefix} path must be a safe repository-relative path")
+            continue
+        if not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
+            errors.append(f"{prefix} sha256 must be 64 lowercase hexadecimal characters")
+            continue
+        candidate = root
+        contains_symlink = False
+        for part in evidence_path.parts:
+            candidate /= part
+            if candidate.is_symlink():
+                contains_symlink = True
+                break
+        if contains_symlink:
+            errors.append(f"{prefix} path contains a symbolic link: {relative_path}")
+            continue
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            errors.append(f"{prefix} escapes the repository root")
+            continue
+        if not resolved.is_file():
+            errors.append(f"{prefix} file does not exist: {relative_path}")
+            continue
+        if _sha256(resolved) != expected_hash:
+            errors.append(f"{prefix} sha256 does not match: {relative_path}")
+    return errors
+
+
 def verify_repository(root: Path) -> list[str]:
     root = root.resolve()
     errors: list[str] = []
@@ -97,50 +149,7 @@ def verify_repository(root: Path) -> list[str]:
         if mandatory is True and status != "PASS":
             mandatory_not_pass.append(requirement_id)
 
-        evidence = item.get("evidence")
-        if not isinstance(evidence, list):
-            errors.append(f"{requirement_id}: evidence must be an array")
-            continue
-        if status == "PASS" and not evidence:
-            errors.append(f"{requirement_id}: PASS requires evidence path and sha256")
-        for evidence_index, entry in enumerate(evidence):
-            prefix = f"{requirement_id}: evidence[{evidence_index}]"
-            if not isinstance(entry, dict):
-                errors.append(f"{prefix} must be an object")
-                continue
-            relative_path = entry.get("path")
-            expected_hash = entry.get("sha256")
-            if not isinstance(relative_path, str) or not relative_path:
-                errors.append(f"{prefix} path is required")
-                continue
-            evidence_path = Path(relative_path)
-            if evidence_path.is_absolute() or ".." in evidence_path.parts:
-                errors.append(f"{prefix} path must be a safe repository-relative path")
-                continue
-            if not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
-                errors.append(f"{prefix} sha256 must be 64 lowercase hexadecimal characters")
-                continue
-            candidate = root
-            contains_symlink = False
-            for part in evidence_path.parts:
-                candidate /= part
-                if candidate.is_symlink():
-                    contains_symlink = True
-                    break
-            if contains_symlink:
-                errors.append(f"{prefix} path contains a symbolic link: {relative_path}")
-                continue
-            resolved = candidate.resolve()
-            try:
-                resolved.relative_to(root)
-            except ValueError:
-                errors.append(f"{prefix} escapes the repository root")
-                continue
-            if not resolved.is_file():
-                errors.append(f"{prefix} file does not exist: {relative_path}")
-                continue
-            if _sha256(resolved) != expected_hash:
-                errors.append(f"{prefix} sha256 does not match: {relative_path}")
+        errors.extend(validate_requirement_evidence(root, requirement_id, status, item.get("evidence")))
 
     if gate_status == "PASSED" and mandatory_not_pass:
         errors.append(

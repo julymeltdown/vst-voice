@@ -10,8 +10,11 @@ every value were raised.
 from __future__ import annotations
 
 import json
+import hashlib
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.external_beta.release_status import (
     STATES,
@@ -19,6 +22,7 @@ from tools.external_beta.release_status import (
     build_rows,
     state_rank,
     status_report,
+    _count_completed_physical_runs,
 )
 
 
@@ -109,6 +113,43 @@ class ReleaseStatusTests(unittest.TestCase):
                     self.assertTrue(
                         (ROOT / path).exists(), f"{row['claim']}: {path} does not exist"
                     )
+
+    def test_pass_rows_count_only_with_valid_canonical_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact = root / "observed.txt"
+            artifact.write_bytes(b"Synthetic counter fixture; no human acceptance.\n")
+            evidence = [{"path": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}]
+            rows = [{"id": f"UA-{i:03d}", "mandatory": True, "status": "NOT_RUN", "evidence": []}
+                    for i in range(1, 21)]
+            rows[0].update(status="PASS", evidence=evidence)
+            with patch("tools.external_beta.release_status._root", return_value=root), \
+                 patch("tools.external_beta.release_status._acceptance", return_value={"requirements": rows}):
+                self.assertEqual((1, 20), _count_completed_physical_runs())
+                rows[1].update(status="PASS", evidence=evidence)
+                self.assertEqual((2, 20), _count_completed_physical_runs())
+                rows[1]["evidence"] = []
+                self.assertEqual((1, 20), _count_completed_physical_runs())
+                artifact.write_bytes(b"Changed after capture")
+                self.assertEqual((0, 20), _count_completed_physical_runs())
+
+    def test_completed_and_unsafe_or_duplicate_rows_are_not_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact = root / "observed.txt"
+            artifact.write_bytes(b"Synthetic evidence")
+            evidence = [{"path": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}]
+            rows = [{"id": f"UA-{i:03d}", "mandatory": True, "status": "NOT_RUN", "evidence": []}
+                    for i in range(1, 21)]
+            rows[0].update(status="COMPLETED", evidence=evidence)
+            with patch("tools.external_beta.release_status._root", return_value=root), \
+                 patch("tools.external_beta.release_status._acceptance", return_value={"requirements": rows}):
+                self.assertEqual((0, 20), _count_completed_physical_runs())
+                rows[0].update(status="PASS", evidence=[{"path": "../observed.txt", "sha256": evidence[0]["sha256"]}])
+                self.assertEqual((0, 20), _count_completed_physical_runs())
+                rows[0]["evidence"] = evidence
+                rows[1]["id"] = rows[0]["id"]
+                self.assertEqual((0, 20), _count_completed_physical_runs())
 
     def test_absent_rows_are_not_claimed_to_pass(self) -> None:
         self.assertIn("not claimed to pass", str(status_report()["absentMeans"]))

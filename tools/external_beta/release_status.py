@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from scripts.verify_usable_alpha_contract import EXPECTED_IDS, validate_requirement_evidence
+
 
 #: The four states, weakest first. A row may never claim a state that outranks its evidence.
 STATES: Final = ("CONTRACT_VALID", "IMPLEMENTED", "TARGET_PASS", "BETA_READY")
@@ -96,6 +98,8 @@ def _count_completed_physical_runs() -> tuple[int, int]:
     rows = document.get("requirements") if isinstance(document, dict) else None
     if not isinstance(rows, list):
         return (0, 0)
+    if [row.get("id") if isinstance(row, dict) else None for row in rows] != EXPECTED_IDS:
+        return (0, len(rows))
     completed = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -103,7 +107,9 @@ def _count_completed_physical_runs() -> tuple[int, int]:
         # A row counts only when it is marked complete AND carries retained evidence. Status
         # alone would let a row claim a pass with nothing behind it, which is the exact
         # confusion this page exists to prevent.
-        if row.get("status") == "COMPLETED" and row.get("evidence"):
+        if row.get("mandatory") is True and row.get("status") == "PASS" and not validate_requirement_evidence(
+            _root(), row["id"], "PASS", row.get("evidence")
+        ):
             completed += 1
     return (completed, len(rows))
 
@@ -168,7 +174,7 @@ def build_rows() -> tuple[Row, ...]:
                 "BETA_READINESS_ISSUES.md (SEAM-BETA-P0-04)",
             ),
             blocked_on=(
-                f"{completed_runs} of {total_runs} canonical rows carry a completed physical run. "
+                f"{completed_runs} of {total_runs} canonical rows record PASS with valid hash-bound evidence. "
                 "The rows need a person, installed candidate bytes and retained hash-bound "
                 "evidence; no automated check can produce them."
             ),

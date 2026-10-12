@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "unit": "canonical-alpha-status-counter",
+  "sourceBase": "6ddca089a349249e8cef1324e5b6f7c9c1a68124",
+  "evidenceRoot": "out/evidence/alpha-status-counter-2026-10-13",
+  "manifestSha256": "d4227226d19c6cb1254bd30bb27a0d7057074e912ceb1b3dc50af66c98d69854",
+  "checks": {
+    "baseline": "8/10 pass; two regression failures retained",
+    "statusTests": "10/10 PASS",
+    "canonicalContract": "PASS; gate still BLOCKED",
+    "externalBetaPythonCTest": "1/1 PASS;70.86 seconds"
+  },
+  "realCanonicalRows": "0/20 PASS; unchanged",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Status reporting and shared evidence validation only"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

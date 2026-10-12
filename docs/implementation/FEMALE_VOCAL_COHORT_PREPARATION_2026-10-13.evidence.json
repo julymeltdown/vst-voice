@@ -20,9 +20,12 @@
     "readOnlyReproduction": "PASS"
   },
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Technical source/preparation only; no actor, phonetic, rights or bank acceptance"
+    "scope": "Technical source/preparation only; no actor, phonetic, rights or bank acceptance",
+    "reviewedCommit": "6ddca089a349249e8cef1324e5b6f7c9c1a68124",
+    "independentChecks": "All15 cut intervals/statistics reproduced,105 retained hashes/snapshot blobs checked; native algorithm independently evaluated on287 sampled frames; no native CLI/build reruns",
+    "followups": "Four nonblocking P3 items: portable metadata, duplicate-source/JSON-key refusal, controlled malformed-input exit, partial-output/format tests"
   },
   "assignment": "NOT_ASSIGNED",
   "humanAcceptance": "NOT_RUN",
