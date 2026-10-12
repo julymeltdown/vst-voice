@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-expanded-audition-warning",
+  "sourceHead": "4fbf94df9d5825779d3df8a2420aa8f69de3f20b",
+  "manifest": {
+    "path": "out/evidence/female-expanded-audition-warning-2026-10-13/manifest.json",
+    "sizeBytes": 20255,
+    "sha256": "c706884d5f8e3841e04192037bb60365afd8d0fc5f6c965eee5d5427d0294582"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/female-expanded-audition-warning-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/female-expanded-audition-warning-2026-10-13/verification.log",
+      "sizeBytes": 166,
+      "sha256": "b9c5d2d0928bd3f369f2b1f8b7a52b9dfc3729c2d5d728524783022d50cf6688"
+    }
+  },
+  "packetPage": {
+    "path": "out/evidence/female-expanded-audition-warning-2026-10-13/packet/index.html",
+    "sizeBytes": 33966,
+    "sha256": "4aadfbb58fa7e845cde7ac25ea8974800f47bfe2b46150058bd1074901386c63"
+  },
+  "blankWorksheet": {
+    "path": "out/evidence/female-expanded-audition-warning-2026-10-13/packet/response-template.json",
+    "sizeBytes": 35926,
+    "sha256": "cd08fa226f28bc1031a020c95b998519b58c979a43536f108a62333388b9cb0e"
+  },
+  "previousPacketReview": {
+    "status": "APPROVE",
+    "sourceCommit": "567c4e2d1a523c3df337f75137de62188977c61c",
+    "verdict": {
+      "path": "out/evidence/female-audition-closeout-2026-10-13/review-567c4e2d.txt",
+      "sizeBytes": 7000,
+      "sha256": "3fc752b4066b3b3b6cf4ba19bb9c2b96f9a9153fe3fd9d3c61333d765641ffe0"
+    }
+  },
+  "packetFiles": 79,
+  "previousFilesByteIdentical": 77,
+  "changedFiles": [
+    "response-template.json",
+    "README.txt"
+  ],
+  "worksheetSchemaVersion": 2,
+  "previousArtifactsPreserved": 92,
+  "retainedArtifacts": 84,
+  "parentBindings": 2,
+  "cutCount": 73,
+  "allDecisionsNull": true,
+  "warningRestored": true,
+  "freshBrowserExecution": "NOT_RUN",
+  "pageByteIdenticalToReviewedPacket": true,
+  "audioPlayback": "NOT_RUN",
+  "humanListening": "NOT_RUN",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Required warning restoration and explicit worksheet version only"
+  },
+  "sourceAdmission": "NOT_ASSESSED",
+  "bankAdmission": "NOT_APPROVED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}

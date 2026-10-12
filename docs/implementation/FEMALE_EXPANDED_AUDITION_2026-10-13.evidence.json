@@ -61,9 +61,18 @@
   "humanListening": "NOT_RUN",
   "bankAdmission": "NOT_APPROVED",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Expanded manual audition packet and blank worksheet only"
+    "scope": "Expanded manual audition packet and blank worksheet only",
+    "sourceCommit": "567c4e2d1a523c3df337f75137de62188977c61c",
+    "verdict": {
+      "path": "out/evidence/female-audition-closeout-2026-10-13/review-567c4e2d.txt",
+      "sizeBytes": 7000,
+      "sha256": "3fc752b4066b3b3b6cf4ba19bb9c2b96f9a9153fe3fd9d3c61333d765641ffe0"
+    },
+    "independentScope": "Read-only artifact/digest/PCM/HTML/null-field audit; recorded browser/session values taken from lead evidence",
+    "p3": "Missing no-inference worksheet warning; separate schema-2 packet locally verified, follow-up review pending",
+    "independentNativeExecution": "NOT_RUN"
   },
   "alphaRecordedPasses": [
     0,
