@@ -81,6 +81,27 @@ TEST_CASE("valid pitch near the upper frequency bound keeps its fundamental") {
   }
 }
 
+TEST_CASE("default pitch bounds reject tested high tones at 44.1 kHz") {
+  using namespace seam::voicebank;
+  for (const auto method : {PitchCorrelationMethod::Direct, PitchCorrelationMethod::Fft}) {
+    PitchConfig config;
+    config.hopSize = config.frameSize;
+    config.correlationMethod = method;
+    CHECK(config.minimumHz == 60.0);
+    CHECK(config.maximumHz == 1200.0);
+    for (const auto frequency : {1201.0, 1225.0}) {
+      const auto samples = seam::test::support::sineWave(44100U, frequency, 0.2, 0.25F);
+      const auto result = analyzePitch(samples, 44100U, config); CHECK(result);
+      CHECK(!result.value().empty());
+      for (const auto& frame : result.value()) {
+        CHECK(frame.confidence > 0.9);
+        CHECK(!frame.voiced);
+        CHECK(frame.f0Hz == 0.0);
+      }
+    }
+  }
+}
+
 TEST_CASE("Full hop pitch coverage includes bounded zero padded tail frames") {
   using namespace seam::voicebank;
   for (const auto count : {1U, 255U, 256U, 257U, 4097U}) {

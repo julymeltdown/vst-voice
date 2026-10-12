@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "unit": "pitch-limits-disclosure",
+  "sourceHead": "e0fcfd41ad3eb4748609b2633ba9a241bcdcb4c0",
+  "manifest": {
+    "path": "out/evidence/pitch-limits-disclosure-2026-10-13/manifest.json",
+    "sizeBytes": 10357,
+    "sha256": "26254e6321cc68e540c538638fd6b9c91852351732be38211a1d5443fa4f62cd"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/pitch-limits-disclosure-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/pitch-limits-disclosure-2026-10-13/verification.log",
+      "sizeBytes": 217,
+      "sha256": "4cea3b6a0aad47c3fd0d7d5690e64f09bc54c71b33b9d435ccef05bb92dfd511"
+    }
+  },
+  "changedFrameBreakdown": {
+    "oldOffRangeToUnvoiced": 106,
+    "oldOffRangeToVoiced": 0,
+    "oldInRangeToUnvoiced": 976,
+    "oldInRangeChangedValue": 6,
+    "oldInRangeUnchangedValue": 16092,
+    "oldUnvoicedChangedValue": 0,
+    "offRangeConfidenceUnchanged": 99,
+    "lostInRange1100To1200": 946,
+    "lostInRangeRuns": 176,
+    "maxLostInRangeRun": 23
+  },
+  "nativePitchCasesPassed": 10,
+  "nativeSyntheticCliInvocations": 10,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaPromotion": false
+}

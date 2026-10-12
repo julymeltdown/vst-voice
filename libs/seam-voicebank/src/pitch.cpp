@@ -183,8 +183,9 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
       }
     }
     const auto frequency = refinedLag > 0.0 ? static_cast<double>(sampleRate) / refinedLag : 0.0;
-    // A strong correlation can still propose a period outside the requested
-    // interval. Keep its confidence, but do not invent a clamped fundamental.
+    // Reject interpolated estimates outside the requested interval while
+    // preserving correlation confidence. In-range values can still be aliases;
+    // boundary peaks without an outer neighbor can still land on a limit.
     const bool voiced = best >= config.voicingThreshold && std::isfinite(frequency) &&
                         frequency >= config.minimumHz && frequency <= config.maximumHz;
     result.push_back(PitchFrame{
