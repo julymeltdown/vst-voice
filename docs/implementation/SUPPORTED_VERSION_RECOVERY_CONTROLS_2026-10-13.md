@@ -1,6 +1,6 @@
 # Supported-version recovery controls
 
-Date: 2026-10-13, Asia/Seoul. Base: `cb3a19a3903ffcd9bb143d808b0ae9868fcf7088`. [Evidence index](SUPPORTED_VERSION_RECOVERY_CONTROLS_2026-10-13.evidence.json) binds one exact tested/base source pair, focused rebuild/test logs and the rebuilt review executable. Review is PENDING.
+Date: 2026-10-13, Asia/Seoul. Base: `cb3a19a3903ffcd9bb143d808b0ae9868fcf7088`. [Evidence index](SUPPORTED_VERSION_RECOVERY_CONTROLS_2026-10-13.evidence.json) binds one exact tested/base source pair, focused rebuild/test logs and the rebuilt review executable. Independent technical review is APPROVE for c3f098eb; the exact verdict is retained in the evidence index and closes the last reported P3.
 
 Independent technical APPROVE for 8b92033e closes all four preceding code/report P3s. One additional P3 asked for complements of its unknown-version probes: damaged fields under recognized schema/policy versions must continue recovering supported data. This adds those controls without changing the already correct library behavior.
 

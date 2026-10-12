@@ -33,8 +33,16 @@
   },
   "nativeCaseCount": 22,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "sourceCommit": "c3f098ebe8d4d5e55c9a9d66a790dde4f61d85bc",
+    "verdict": {
+      "path": "out/evidence/production-supported-version-controls-2026-10-13/review-c3f098eb.md",
+      "sizeBytes": 2513,
+      "sha256": "441edaeed4251c1c2f76bf4c9615b88ea99edcd712853789f4013dfbf92dc5a3"
+    },
+    "scope": "Tests-only technical review; no human, rights, source or Beta acceptance",
+    "p3Disposition": "Last reported P3 closed; optional self-evident marker assertion is not an open finding"
   },
   "humanAcceptance": "NOT_RUN",
   "betaPromotion": false

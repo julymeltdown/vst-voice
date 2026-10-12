@@ -62,5 +62,17 @@
       "sizeBytes": 69918,
       "sha256": "6ca576963eab5c1bbd38a7f6eef185c22dadf143568173337327b146feaea685"
     }
-  ]
+  ],
+  "clarificationTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "cb3a19a3903ffcd9bb143d808b0ae9868fcf7088",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/public-recording-source-representation-2026-10-13/review-cb3a19a3.md",
+      "sizeBytes": 3908,
+      "sha256": "981c29b49b6b2ac49b0c56852ccc3c0da4ba7f65d76b59d2f10ca6efa44d55d5"
+    },
+    "scope": "Documentation clarification only; no genuine admission evidence supplied",
+    "newFindings": []
+  }
 }
