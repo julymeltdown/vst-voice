@@ -24,7 +24,7 @@
     "originalLabelAffectedSongs": 43,
     "manualLabelIssues": 0,
     "manualLabelCommit": "cc08bead6bf2b06e88608a8ece12555bcc720ec9",
-    "singerRequirement": "MALE_TRIAL_ORIGINAL_FEMALE_OBLIGATION_OPEN",
+    "singerRequirement": "MALE_PJS_OPTIONAL_FIXTURE; FEMALE_SOURCE_REQUEST_OPEN; AE1_REQUIRES_NO_SUPPLIED_RECORDING",
     "license": "CC-BY-SA-4.0",
     "preview": {
       "path": "out/evidence/internet-vocal-sources-2026-10-12/pjs056_song.wav",
@@ -88,17 +88,23 @@
     "No native import/publish/install trial executed",
     "No acoustic coverage/range/style or intelligibility acceptance",
     "PJS paper identifies a male singer; original female singer obligation remains",
-    "No producer/reviewer identities or canonical acceptance created"
+    "No producer/reviewer identities or canonical acceptance created",
+    "Public-license permission does not complete repository Beta acquisition agreement; trial import policy decision pending; redistribution/commercial flags false until rights decision."
   ],
   "sourceUrls": [
     "https://sites.google.com/site/shinnosuketakamichi/research-topics/pjs_corpus",
     "https://arxiv.org/html/2006.02959",
     "https://github.com/UtaUtaUtau/pjs-manual-labels",
-    "https://creativecommons.org/licenses/by-sa/4.0/legalcode.en"
+    "https://creativecommons.org/licenses/by-sa/4.0/legalcode.en",
+    "https://sites.google.com/site/shinnosuketakamichi/research-topics/jvs_music",
+    "https://sites.google.com/view/oftn-utagoedb"
   ],
   "technicalReview": {
-    "status": "PENDING",
+    "status": "REVISE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "independentApprovalClaimed": false
+    "independentApprovalClaimed": false,
+    "reviewedCommit": "5a2ef14fdd0b7218347c97adfdabb02c6afa1476",
+    "corrections": "rights gate and import permission tiers; importable cohort output; parallel owner observation",
+    "conditionalFollowupApproval": "Only after bounded correction commit is pushed and triple master hashes agree"
   }
 }

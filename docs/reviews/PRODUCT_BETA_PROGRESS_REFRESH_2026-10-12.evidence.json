@@ -304,8 +304,11 @@
     }
   ],
   "technicalReview": {
-    "status": "PENDING",
+    "status": "REVISE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "independentApprovalClaimed": false
+    "independentApprovalClaimed": false,
+    "reviewedCommit": "5a2ef14fdd0b7218347c97adfdabb02c6afa1476",
+    "corrections": "rights gate and import permission tiers; importable cohort output; parallel owner observation",
+    "conditionalFollowupApproval": "Only after bounded correction commit is pushed and triple master hashes agree"
   }
 }
