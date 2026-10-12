@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <thread>
 
 namespace {
@@ -208,6 +209,31 @@ TEST_CASE("Studio shows inspector two as historical evidence requiring reinspect
   CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) {
     return value.starts_with("AUTOMATED SIGNAL CHECKS ");
   }));
+  // Historical receipt presence does not authorize a new approval. This normal
+  // refusal must be distinct from uncertain durable publication after save.
+  const auto before = production::encodeProductionProject(fixture.project);
+  std::map<std::filesystem::path, std::string> stored;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(fixture.root / "producer"))
+    if (entry.is_regular_file()) stored.emplace(entry.path(), core::sha256File(entry.path()).value());
+  const auto packet = production::prepareSampleCandidateReview(fixture.root / "producer", fixture.project, fixture.manifest);
+  CHECK(packet);
+  const auto refused = production::commitSampleCandidateReview(fixture.root / "producer", fixture.project,
+      packet.value(), "reviewer", "2026-09-09T10:03:00Z", production::SampleCandidateReviewDecision::Accept);
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(refused.error().message == "Approval refused before saving: current automated inspection is required for the reviewed audio");
+  CHECK(refused.error().context == "take-a");
+  CHECK(production::encodeProductionProject(fixture.project) == before);
+  CHECK(fixture.repository.recover().value().lastDurableGeneration == fixture.project.lastDurableGeneration);
+  std::map<std::filesystem::path, std::string> after;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(fixture.root / "producer"))
+    if (entry.is_regular_file()) after.emplace(entry.path(), core::sha256File(entry.path()).value());
+  CHECK(after == stored);
+  // A rejection admits nothing and still follows the normal durable path.
+  const auto rejected = production::commitSampleCandidateReview(fixture.root / "producer", fixture.project,
+      packet.value(), "reviewer", "2026-09-09T10:03:00Z", production::SampleCandidateReviewDecision::Reject);
+  CHECK(rejected);
+  CHECK(fixture.project.takes.front().state == production::UnitQueueState::Rejected);
 }
 
 TEST_CASE("legacy edited audio always warns when current diagnostics are missing") {

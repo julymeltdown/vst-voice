@@ -8,6 +8,7 @@
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -270,6 +271,15 @@ core::Result<SampleCandidateReviewReceipt> commitSampleCandidateReview(
     const auto independent = validateIndependentReviewer(project, bindings[index], reviewerId,
         {unit.originOperatorId, unit.originGeneration, unit.originJournalSha256});
     if (!independent) return core::Result<Output>{independent.error()};
+    if (decision == SampleCandidateReviewDecision::Accept) {
+      // This known admission refusal happens before save. The locked canonical
+      // transition still rechecks it; actual save uncertainty keeps recovery guidance.
+      const auto inspected = currentActiveTakeInspection(project, unit.takeId);
+      if (!inspected || inspected->inspection.sourceSha256 != unit.audioSha256)
+        return core::failure<Output>(core::ErrorCode::Conflict,
+            "Approval refused before saving: current automated inspection is required for the reviewed audio",
+            unit.takeId);
+    }
   }
   auto next = project;
   if (decision == SampleCandidateReviewDecision::Reject) invalidateProductionQualification(next);

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "unit": "review-precommit-refusal",
+  "sourceHead": "567c4e2d1a523c3df337f75137de62188977c61c",
+  "manifest": {
+    "path": "out/evidence/review-precommit-refusal-2026-10-13/manifest.json",
+    "sizeBytes": 5829,
+    "sha256": "e49dd1601ca99bdb452dbbf8f87973854eba590425243292829b35f20e8446c6"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "out/evidence/review-precommit-refusal-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/review-precommit-refusal-2026-10-13/verification.log",
+      "sizeBytes": 177,
+      "sha256": "81e582e017055301f701c0916339f9d070240cc3cfc3140285ca75d4cfe0e456"
+    }
+  },
+  "baselineNativeCases": {
+    "passed": 13,
+    "failed": 1
+  },
+  "focusedCTestEntriesPassed": 3,
+  "finalCTestRuns": 2,
+  "nativeCasesPassed": 64,
+  "firstRegexScope": "Studio/CLI only; separate exact-name canonical run provides third entry",
+  "savedErrorRecoveryRegion": "BYTE_IDENTICAL",
+  "baselineBinary": "NOT_RETAINED",
+  "retainedArtifacts": 20,
+  "preservedBindings": 5,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Known admission refusal diagnostic/preflight only"
+  },
+  "sourceAdmission": "NOT_ASSESSED",
+  "humanAcceptance": "NOT_RUN",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "betaEvidenceCount": 0,
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}
