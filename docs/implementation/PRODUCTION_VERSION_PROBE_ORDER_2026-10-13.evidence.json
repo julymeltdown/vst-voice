@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "unit": "production-version-probe-order",
+  "sourceBase": "fa78dcc2e49e82e04ff860a619d01f653c6de97b",
+  "manifest": {
+    "path": "out/evidence/production-version-probe-order-2026-10-13/manifest.json",
+    "sizeBytes": 12708,
+    "sha256": "809a114217187c8d8818ae4c7e26d9de49f1d24775995a1103b5f3e363a609f1"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 56.31382745800511
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_(production_review|studio_sample_review|production_staging|voicebank_production|sample_review_cli|take_inspection)_tests$",
+      "-V"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.81492433299718
+  },
+  "nativeCaseCount": 146,
+  "pythonTests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "tests.production.test_take_inspection_receipt",
+      "tests.production.test_review_transition_mirror",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.1745260000025155
+  },
+  "pythonCaseCount": 50,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "betaPromotion": false
+}

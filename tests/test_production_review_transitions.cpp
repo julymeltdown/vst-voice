@@ -791,3 +791,50 @@ TEST_CASE("over-limit newest generation and journal files remain supported-data 
     CHECK(seam::core::durableAtomicWriteText(path,original.value()));CHECK(fixture.repository.verify(fixture.project));
   }
 }
+
+TEST_CASE("unknown project schema refuses before interpreting changed core header fields") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"generations"/name;
+  auto future=seam::formats::parseJson(seam::core::readTextFileLimited(path,64U*1024U*1024U).value());CHECK(future);
+  future.value().asObject().insert_or_assign("schemaVersion",seam::formats::JsonValue{std::int64_t{99}});
+  future.value().asObject().insert_or_assign("projectId",seam::formats::JsonValue{std::int64_t{42}});
+  const auto text=seam::formats::stringifyJson(future.value(),true)+"\n";
+  CHECK(seam::core::durableAtomicWriteText(path,text));
+  const auto recovered=fixture.repository.recover();CHECK(!recovered);
+  CHECK(recovered.error().code==seam::core::ErrorCode::Unsupported);
+  CHECK(recovered.error().message=="Production project schema is unsupported");
+  CHECK(seam::core::readTextFileLimited(path,64U*1024U*1024U).value()==text);
+}
+
+TEST_CASE("unknown inspection policy refuses before interpreting changed journal fields") {
+  for (const auto* field:{"format","schemaVersion","action"}) {
+    ReviewFixture fixture;
+    auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+    const auto path=fixture.root/"workspace"/"journal"/name;
+    auto future=seam::formats::parseJson(seam::core::readTextFileLimited(path,1024U*1024U).value());CHECK(future);
+    future.value().asObject().insert_or_assign("reviewInspectionPolicyVersion",seam::formats::JsonValue{std::int64_t{3}});
+    future.value().asObject().insert_or_assign(field,seam::formats::JsonValue{std::string{"future-contract"}});
+    const auto text=seam::formats::stringifyJson(future.value(),true)+"\n";
+    CHECK(seam::core::durableAtomicWriteText(path,text));
+    const auto recovered=fixture.repository.recover();CHECK(!recovered);
+    CHECK(recovered.error().code==seam::core::ErrorCode::Unsupported);
+    CHECK(recovered.error().message=="Unsupported production review inspection policy");
+    CHECK(seam::core::readTextFileLimited(path,1024U*1024U).value()==text);
+  }
+}
+
+TEST_CASE("project parser depth limit remains a recoverable supported-data failure") {
+  ReviewFixture fixture;
+  auto name=std::to_string(fixture.project.lastDurableGeneration);name.insert(0U,20U-name.size(),'0');name+=".json";
+  const auto path=fixture.root/"workspace"/"generations"/name;
+  auto text=seam::core::readTextFileLimited(path,64U*1024U*1024U).value();
+  const auto end=text.find_last_of('}');CHECK(end!=std::string::npos);
+  text.insert(end,",\"parserLimitProbe\":"+std::string(25U,'[')+"0"+std::string(25U,']'));
+  const auto decoded=production::decodeProductionProject(text);CHECK(!decoded);
+  CHECK(decoded.error().code==seam::core::ErrorCode::ParseError);
+  CHECK(seam::core::durableAtomicWriteText(path,text));
+  const auto recovered=fixture.repository.recover();CHECK(recovered);
+  CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration-1U);
+  CHECK(seam::core::readTextFileLimited(path,64U*1024U*1024U).value()==text);
+}

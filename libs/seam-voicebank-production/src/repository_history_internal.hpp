@@ -30,6 +30,8 @@ struct Ancestry final {
 };
 
 [[nodiscard]] std::string generationFilename(std::uint64_t generation);
+// Recognize the policy before interpreting fields owned by that policy.
+[[nodiscard]] core::Result<void> validateInspectionPolicy(const formats::JsonValue& journal);
 [[nodiscard]] core::Result<formats::JsonValue> captureAncestry(
     const std::filesystem::path& root, std::string_view projectId,
     std::uint64_t parentGeneration, std::uint64_t generation);

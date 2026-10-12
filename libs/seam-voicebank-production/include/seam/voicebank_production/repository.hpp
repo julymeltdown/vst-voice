@@ -25,8 +25,8 @@ struct RawTakeInput final {
   UnitQueueState initialState{UnitQueueState::MarkerReview};
   std::string style;
   // Automated source measurements are technical evidence, not a human review.
-  // When provided, this is committed atomically with the raw asset and must be
-  // a dry-take-inspection.v1 MetadataRevision bound to that asset digest.
+  // When provided, this must be a current take-inspection.v2 expectation identical
+  // to the measured stored-audio receipt; legacy voiced-only v1 is refused.
   std::optional<MetadataRevision> technicalInspection;
 };
 
@@ -128,6 +128,8 @@ public:
   // Supported corrupt/incomplete/over-limit files may fall back to the last valid one.
   // An encountered unsupported project schema or inspection policy refuses instead of
   // silently presenting an older generation as current. No stored bytes change.
+  // Decoder Unsupported is reserved for unknown schemas; parser limits return
+  // ParseError and remain recoverable. Inspect the version before schema-owned fields.
   [[nodiscard]] core::Result<VoicebankProductionProject> recover() const;
   // Read a specific verified historical state without changing the current pointer.
   [[nodiscard]] core::Result<VoicebankProductionProject> recoverGeneration(

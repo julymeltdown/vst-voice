@@ -44,11 +44,17 @@ std::string generationFilename(std::uint64_t generation) {
   return name + ".json";
 }
 
-core::Result<Ancestry> verifyAncestry(const std::filesystem::path& root,
-    const J& journal, std::string_view projectId, std::uint64_t generation) {
+core::Result<void> validateInspectionPolicy(const J& journal) {
   const auto* policy = journal.find("reviewInspectionPolicyVersion");
   if (policy && (!policy->isInteger() || policy->asInt64() != kCurrentReviewInspectionPolicyVersion))
-    return core::failure<Ancestry>(core::ErrorCode::Unsupported, "Unsupported production review inspection policy");
+    return core::failure(core::ErrorCode::Unsupported, "Unsupported production review inspection policy");
+  return core::success();
+}
+
+core::Result<Ancestry> verifyAncestry(const std::filesystem::path& root,
+    const J& journal, std::string_view projectId, std::uint64_t generation) {
+  const auto policy = validateInspectionPolicy(journal);
+  if (!policy) return core::Result<Ancestry>{policy.error()};
   const auto* ancestry = journal.find("ancestry");
   if (!ancestry) return Ancestry{};  // Legacy bytes remain a separate, contiguous contract.
   const auto invalid = [] { return core::failure<Ancestry>(core::ErrorCode::Conflict,
@@ -273,6 +279,11 @@ core::Result<void> ProductionProjectRepository::verifyGeneration(
     return core::failure(core::ErrorCode::ParseError,
                          "Production journal record is invalid");
   }
+  const auto policy = history_internal::validateInspectionPolicy(parsed.value());
+  if (!policy) {
+    if (unsupportedInspectionPolicy) *unsupportedInspectionPolicy = true;
+    return policy;
+  }
   const auto* journalGeneration = parsed.value().find("generation");
   const auto* format = parsed.value().find("format");
   const auto* schemaVersion = parsed.value().find("schemaVersion");
@@ -304,13 +315,7 @@ core::Result<void> ProductionProjectRepository::verifyGeneration(
                          "Production journal binding is invalid");
   }
   const auto ancestry = history_internal::verifyAncestry(root_, parsed.value(), project.projectId, project.lastDurableGeneration);
-  if (!ancestry) {
-    // verifyAncestry uses Unsupported only for its inspection-policy marker.
-    // Bounded file reads also use Unsupported, but remain recoverable damaged data.
-    if (unsupportedInspectionPolicy)
-      *unsupportedInspectionPolicy = ancestry.error().code == core::ErrorCode::Unsupported;
-    return core::Result<void>{ancestry.error()};
-  }
+  if (!ancestry) return core::Result<void>{ancestry.error()};
   return core::success();
 }
 

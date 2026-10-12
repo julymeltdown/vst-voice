@@ -37,8 +37,16 @@
   },
   "pythonCaseCount": 50,
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE",
+    "sourceCommit": "394a29b8ba0cf66b920a0825cfa66866ee9a802b",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/unsupported-production-recovery-2026-10-13/review-394a29b8-1352ca87.md",
+      "sizeBytes": 7396,
+      "sha256": "893499d752db6d76f91ad2b84339c33ca4344ea8276360e385e1130d50526c57"
+    },
+    "scope": "Exact committed tested sources; build/test results read from retained logs, no human/source acceptance",
+    "p3FollowUp": "Production version-probe ordering/parser-limit control/import comment/report correction unit"
   },
   "supportedCorruptionRecovery": "PRESERVED; synthetic corrupt and over-limit generation/journal cases",
   "unsupportedRecovery": "REFUSED; unknown project schema or inspection-policy marker; read-limit Unsupported remains recoverable",

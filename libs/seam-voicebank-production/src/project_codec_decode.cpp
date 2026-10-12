@@ -70,9 +70,12 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   VoicebankProductionProject project;
   std::string format;
   std::int64_t generation = 0;
-  if (!codec_internal::readString(parsed.value(), "format", format) ||
-      !codec_internal::readInteger(parsed.value(), "schemaVersion", project.schemaVersion) ||
-      !codec_internal::readString(parsed.value(), "projectId", project.projectId) ||
+  if (!codec_internal::readString(parsed.value(), "format", format) || format != kProductionProjectFormat ||
+      !codec_internal::readInteger(parsed.value(), "schemaVersion", project.schemaVersion))
+    return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Production project header is invalid");
+  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion)
+    return core::failure<VoicebankProductionProject>(core::ErrorCode::Unsupported, "Production project schema is unsupported");
+  if (!codec_internal::readString(parsed.value(), "projectId", project.projectId) ||
       !codec_internal::readString(parsed.value(), "inventoryId", project.inventoryId) ||
       !codec_internal::readString(parsed.value(), "inventorySha256", project.inventorySha256) ||
       !codec_internal::readString(parsed.value(), "selectedSourceStrategyId", project.selectedSourceStrategyId) ||
@@ -84,8 +87,6 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
     return core::failure<VoicebankProductionProject>(
         core::ErrorCode::ParseError, "Production project header is invalid");
   }
-  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion)
-    return core::failure<VoicebankProductionProject>(core::ErrorCode::Unsupported, "Production project schema is unsupported");
   if (project.schemaVersion >= kProductionStyleSchemaVersion) {
     if (!codec_internal::readString(parsed.value(), "language", project.language))
       return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Style-owned workspace requires language");
