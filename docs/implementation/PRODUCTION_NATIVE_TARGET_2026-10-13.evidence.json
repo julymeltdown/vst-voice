@@ -44,9 +44,19 @@
   "retainedArtifacts": 39,
   "preservedBindings": 6,
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Production CTest target selection and explicit missing-target refusal only"
+    "scope": "Production CTest target selection and explicit missing-target refusal only",
+    "sourceCommits": [
+      "1fbc5cb1169046f3dae67c3621769bc3b12fe7a9",
+      "b8c81465a7e43a782ef15700f62b855956ec17e6"
+    ],
+    "verdict": {
+      "path": "out/evidence/production-native-target-closeout-2026-10-13/review-1fbc5cb1-b8c81465.txt",
+      "sizeBytes": 8597,
+      "sha256": "8110bb279a505c0cdf7ed9d97f01c0febf2b6704d9e8f10a9c7f98fbc3e4605c"
+    },
+    "execution": "Read-only independent audit; execution results taken from retained lead logs"
   },
   "sourceAdmission": "NOT_ASSESSED",
   "humanAcceptance": "NOT_RUN",
