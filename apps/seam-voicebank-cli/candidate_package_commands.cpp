@@ -222,12 +222,15 @@ int verifyInstalledCandidate(int argc, char** argv) {
   return 0;
 }
 
-core::Result<Json> exportInstalledRecipeProject(const CapturedProjectBinding& captured,
+core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured,
     const packaging::VerifiedInstalledCandidate& installed, const std::filesystem::path& installationDirectory,
-    const std::filesystem::path& destination, std::stop_token stop) {
+    const std::filesystem::path& destination, production::ResourceCandidateKind requiredKind, std::stop_token stop) {
   const auto refuse = [](std::string message) { return core::failure<Json>(core::ErrorCode::Conflict, std::move(message)); };
-  if (installed.kind != production::ResourceCandidateKind::Recipe || !installed.proceduralInstallation)
-    return refuse("Operation export currently requires a verified installed recipe; sample/model capture remains unimplemented");
+  const bool sample = requiredKind == production::ResourceCandidateKind::Sample;
+  if (installed.kind != requiredKind || (sample ? !installed.sampleManifest || !installed.sampleAssetDigests
+                                              : !installed.proceduralInstallation))
+    return refuse(sample ? "Operation export requires a verified installed sample"
+                         : "Operation export requires a verified installed recipe");
   const auto& project = captured.project();
   if (!project.audioTracks().empty())
     return refuse("Operation export cannot attest backing-media inputs yet");
@@ -242,31 +245,45 @@ core::Result<Json> exportInstalledRecipeProject(const CapturedProjectBinding& ca
   const auto insideInstallation = outputPath.lexically_relative(installedRoot);
   if (!insideInstallation.empty() && !insideInstallation.is_absolute() && *insideInstallation.begin() != "..")
     return refuse("Operation export destination must not modify the verified installation");
-  const auto expectedPath = std::filesystem::canonical(
-      installationDirectory / installed.proceduralInstallation->recipeEntry, error);
-  if (error) return refuse("Verified installed recipe is no longer available");
+  std::filesystem::path expectedPath;
+  if (!sample) {
+    expectedPath = std::filesystem::canonical(
+        installationDirectory / installed.proceduralInstallation->recipeEntry, error);
+    if (error) return refuse("Verified installed recipe is no longer available");
+  }
   std::vector<rendering::TrackSingerSource> sources;
   std::set<std::string> projectLanguages;
   for (const auto& track : project.vocalTracks()) {
     if (stop.stop_requested()) return refuse("Operation export cancelled before source capture");
-    if (track.neuralResource || !track.proceduralRecipe ||
-        track.proceduralRecipe->resource != installed.projectResource ||
-        track.proceduralRecipe->installation != installed.proceduralInstallation)
-      return refuse("Every vocal track must select the verified recipe with all saved installation pins");
-    const auto& reference = *track.proceduralRecipe;
-    const auto actualPath = std::filesystem::canonical(
-        std::filesystem::path{reference.path}.is_absolute() ? std::filesystem::path{reference.path}
-          : captured.projectDirectory() / reference.path, error);
-    if (error || actualPath != expectedPath)
-      return refuse("Saved recipe path does not name the verified installation");
-    const rendering::TrackSingerSource file = rendering::TrackRecipeFileSource{
-        track.id, reference, captured.projectDirectory()};
-    const auto frozen = rendering::captureProceduralSource(track, file, stop);
-    if (!frozen) return core::Result<Json>{frozen.error()};
-    if (!frozen.value().admission ||
-        frozen.value().admission->origin() != distribution::ProceduralAdmissionOrigin::Installed)
-      return refuse("Operation export requires installed admission, not an authored or portable source");
-    sources.emplace_back(frozen.value());
+    if (sample) {
+      if (track.neuralResource || track.proceduralRecipe ||
+          track.voicebank.id != installed.projectResource.id ||
+          track.voicebank.version != installed.projectResource.version ||
+          track.voicebank.contentHash != installed.projectResource.contentHash)
+        return refuse("Every vocal track must select the verified sample with all saved resource pins");
+      sources.emplace_back(rendering::TrackVoicebankSource{track.id, *installed.sampleManifest,
+          installedRoot, installed.installedContentHash, voicebank::VoicebankTrust::TrustedInstalled,
+          installed.sampleAssetDigests});
+    } else {
+      if (track.neuralResource || !track.proceduralRecipe ||
+          track.proceduralRecipe->resource != installed.projectResource ||
+          track.proceduralRecipe->installation != installed.proceduralInstallation)
+        return refuse("Every vocal track must select the verified recipe with all saved installation pins");
+      const auto& reference = *track.proceduralRecipe;
+      const auto actualPath = std::filesystem::canonical(
+          std::filesystem::path{reference.path}.is_absolute() ? std::filesystem::path{reference.path}
+            : captured.projectDirectory() / reference.path, error);
+      if (error || actualPath != expectedPath)
+        return refuse("Saved recipe path does not name the verified installation");
+      const rendering::TrackSingerSource file = rendering::TrackRecipeFileSource{
+          track.id, reference, captured.projectDirectory()};
+      const auto frozen = rendering::captureProceduralSource(track, file, stop);
+      if (!frozen) return core::Result<Json>{frozen.error()};
+      if (!frozen.value().admission ||
+          frozen.value().admission->origin() != distribution::ProceduralAdmissionOrigin::Installed)
+        return refuse("Operation export requires installed admission, not an authored or portable source");
+      sources.emplace_back(frozen.value());
+    }
     for (const auto& region : track.regions) {
       std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
       for (const auto& lyric : region.lyrics) lyrics.emplace(lyric.id, &lyric);
@@ -320,10 +337,10 @@ core::Result<Json> exportInstalledRecipeProject(const CapturedProjectBinding& ca
   constexpr auto platform = "unsupported";
 #endif
   return Json{Json::Object{{"schemaVersion", std::int64_t{1}},
-      {"recordType", "seam.u45.installed-recipe-export.v1"}, {"result", "ExportCommittedAndObserved"},
+      {"recordType", sample ? "seam.u45.installed-sample-export.v1" : "seam.u45.installed-recipe-export.v1"}, {"result", "ExportCommittedAndObserved"},
       {"evidenceScope", "ENGINEERING_ONLY"}, {"operation", "NATIVE_FINAL_EXPORT_SET"},
       {"project", captured.record()}, {"installed", installedRecord(installed)},
-      {"resourceCapture", "SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE"},
+      {"resourceCapture", sample ? "SIGNED_ENTRIES_MATCHED_FROZEN_SAMPLE_ASSETS" : "SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE"},
       {"projectLanguages", std::move(languages)}, {"languageCoverage", "SIGNED_DECLARATION"},
       {"host", "seam_voicebank_cli"}, {"platform", platform},
       {"buildId", std::string{build::kBuildId}}, {"sourceCommit", std::string{build::kSourceCommit}},
@@ -336,8 +353,9 @@ core::Result<Json> exportInstalledRecipeProject(const CapturedProjectBinding& ca
       {"humanAcceptance", "NOT_RUN"}, {"authorizesRelease", false}, {"releaseEligible", false}}};
 }
 
-int verifyInstalledProjectBinding(int argc, char** argv, bool exportArtifacts = false) {
-  if (argc != (exportArtifacts ? 13 : 12)) { printCandidatePackageUsage(); return 1; }
+int verifyInstalledProjectBinding(int argc, char** argv,
+    std::optional<production::ResourceCandidateKind> exportKind = {}) {
+  if (argc != (exportKind ? 13 : 12)) { printCandidatePackageUsage(); return 1; }
   SignalCancellation cancellation;
   if (!cancellation.install()) return fail({core::ErrorCode::IoError, "Cannot install verification cancellation handlers", {}});
   const auto options=trustedKey(argv[11]);
@@ -357,10 +375,10 @@ int verifyInstalledProjectBinding(int argc, char** argv, bool exportArtifacts = 
     if (std::find(value.languages.begin(),value.languages.end(),language.asString())==value.languages.end())
       return fail({core::ErrorCode::Conflict,"Project language is absent from the signed resource declaration",{}});
   if (cancellation.token().stop_requested()) return fail({core::ErrorCode::Conflict,"Installed project binding cancelled",{}},&cancellation);
-  if (exportArtifacts) {
+  if (exportKind) {
     const auto destination = absolute(argv[12]);
     if (!destination) return fail(destination.error(), &cancellation);
-    const auto result = exportInstalledRecipeProject(capture.value(), value, installed.value(), destination.value(), cancellation.token());
+    const auto result = exportInstalledProject(capture.value(), value, installed.value(), destination.value(), *exportKind, cancellation.token());
     if (!result) return fail(result.error(), &cancellation);
     print(result.value().asObject());
     return 0;
@@ -440,7 +458,8 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
   if (argc >= 2 && std::string_view{argv[1]} == "verify-installed-project-binding") return verifyInstalledProjectBinding(argc,argv);
   if (argc < 2) return std::nullopt;
   const std::string_view command{argv[1]};
-  if (command == "export-installed-recipe-project") return verifyInstalledProjectBinding(argc, argv, true);
+  if (command == "export-installed-recipe-project") return verifyInstalledProjectBinding(argc, argv, production::ResourceCandidateKind::Recipe);
+  if (command == "export-installed-sample-project") return verifyInstalledProjectBinding(argc, argv, production::ResourceCandidateKind::Sample);
   if (command == "inspect-candidate") return inspectCandidate(argc, argv);
   if (command == "package-candidate") return packageCandidate(argc, argv);
   if (command == "verify-candidate-package") return verifyCandidatePackage(argc, argv);
@@ -453,6 +472,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
 }
 
 void printCandidatePackageUsage() {
+  std::cerr << "  export-installed-sample-project PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALLED PUBLIC_KEY OUTPUT_DIRECTORY\n";
   std::cerr << "  export-installed-recipe-project PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALLED PUBLIC_KEY OUTPUT_DIRECTORY\n";
   std::cerr << "  verify-installed-project-binding PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALL_DIR KEY\n";
   std::cout << "  seam_voicebank_cli inspect-candidate CANDIDATE_DIRECTORY\n"

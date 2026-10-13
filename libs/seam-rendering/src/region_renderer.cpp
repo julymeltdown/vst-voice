@@ -90,7 +90,8 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     const synthesis::PhraseRenderOptions& options,
     PcmCache* cache,
     std::stop_token stopToken,
-    bool continueOnPhraseFailure) const {
+    bool continueOnPhraseFailure,
+    const voicebank::ExpectedAssetDigests* expectedAssetDigests) const {
   if (sampleRate < 8000U || sampleRate > 192000U) {
     return core::failure<RegionRenderResult>(core::ErrorCode::InvalidArgument,
                                              "Region render sample rate is unsupported");
@@ -125,7 +126,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       // Each child contains nonoverlapping score notes, so recursion stops
       // here. Its snapshot resolves pronunciation in its own voice context.
       auto child = render(projected, manifest, bankRoot, trackId, regionId,
-          revision, sampleRate, quality, style, options, cache, stopToken, continueOnPhraseFailure);
+          revision, sampleRate, quality, style, options, cache, stopToken, continueOnPhraseFailure, expectedAssetDigests);
       if (!child) return core::Result<RegionRenderResult>{child.error()};
       auto& audio = child.value();
       if (!audio.resolvedStyle.empty()) mixed.resolvedStyle = audio.resolvedStyle;
@@ -172,7 +173,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     }
     auto snapshot = snapshots.create(project, manifest, trackId, segment,
                                      revision, quality, bankRoot, sampleRate,
-                                     style, options, {}, stopToken);
+                                     style, options, {}, stopToken, expectedAssetDigests);
     if (!snapshot) {
       if (!continueOnPhraseFailure ||
           (snapshot.error().code != core::ErrorCode::NotFound &&

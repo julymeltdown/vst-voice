@@ -398,7 +398,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
           project, sample.manifest, sample.bankRoot, track.id, region.id,
           revision, sampleRate, quality,
           std::string{},
-          options, cache, stopToken, true);
+          options, cache, stopToken, true, sample.expectedAssetDigests.get());
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
       if (!output.renderNotice) {
         const auto notice = std::find_if(

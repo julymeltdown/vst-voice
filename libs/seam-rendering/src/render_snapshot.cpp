@@ -1003,7 +1003,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::uint32_t sampleRate,
     std::string style,
     const synthesis::PhraseRenderOptions& requestedOptions,
-    std::optional<synthesis::PhraseFrameRange> ownedFrames, std::stop_token stop) const {
+    std::optional<synthesis::PhraseFrameRange> ownedFrames, std::stop_token stop,
+    const voicebank::ExpectedAssetDigests* expectedAssetDigests) const {
   auto renderOptions = requestedOptions;
   if (stop.stop_requested()) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict, "Sample snapshot cancelled");
   const auto projectValidation = project.validate();
@@ -1198,6 +1199,18 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (phonemes.tokens.size() > synthesis::kMaximumSelectionTokens || voicebankValue.units.size() > 65536U) {
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported, "Sample selection exceeds token/inventory budget");
   }
+  const auto checkDigest = [&](const std::filesystem::path& relative, std::string_view sha) -> core::Result<void> {
+    if (!expectedAssetDigests) return {};
+    const auto entry = expectedAssetDigests->find(relative.generic_string());
+    if (entry == expectedAssetDigests->end() || entry->second != sha)
+      return core::failure(core::ErrorCode::Conflict, "Frozen sample asset differs from the signed entry", relative.generic_string());
+    return {};
+  };
+  const auto checkPresence = [&](const std::filesystem::path& relative, bool present) -> core::Result<void> {
+    if (expectedAssetDigests && expectedAssetDigests->contains(relative.generic_string()) != present)
+      return core::failure(core::ErrorCode::Conflict, "Sample sidecar presence differs from the signed entry set", relative.generic_string());
+    return {};
+  };
   const auto freezeUnit = [&](const voicebank::Unit& value) -> core::Result<void> {
     if (stop.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Sample selection cancelled");
     const auto* unit = &value;
@@ -1213,6 +1226,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
           std::min<std::uint64_t>(voicebank::kMaximumSupportedWavBytes,
                                   remainingEncoded));
       if (!bytes) return core::Result<void>{bytes.error()};
+      const auto digest = checkDigest(unit->audioPath, core::sha256Hex(bytes.value()));
+      if (!digest) return digest;
       auto decoded = voicebank::readWav(bytes.value(), resolved.value().string(),
           voicebank::WavReadLimits{.maximumDecodedSamples =
               (kMaximumFrozenPhraseDecodedBytes - frozenDecodedBytes) / sizeof(float)}, stop);
@@ -1236,6 +1251,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                   std::move(decoded).value()),
           }).first;
     }
+    const auto digest = checkDigest(unit->audioPath, asset->second.sha256);
+    if (!digest) return digest;
     auto alignment = alignments.find(unit->id);
     if (alignment == alignments.end()) {
       FrozenAlignment frozen;
@@ -1250,6 +1267,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
         if (error) return core::failure<void>(core::ErrorCode::IoError, "Cannot inspect source alignment", path.string());
         if (std::filesystem::is_symlink(status)) return core::failure<void>(core::ErrorCode::Conflict, "Source alignment paths may not contain symbolic links", path.string());
       }
+      const auto presence = checkPresence(relative, present);
+      if (!presence) return presence;
       if (present) {
         const auto resolvedAlignment = voicebank::resolveBankAsset(bankRoot, relative);
         if (!resolvedAlignment) return core::Result<void>{resolvedAlignment.error()};
@@ -1257,6 +1276,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
         const auto json = core::readTextFileLimited(resolvedAlignment.value(),
             std::min<std::uint64_t>(512U * 1024U, maximumAlignmentBytes - alignmentBytes));
         if (!json) return core::Result<void>{json.error()};
+        const auto alignmentDigest = checkDigest(relative, core::sha256Hex(json.value()));
+        if (!alignmentDigest) return alignmentDigest;
         const auto decodedAlignment = synthesis::decodeSourcePhonemeAlignment(json.value(), *unit,
             asset->second.sha256, static_cast<time::SampleFrame>(asset->second.audio->frameCount()));
         if (!decodedAlignment) return core::Result<void>{decodedAlignment.error()};
@@ -1294,12 +1315,16 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
               probePath.string());
         }
       }
+      const auto presence = checkPresence(relative, analysisPresent);
+      if (!presence) return presence;
       if (analysisPresent) {
         const auto resolvedAnalysis = voicebank::resolveBankAsset(bankRoot, relative);
         if (!resolvedAnalysis) return core::Result<void>{resolvedAnalysis.error()};
         const auto bytes = core::readFileBytesLimited(resolvedAnalysis.value(),
             512ULL * 1024ULL);
         if (!bytes) return core::Result<void>{bytes.error()};
+        const auto analysisDigest = checkDigest(relative, core::sha256Hex(bytes.value()));
+        if (!analysisDigest) return analysisDigest;
         const auto decodedAnalysis = voicebank::decodeAcousticAnalysis(
             std::string_view{reinterpret_cast<const char*>(bytes.value().data()),
                              bytes.value().size()},
@@ -1367,6 +1392,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     const auto sidecarStatus = std::filesystem::symlink_status(sidecar, probeError);
     if (probeError == std::errc::no_such_file_or_directory ||
         (!probeError && !std::filesystem::exists(sidecarStatus))) {
+      const auto presence = checkPresence(std::filesystem::path{"alignments"} /
+          (core::sha256Hex(unit.id) + ".json"), false);
+      if (!presence) return core::Result<RenderSnapshot>{presence.error()};
       decision.tag("alignment-absent"); continue;
     }
     if (probeError) return core::failure<RenderSnapshot>(core::ErrorCode::IoError,

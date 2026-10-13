@@ -4,10 +4,12 @@
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/seambank.hpp"
 #include "seam/voicebank_production/resource_candidate.hpp"
+#include "seam/voicebank/asset_path.hpp"
 
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -158,6 +160,10 @@ struct VerifiedInstalledCandidate final {
   std::vector<voicebank_production::ResourceCandidateExternalDependency> externalDependencies;
   // Recipe provenance from the same verified package capture; not runtime admission.
   std::optional<domain::ProceduralInstallationReference> proceduralInstallation{};
+  // Sample inputs from the same private signed-package capture. Rendering must
+  // match the bytes it freezes against these entries, after installation audit.
+  std::optional<voicebank::Manifest> sampleManifest{};
+  std::shared_ptr<const voicebank::ExpectedAssetDigests> sampleAssetDigests{};
 };
 
 [[nodiscard]] core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(

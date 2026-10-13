@@ -7,6 +7,14 @@ The canonical full-product contract still declares its semantic validator
 `UNAVAILABLE`. No qualification profile, released resource, human decision or
 release state is changed by this increment.
 
+Current operation checkpoint (2026-10-13): the native installed recipe export
+was implemented in `95d093b1` and repaired/observed on 2026-10-12; see
+[recipe completion](../reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.md).
+The new [signed sample export unit](INSTALLED_SAMPLE_EXPORT_2026-10-13.md)
+connects signed consumed sample bytes to actual Final export artifacts. Older
+reference-only statements below describe their dated increments. Closed operation
+replay, remaining semantics, real authority and the canonical U45 hold stay open.
+
 ## Executable boundary
 
 `tools/external_beta/full_product_gate.py` checks resource declarations, case-axis

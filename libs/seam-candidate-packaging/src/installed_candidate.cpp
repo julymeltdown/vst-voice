@@ -340,6 +340,8 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
   const auto& record = receipt.value();
   std::string contentHash = descriptor.contentSha256;
   std::optional<domain::ProceduralInstallationReference> installation;
+  std::optional<voicebank::Manifest> sampleManifest;
+  std::shared_ptr<const voicebank::ExpectedAssetDigests> sampleAssetDigests;
   domain::SingerResourceIdentity projectResource{domain::SingerResourceKind::Sample,
       descriptor.resourceId, descriptor.resourceVersion, descriptor.contentSha256};
   const bool recipe = descriptor.kind == production::ResourceCandidateKind::Recipe;
@@ -365,6 +367,15 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
         !stringIs(record, "recipeSha256", declared.recipeSha256) || !stringIs(record, "engineId", declared.engineId) ||
         !revision || !revision->isInteger() || revision->asInt64() != declared.engineRevision)
       return core::failure<Output>(core::ErrorCode::Conflict, "Installed recipe receipt differs from the signed recipe/runtime identity");
+  } else {
+    const auto sample = distribution::verifySeambank(snapshot.path, options);
+    if (!sample || sample.value().packageDigest != expectedPackageDigest)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Sample package changed during installed verification");
+    sampleManifest = sample.value().manifest;
+    auto digests = std::make_shared<voicebank::ExpectedAssetDigests>();
+    for (const auto& entry : value.container.entries)
+      digests->emplace(entry.path, digestHex(entry.sha256));
+    sampleAssetDigests = std::move(digests);
   }
   const std::set<std::string, std::less<>> fields = recipe
       ? std::set<std::string, std::less<>>{"schemaVersion", "resourceFamily", "id", "version", "contentHash", "recipeEntry", "recipeSha256", "engineId", "engineRevision", "packageDigest", "signerKeyId", "signatureValid", "signerTrusted"}
@@ -401,7 +412,8 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
   return Output{descriptor.kind, descriptor.resourceKind, descriptor.resourceId, descriptor.resourceVersion,
       value.candidateSha256, value.container.packageDigest, descriptor.contentSha256, contentHash,
       value.container.signerKeyId, tree.checked.at(std::string{kReceipt}).sha, treeHash.hexDigest(), tree.checked.size(),
-      std::move(projectResource), descriptor.languages, descriptor.externalDependencies, std::move(installation)};
+      std::move(projectResource), descriptor.languages, descriptor.externalDependencies, std::move(installation),
+      std::move(sampleManifest), std::move(sampleAssetDigests)};
 #else
   (void)packagePath; (void)expectedPackageDigest; (void)expectedCandidateSha256; (void)installedDirectory; (void)options; (void)stop;
   return core::failure<Output>(core::ErrorCode::Unsupported, "Installed candidate verification is not implemented on this platform");

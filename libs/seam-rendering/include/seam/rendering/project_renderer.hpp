@@ -29,6 +29,7 @@ struct TrackVoicebankSource final {
   std::filesystem::path bankRoot;
   std::string contentHash;
   voicebank::VoicebankTrust trust{voicebank::VoicebankTrust::UntrustedInstalled};
+  std::shared_ptr<const voicebank::ExpectedAssetDigests> expectedAssetDigests{};
 };
 
 struct TrackProceduralSource final {

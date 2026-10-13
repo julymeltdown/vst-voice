@@ -5,6 +5,8 @@
 #include "seam/core/file_io.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/rendering/project_renderer.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/ui/unit_lane_model.hpp"
 
@@ -13,6 +15,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+
 
 namespace {
 using namespace seam;
@@ -88,11 +91,17 @@ struct Fixture {
     return synthesis::DeterministicUnitSelector{}.select(bank, *project.findRegion(region), tokens,
         "original", {}, {}, false, context);
   }
-  core::Result<rendering::RenderSnapshot> snapshot() const {
+  core::Result<rendering::RenderSnapshot> snapshot(const voicebank::ExpectedAssetDigests* pins = nullptr) const {
     const auto segments = rendering::PhraseSegmenter{}.segment(*project.findRegion(region)); CHECK(segments);
     CHECK(segments.value().size() == 1U);
     return rendering::RenderSnapshotFactory{}.create(project, bank, track, segments.value().front(), 1U,
-        rendering::RenderQuality::Final, root, 48000U);
+        rendering::RenderQuality::Final, root, 48000U, {}, {}, {}, {}, pins);
+  }
+  voicebank::ExpectedAssetDigests pins() const {
+    voicebank::ExpectedAssetDigests result;
+    for (const auto& unit : bank.units)
+      result.emplace(unit.audioPath, core::sha256File(root / unit.audioPath).value());
+    return result;
   }
   void chain() {
     add("a-cheap", {"a"}, 0.2F, 0.05F);
@@ -553,4 +562,108 @@ TEST_CASE("a render snapshot that cannot be built for want of a unit says which 
   CHECK(mentions(built.error().message, "sound \"u\""));
   CHECK(mentions(built.error().message, "lyric \"あ\""));
   CHECK(mentions(built.error().message, "bar 1, beat 2"));
+}
+
+TEST_CASE("signed sample digests reject changed or unpinned audio before cache reuse and freeze owned bytes") {
+  Fixture f; f.chain();
+  auto pins = f.pins();
+  const auto snapshot = f.snapshot(&pins); CHECK(snapshot);
+  const auto first = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(first);
+  CHECK(voicebank::analyzeAudio(first.value().rendered.audio.samples).rms > 1e-4);
+  rendering::PcmCache cache{f.root / "signed-cache"};
+  const auto run = [&] { return rendering::ProductionRegionRenderer{}.render(f.project, f.bank, f.root,
+      f.track, f.region, 1U, 48000U, rendering::RenderQuality::Final, {}, {}, &cache, {}, false, &pins); };
+  CHECK(run()); const auto warm = run(); CHECK(warm); CHECK(warm.value().cacheHits > 0U);
+  const auto path = f.root / "audio/a-cheap.wav";  // Losing competitor is also an input to selection.
+  auto changed = f.sources.at("a-cheap").interleaved; std::fill(changed.begin(), changed.end(), 0.03F);
+  CHECK(voicebank::writeMonoPcm16Wav(path, 48000U, changed));
+  const auto refused = run(); CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(refused.error().message == "Frozen sample asset differs from the signed entry");
+  CHECK(refused.error().context == "audio/a-cheap.wav");
+  CHECK(f.snapshot());  // Ordinary authoring still accepts caller-owned changed bytes.
+  const auto held = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(held);
+  CHECK(held.value().rendered.audio.samples == first.value().rendered.audio.samples);
+  CHECK(voicebank::writeMonoPcm16Wav(path, 48000U, f.sources.at("a-cheap").interleaved));
+  pins.erase("audio/a-cheap.wav"); CHECK(!f.snapshot(&pins));
+  pins["audio/a-cheap.wav"] = std::string(64U, 'f'); CHECK(!f.snapshot(&pins));
+}
+
+TEST_CASE("signed sample alignment presence and held digest are required before parsing") {
+  Fixture f; f.chain();
+  auto pins = f.pins();
+  const auto& unit = f.bank.units.front();
+  const auto relative = "alignments/" + core::sha256Hex(unit.id) + ".json";
+  const auto path = f.root / relative;
+  const auto json = synthesis::encodeSourcePhonemeAlignment(
+      {unit.id, pins.at(unit.audioPath), {{"a", 1920}}},
+      unit, pins.at(unit.audioPath), 3840); CHECK(json);
+  std::filesystem::create_directories(path.parent_path());
+  CHECK(core::durableAtomicWriteText(path, json.value()));
+  auto refused = f.snapshot(&pins); CHECK(!refused);
+  CHECK(refused.error().message == "Sample sidecar presence differs from the signed entry set");
+  pins[relative] = core::sha256Hex(json.value()); CHECK(f.snapshot(&pins));
+  CHECK(core::durableAtomicWriteText(path, "{broken"));
+  refused = f.snapshot(&pins); CHECK(!refused);
+  CHECK(refused.error().message == "Frozen sample asset differs from the signed entry");
+  CHECK(std::filesystem::remove(path));
+  refused = f.snapshot(&pins); CHECK(!refused);
+  CHECK(refused.error().message == "Sample sidecar presence differs from the signed entry set");
+  pins.erase(relative); CHECK(f.snapshot(&pins));
+}
+
+TEST_CASE("signed sample acoustic analysis cannot be inserted removed or changed after capture") {
+  Fixture f; f.chain();
+  auto pins = f.pins();
+  const auto& unit = f.bank.units.front();
+  const auto relative = voicebank::acousticAnalysisSidecarPath(unit.id);
+  const auto path = f.root / relative;
+  const auto audio = voicebank::readWav(f.root / unit.audioPath); CHECK(audio);
+  const auto analysis = voicebank::analyzeUnitAcoustics(audio.value().interleaved, 48000U, unit,
+      pins.at(unit.audioPath), 3840); CHECK(analysis);
+  const auto json = voicebank::encodeAcousticAnalysis(analysis.value(), unit, pins.at(unit.audioPath), 3840); CHECK(json);
+  std::filesystem::create_directories(path.parent_path());
+  CHECK(core::durableAtomicWriteText(path, json.value()));
+  CHECK(!f.snapshot(&pins));
+  pins[relative] = core::sha256Hex(json.value()); CHECK(f.snapshot(&pins));
+  CHECK(core::durableAtomicWriteText(path, "{broken"));
+  const auto changed = f.snapshot(&pins); CHECK(!changed);
+  CHECK(changed.error().message == "Frozen sample asset differs from the signed entry");
+  CHECK(std::filesystem::remove(path)); CHECK(!f.snapshot(&pins));
+  pins.erase(relative); CHECK(f.snapshot(&pins));
+}
+
+
+
+TEST_CASE("signed alignment removal cannot silently exclude a matching multi-phone competitor") {
+  Fixture f; f.chain(); f.add("long-loser", {"a", "i", "u"}, 0.2F, 0.5F);
+  f.bank.units.back().priority = -100;
+  auto pins = f.pins();
+  const auto& unit = f.bank.units.back();
+  const auto relative = "alignments/" + core::sha256Hex(unit.id) + ".json";
+  const auto json = synthesis::encodeSourcePhonemeAlignment(
+      {unit.id, pins.at(unit.audioPath), {{"a", 960}, {"i", 1920}, {"u", 2880}}},
+      unit, pins.at(unit.audioPath), 3840); CHECK(json);
+  std::filesystem::create_directories(f.root / "alignments");
+  CHECK(core::durableAtomicWriteText(f.root / relative, json.value()));
+  pins[relative] = core::sha256Hex(json.value()); CHECK(f.snapshot(&pins));
+  CHECK(std::filesystem::remove(f.root / relative));
+  const auto removed = f.snapshot(&pins); CHECK(!removed);
+  CHECK(removed.error().code == core::ErrorCode::Conflict);
+  CHECK(removed.error().message == "Sample sidecar presence differs from the signed entry set");
+  CHECK(f.snapshot());  // Existing raw authoring selection may still omit this ineligible competitor.
+}
+
+TEST_CASE("project and polyphonic region rendering preserve signed sample pins") {
+  Fixture f; f.chain();
+  auto [lyric, note] = f.factory.makeNote(time::Tick{0}, time::Tick{480}, 71U, U"あ", domain::Language::Japanese);
+  f.project.findRegion(f.region)->lyrics.push_back(lyric); f.project.findRegion(f.region)->notes.push_back(note);
+  auto pins = std::make_shared<voicebank::ExpectedAssetDigests>(f.pins());
+  const auto run = [&] { return rendering::ProductionProjectRenderer{}.render(f.project,
+      std::vector<rendering::TrackVoicebankSource>{{f.track, f.bank, f.root, std::string(64U, 'a'),
+          voicebank::VoicebankTrust::TrustedInstalled, pins}},
+      f.track, f.region, 1U, 48000U, rendering::RenderQuality::Final); };
+  const auto valid = run(); CHECK(valid); CHECK(valid.value().diagnostics.empty());
+  (*pins)["audio/a-context.wav"] = std::string(64U, 'f');
+  const auto refused = run(); CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
 }

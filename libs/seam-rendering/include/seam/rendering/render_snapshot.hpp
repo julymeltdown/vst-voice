@@ -9,6 +9,7 @@
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/synthesis/singer_resource.hpp"
 #include "seam/voicebank/voicebank.hpp"
+#include "seam/voicebank/asset_path.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -123,7 +124,8 @@ public:
       std::string style = {},
       const synthesis::PhraseRenderOptions& renderOptions = {},
       std::optional<synthesis::PhraseFrameRange> ownedFrames = {},
-      std::stop_token stop = {}) const;
+      std::stop_token stop = {},
+      const voicebank::ExpectedAssetDigests* expectedAssetDigests = nullptr) const;
 };
 
 // Kept for persisted Phase 3/4 diagnostics. New render identities use SHA-256.

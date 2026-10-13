@@ -70,7 +70,8 @@ public:
       const synthesis::PhraseRenderOptions& options = {},
       PcmCache* cache = nullptr,
       std::stop_token stopToken = {},
-      bool continueOnPhraseFailure = false) const;
+      bool continueOnPhraseFailure = false,
+      const voicebank::ExpectedAssetDigests* expectedAssetDigests = nullptr) const;
 };
 
 }  // namespace seam::rendering

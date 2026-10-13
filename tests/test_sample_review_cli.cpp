@@ -1430,6 +1430,89 @@ TEST_CASE("Typed package verification refuses unlisted entries, schema-1 candida
 #endif
 }
 
+
+
+TEST_CASE("Installed sample operation observes committed outputs without claiming qualification") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto candidate = fixture.root / "candidate";
+  const auto published = fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), candidate));
+  const auto keys = makeKeys(fixture.root, "sample-operation");
+  const auto package = fixture.root / "candidate.seambank";
+  const auto packaged = fixture.success({"package-candidate", candidate.string(), field(published, "candidateSha256"), package.string(), keys.privateKey});
+  const auto installed = fixture.success({"install-candidate", package.string(), field(packaged, "packageDigest"),
+      (fixture.root / "installed").string(), keys.publicKey});
+  const std::filesystem::path bankRoot{field(installed, "installDirectory")};
+  const auto audited = candidate_packaging::verifyInstalledResourceCandidate(package, field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), bankRoot,
+      {.trustedPublicKeys = {keys.pair.publicKey}, .requireTrustedSigner = true});
+  CHECK(audited); CHECK(audited.value().sampleManifest); CHECK(audited.value().sampleAssetDigests);
+  CHECK(audited.value().sampleManifest->id == fixture.manifest.id);
+  CHECK(!audited.value().proceduralInstallation);
+  for (const auto& unit : audited.value().sampleManifest->units)
+    CHECK(audited.value().sampleAssetDigests->at(unit.audioPath) == core::sha256File(bankRoot / unit.audioPath).value());
+
+  application::ProjectFactory factory{98811U};
+  auto song = factory.createProject("Installed sample operation fixture");
+  const auto track = factory.addVocalTrack(song, "Singer");
+  const auto region = factory.addRegion(song, track, "Melody", time::Tick{0}, time::Tick{1920});
+  for (int i = 0; i < 2; ++i) {
+    auto [lyric, note] = factory.makeNote(time::Tick{960 * i}, time::Tick{960}, static_cast<std::uint8_t>(69 + i * 3), U"あ", domain::Language::Japanese);
+    song.findRegion(region)->lyrics.push_back(lyric); song.findRegion(region)->notes.push_back(note);
+  }
+  song.findVocalTrack(track)->voicebank = {fixture.manifest.id, fixture.manifest.version, field(installed, "contentHash")};
+  song.findVocalTrack(track)->styleSelection = {domain::VoiceStyleOrigin::Explicit, "original"};
+  const auto path = fixture.root / "song.seam", output = fixture.root / "operation";
+  CHECK(formats::ProjectJsonCodec{}.save(song, path));
+  std::vector<std::string> args{"export-installed-sample-project", path.string(), core::sha256File(path).value(),
+      track.toString(), region.toString(), "ja", package.string(), field(packaged, "packageDigest"),
+      field(published, "candidateSha256"), bankRoot.string(), keys.publicKey, output.string()};
+  const auto before = treeDigest(bankRoot);
+  const auto record = fixture.success(args);
+  CHECK(field(record, "recordType") == "seam.u45.installed-sample-export.v1");
+  CHECK(field(record, "resourceCapture") == "SIGNED_ENTRIES_MATCHED_FROZEN_SAMPLE_ASSETS");
+  CHECK(field(record, "result") == "ExportCommittedAndObserved");
+  CHECK(field(record, "qualification") == "NOT_QUALIFIED"); CHECK(field(record, "humanAcceptance") == "NOT_RUN");
+  CHECK(!record.find("authorizesRelease")->asBool()); CHECK(!record.find("releaseEligible")->asBool());
+  CHECK(record.find("masterPeakAbs")->asNumber() > 1e-4);
+  const auto inspected = authoring::ExportService{}.inspectSetReadOnly(output); CHECK(inspected);
+  CHECK(inspected.value().state == authoring::ExportSetInspectionState::Committed);
+  bool master = false;
+  for (const auto& artifact : record.find("artifacts")->asArray()) {
+    const auto sha = core::sha256File(output / field(artifact, "path")); CHECK(sha);
+    CHECK(sha.value() == field(artifact, "sha256"));
+    if (sha.value() == field(record, "masterSha256")) master = true;
+  }
+  CHECK(master); CHECK(treeDigest(bankRoot) == before);
+  const auto preservedOutput = treeDigest(output);
+  CHECK(!fixture.run(args)); CHECK(treeDigest(output) == preservedOutput);
+
+  args[0] = "export-installed-recipe-project"; args.back() = (fixture.root / "wrong-family").string();
+  requireCliRefusal(args, 2U, "Operation export requires a verified installed recipe");
+  CHECK(!std::filesystem::exists(args.back()));
+  args[0] = "export-installed-sample-project";
+  args.back() = (fixture.root / "missing-track-pin").string();
+  const auto otherTrack = factory.addVocalTrack(song, "Muted unpinned singer");
+  song.findVocalTrack(otherTrack)->muted = true;
+  CHECK(formats::ProjectJsonCodec{}.save(song, path)); args[2] = core::sha256File(path).value();
+  requireCliRefusal(args, 2U, "Every vocal track must select the verified sample with all saved resource pins");
+  CHECK(!std::filesystem::exists(args.back()));
+  song.findVocalTrack(otherTrack)->voicebank = song.findVocalTrack(track)->voicebank;
+  CHECK(formats::ProjectJsonCodec{}.save(song, path)); args[2] = core::sha256File(path).value();
+  args.back() = (fixture.root / "muted-pinned").string(); CHECK(fixture.success(args).find("result")->asString() == "ExportCommittedAndObserved");
+
+  args.back() = (fixture.root / "changed-install").string();
+  const auto asset = bankRoot / audited.value().sampleManifest->units.front().audioPath;
+  auto bytes = core::readFileBytesLimited(asset, 1ULL << 30U); CHECK(bytes);
+  bytes.value().back() ^= std::byte{1};
+  CHECK(core::durableAtomicWrite(asset, bytes.value()));
+  CHECK(!fixture.run(args)); CHECK(!std::filesystem::exists(args.back()));
+  CHECK(treeDigest(output) == preservedOutput);
+#endif
+}
+
 TEST_CASE("Interrupted publication or packaging leaves the previous candidate and package intact") {
 #if defined(__APPLE__) || defined(__linux__)
   CliFixture fixture;

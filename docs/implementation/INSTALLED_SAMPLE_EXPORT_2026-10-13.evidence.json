@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-sample-export",
+  "sourceHead": "5fb5da639c005900b09e6d1f882a2072c41db1e2",
+  "manifest": {
+    "path": "out/evidence/installed-sample-export-2026-10-13/manifest.json",
+    "sizeBytes": 22070,
+    "sha256": "0b2094c4ce39cddfc6364e6dcfee849c4ff2c9a23ad1d6362208a64ccd28c649"
+  },
+  "verification": {
+    "status": "PASS",
+    "scope": "Focused sample capture/export plus retained failed broad attempt; no full-suite PASS claim",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-sample-export-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/installed-sample-export-2026-10-13/verification.log",
+      "sizeBytes": 220,
+      "sha256": "83fdf2d2f147d5bbb20c5bb48bfbdb82ad52558827c10fae18bb05153f49d4e2"
+    }
+  },
+  "retainedArtifacts": 87,
+  "preservedBindings": 7,
+  "dependentBuilds": 3,
+  "focusedCTestEntries": 3,
+  "focusedCases": {
+    "seam_contextual_unit_selection_tests": 28,
+    "seam_export_tests": 37,
+    "seam_sample_review_cli_tests": 27
+  },
+  "focusedSeconds": 16.38,
+  "broadRun": {
+    "status": "FAIL",
+    "seam_tests": {
+      "passed": 1523,
+      "failed": 1,
+      "diagnostic": "Studio metadata count expected 2; standalone reprobe fails the same assertion"
+    },
+    "sampleCliIntermediateFailure": "Test-only wrong expected exit code 1 instead of 2, repaired; final 27/27"
+  },
+  "nativeFixture": {
+    "classification": "SYNTHETIC_ENGINEERING_ONLY",
+    "successfulAudit": true,
+    "observedSampleExport": true,
+    "artifactCount": 2,
+    "masterPeakAbs": 0.17681719362735748,
+    "masterClipped": false,
+    "wrongFamilyRefusalExitCode": 2,
+    "initialUnpaddedIdRefusalRetained": true,
+    "privateKeyRetained": false
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Signed sample asset capture and native operation only"
+  },
+  "replayValidator": "NOT_IMPLEMENTED",
+  "internetAssetsImported": false,
+  "humanAcceptance": "NOT_RUN",
+  "rightsApproval": "NOT_GRANTED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}
