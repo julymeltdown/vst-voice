@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "unit": "studio-metadata-history",
+  "sourceHead": "7c18312c5509acec8cf3345f6dd06ee33eeca1bb",
+  "manifest": {
+    "path": "out/evidence/studio-metadata-history-2026-10-13/manifest.json",
+    "sizeBytes": 5246,
+    "sha256": "eefb419dac92e8995dea3505c3834554a6ce8e8442bda49755e594898ca0de72"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/studio-metadata-history-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/studio-metadata-history-2026-10-13/verification.log",
+      "sizeBytes": 210,
+      "sha256": "f20a37164a4b720c3d7484e3abe566c026585ee969c57201e3a81fbb3305b7a6"
+    }
+  },
+  "retainedArtifacts": 16,
+  "preservedBindings": 9,
+  "fullBuildSeconds": 28.62,
+  "isolatedCases": 1,
+  "isolatedCaseOverlapsCore": true,
+  "coreCTestEntries": 1,
+  "coreCases": 1524,
+  "coreSeconds": 86.54,
+  "productCodeChanges": false,
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Studio diagnostic/marker history expectations only"
+  },
+  "humanAcceptance": "NOT_RUN",
+  "rightsApproval": "NOT_GRANTED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "betaPromotion": false
+}

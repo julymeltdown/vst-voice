@@ -30,6 +30,7 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/formats/project_json.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/diagnostic_ids.hpp"
@@ -6464,6 +6465,23 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
       "2026-08-31T11:01:30Z");
   CHECK(productionRevision);
   CHECK(controller.productionProject()->derivedRevisions.size() == 1U);
+  // The transform saves its exact-output diagnostic with the derived revision.
+  // It is history distinct from both the raw inspection and later marker edits.
+  CHECK(controller.productionProject()->metadataRevisions.size() == 2U);
+  const auto derivedInspection = controller.productionProject()->metadataRevisions.back();
+  CHECK(derivedInspection.kind == seam::voicebank_production::kDerivedTakeInspectionRevisionKind);
+  CHECK(derivedInspection.rawAssetSha256 == productionRawHash);
+  CHECK(derivedInspection.values.at("derivedRevisionId") ==
+        controller.productionProject()->derivedRevisions.front().revisionId);
+  const auto validatedInspection = seam::voicebank_production::validateTakeInspectionRevision(
+      *controller.productionProject(), derivedInspection);
+  CHECK(validatedInspection);
+  CHECK(validatedInspection.value().inspection.sourceSha256 ==
+        controller.productionProject()->derivedRevisions.front().outputSha256);
+  const auto activeInspection = seam::voicebank_production::currentActiveTakeInspection(
+      *controller.productionProject(), controller.productionProject()->takes.front().takeId);
+  CHECK(activeInspection);
+  CHECK(activeInspection->inspection.sourceSha256 == validatedInspection.value().inspection.sourceSha256);
   CHECK(controller.productionProject()->lastDurableGeneration == 3U);
 
   const auto changedTakePath = directory / "changed-take.wav";
@@ -6492,7 +6510,7 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(!controller.dirty());
   CHECK(controller.productionProject()->takes.front().rawAssetSha256 ==
         productionRawHash);
-  CHECK(controller.productionProject()->metadataRevisions.size() == 2U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 3U);
   CHECK(controller.productionProject()->metadataRevisions.front().rawAssetSha256 ==
         productionRawHash);
   CHECK(controller.productionProject()->lastDurableGeneration == 4U);
@@ -6502,12 +6520,18 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(controller.moveSelectedMarker(
       seam::ui::AcousticMarkerKind::VowelOnset, secondX));
   CHECK(controller.save());
-  CHECK(controller.productionProject()->metadataRevisions.size() == 3U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 4U);
   const auto revisitX = controller.microscope().frameToPixel(firstSavedOnset);
   CHECK(controller.moveSelectedMarker(
       seam::ui::AcousticMarkerKind::VowelOnset, revisitX));
   CHECK(controller.save());
-  CHECK(controller.productionProject()->metadataRevisions.size() == 4U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 5U);
+  CHECK(seam::voicebank_production::sameMetadataRevision(
+      controller.productionProject()->metadataRevisions[1], derivedInspection));
+  CHECK(std::count_if(controller.productionProject()->metadataRevisions.begin(),
+      controller.productionProject()->metadataRevisions.end(), [](const auto& revision) {
+        return revision.kind == "MARKERS_AND_PITCH";
+      }) == 3);
   CHECK(controller.productionProject()->lastDurableGeneration == 6U);
   const auto exportedProduction = controller.exportProductionInputs(
       directory / "u57-inputs", "2026-08-31T11:02:00Z");

@@ -38,7 +38,18 @@
       "failed": 1,
       "diagnostic": "Studio metadata count expected 2; standalone reprobe fails the same assertion"
     },
-    "sampleCliIntermediateFailure": "Test-only wrong expected exit code 1 instead of 2, repaired; final 27/27"
+    "sampleCliIntermediateFailure": "Test-only wrong expected exit code 1 instead of 2, repaired; final 27/27",
+    "followup": {
+      "status": "CORE_REPAIRED_PASS",
+      "dossier": "docs/implementation/STUDIO_METADATA_HISTORY_2026-10-13.md",
+      "manifest": {
+        "path": "out/evidence/studio-metadata-history-2026-10-13/manifest.json",
+        "sizeBytes": 5246,
+        "sha256": "eefb419dac92e8995dea3505c3834554a6ce8e8442bda49755e594898ca0de72"
+      },
+      "coreCasesPassed": 1524,
+      "originalFailureEvidencePreserved": true
+    }
   },
   "nativeFixture": {
     "classification": "SYNTHETIC_ENGINEERING_ONLY",
