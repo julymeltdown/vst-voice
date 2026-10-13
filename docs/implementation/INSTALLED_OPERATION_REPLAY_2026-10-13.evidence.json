@@ -41,7 +41,14 @@
     "verifierSha256": "8668a0064d4992594436fd57cbe939fef03d4e76a2da561a26982d22ba060921",
     "observation": "FRESH_NATIVE_RENDER_MATCH",
     "historicalExecution": "NOT_AUTHENTICATED",
-    "retainedExportUnchanged": true
+    "retainedExportUnchanged": true,
+    "sourceOrdering": "Pre-final binding module; preserved historical evidence, superseded for committed-reader provenance by closeout supplement",
+    "committedReaderFollowup": {
+      "dossier": "docs/implementation/INSTALLED_OPERATION_REPLAY_CLOSEOUT_2026-10-13.md",
+      "sourceCommit": "168467a41966dcb84a2c64b74d9e1119a3a90117",
+      "durationSeconds": 0.1314988136291504,
+      "status": "ENGINEERING_PASS"
+    }
   },
   "ignoredReceiptFields": [
     "executionDateUnixMs",
@@ -54,9 +61,18 @@
     "candidateDigestMatched": true
   },
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Local operation replay, shared reference validator and focused synthetic controls only"
+    "scope": "Local operation replay, shared reference validator and focused synthetic controls only",
+    "sourceCommits": [
+      "168467a41966dcb84a2c64b74d9e1119a3a90117"
+    ],
+    "verdict": {
+      "path": "out/evidence/installed-operation-replay-closeout-2026-10-13/review-168467a4-2dc07921.txt",
+      "sizeBytes": 9250,
+      "sha256": "fbacffcc71861a8e697af1a689bf1ec5a6eaf4f71c5495382de92a57a419312a"
+    },
+    "execution": "Independent read-only Git/hash/JSON/WAV/method-count audit; no project code, build, CTest, native or verifier execution"
   },
   "fullSuite": "NOT_RUN",
   "aggregateCoreThisUnit": "NOT_RUN",
@@ -69,5 +85,12 @@
   ],
   "betaStatus": "BLOCKED",
   "fullGoal": "ACTIVE",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "reviewFollowup": {
+    "provenanceP3": "CLOSED_COMMITTED_REPLAY",
+    "liveTreeComparisonP3": "CLOSED_IMMUTABLE_SOURCE_SUPPLEMENT",
+    "supplementIndependentReview": "NOT_RUN",
+    "optionalPythonlessReplayReporting": "OPEN",
+    "artifactCountLimitDisclosure": "CLARIFIED"
+  }
 }

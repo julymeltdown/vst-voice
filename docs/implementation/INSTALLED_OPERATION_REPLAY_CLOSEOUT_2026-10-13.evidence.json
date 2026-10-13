@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-operation-replay-closeout",
+  "manifest": {
+    "path": "out/evidence/installed-operation-replay-closeout-2026-10-13/manifest.json",
+    "sizeBytes": 3446,
+    "sha256": "66dcb6b127a2eef47ace248218fd628f25f3fc70ef7c968d34ab2c1c0cd75b02"
+  },
+  "retainedArtifacts": 7,
+  "preservedBindings": 8,
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-operation-replay-closeout-2026-10-13/verify_supplement.py"
+    ],
+    "log": {
+      "path": "out/evidence/installed-operation-replay-closeout-2026-10-13/verification.log",
+      "sizeBytes": 213,
+      "sha256": "a68bc2c60e1acaefbfb6e106fee6f0b3e30c2da94077fc122d9bce33126903b3"
+    }
+  },
+  "technicalReview": {
+    "status": "APPROVE_IMPLEMENTATION_ONLY",
+    "sourceCommits": [
+      "168467a41966dcb84a2c64b74d9e1119a3a90117",
+      "2dc07921c71c2e9bfac7ca1e52d17cae8677e84e"
+    ],
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/installed-operation-replay-closeout-2026-10-13/review-168467a4-2dc07921.txt",
+      "sizeBytes": 9250,
+      "sha256": "fbacffcc71861a8e697af1a689bf1ec5a6eaf4f71c5495382de92a57a419312a"
+    },
+    "execution": "Read-only independent Git/hash/JSON/WAV/method-count audit; no project execution"
+  },
+  "committedReaderReplay": {
+    "status": "ENGINEERING_PASS",
+    "sourceCommit": "168467a41966dcb84a2c64b74d9e1119a3a90117",
+    "durationSeconds": 0.1314988136291504,
+    "receipt": {
+      "path": "out/evidence/installed-operation-replay-closeout-2026-10-13/historical-sample-final.receipt.json",
+      "sizeBytes": 2169,
+      "sha256": "acc7499518b843919ac34c03d66c9ad6b6cce7bfa6c5e4595b56fe3039410b47"
+    },
+    "retainedExportUnchanged": true,
+    "historicalExecution": "NOT_AUTHENTICATED"
+  },
+  "immutableVerifier": {
+    "sourceComparison": "GIT_BLOBS_168467A4",
+    "frozenOriginalRootsChanged": false,
+    "requiresPreservedInputsAvailableAndUnchanged": true
+  },
+  "focusedCasesReusedFromOriginalUnit": 499,
+  "newCTest": "NOT_RUN_NOT_NEEDED_NO_PRODUCT_CODE_CHANGE",
+  "supplementIndependentReview": "NOT_RUN",
+  "humanAcceptance": "NOT_RUN",
+  "rightsApproval": "NOT_GRANTED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "authorizesRelease": false
+}
