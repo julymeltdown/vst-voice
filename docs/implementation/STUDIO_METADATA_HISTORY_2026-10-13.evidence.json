@@ -30,9 +30,19 @@
   "coreSeconds": 86.54,
   "productCodeChanges": false,
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "Studio diagnostic/marker history expectations only"
+    "scope": "Studio diagnostic/marker history expectations only",
+    "sourceCommits": [
+      "dc583e17f3ff0ed8d1446b9b430df4c846d365ab",
+      "a50dade048b6371f5ba993df0633d861993fcb18"
+    ],
+    "verdict": {
+      "path": "out/evidence/installed-operation-review-closeout-2026-10-13/review-7c18312c-dc583e17-a50dade0.txt",
+      "sizeBytes": 9114,
+      "sha256": "e7149015791204615268684e6b63731891e920a44411240b5110829810c49472"
+    },
+    "execution": "Independent read-only source/hash/count/PCM audit; no build, native execution or verifier execution"
   },
   "humanAcceptance": "NOT_RUN",
   "rightsApproval": "NOT_GRANTED",

@@ -1,6 +1,6 @@
 # Signed installed sample operation export
 
-2026-10-13. Integrating base: `5fb5da639c005900b09e6d1f882a2072c41db1e2`. [Evidence index](INSTALLED_SAMPLE_EXPORT_2026-10-13.evidence.json). Technical review pending. This is an engineering unit; it admits no internet recordings or human decisions.
+2026-10-13. Integrating base: `5fb5da639c005900b09e6d1f882a2072c41db1e2`. [Evidence index](INSTALLED_SAMPLE_EXPORT_2026-10-13.evidence.json). Technical review APPROVED; the exact scoped verdict is retained in the evidence index. The reviewer ran no build, native binary or verifier. This is an engineering unit; it admits no internet recordings or human decisions.
 
 ## Problem and resulting behavior
 
@@ -30,4 +30,4 @@ The manifest freezes 87 artifacts and seven parent/canonical bindings: baseline/
 
 ## Next work
 
-The separate [Studio history repair](STUDIO_METADATA_HISTORY_2026-10-13.md) now passes the isolated case and complete 1,524-case core entry; the failed run above remains preserved. Obtain critical independent review of this sample capture boundary, then add closed native operation replay and remaining continuity/measurement semantics before any U45 reconciliation decision. Real producer/distinct reviewer, source/performer and public-licence disposition, failed-QC policy and useful phonetic/pitch/listening qualification remain pending for the internet female route. All original downloads, cuts, null worksheets and frozen observation kit remain outside this unit. Alpha is **0/20**, Beta is **BLOCKED**, and the full development goal remains **ACTIVE**. `.github`, README Windows TODO and the existing stash are preserved.
+The separate [Studio history repair](STUDIO_METADATA_HISTORY_2026-10-13.md) now passes the isolated case and complete 1,524-case core entry; the failed run above remains preserved. Independent review found no required defects. Optional fixture-manifest binding, direct export guard and reverse-family controls are scheduled with the replay unit. Add closed native operation replay and remaining continuity/measurement semantics before any U45 reconciliation decision. Real producer/distinct reviewer, source/performer and public-licence disposition, failed-QC policy and useful phonetic/pitch/listening qualification remain pending for the internet female route. All original downloads, cuts, null worksheets and frozen observation kit remain outside this unit. Alpha is **0/20**, Beta is **BLOCKED**, and the full development goal remains **ACTIVE**. `.github`, README Windows TODO and the existing stash are preserved.
