@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-operation-replay",
+  "manifest": {
+    "path": "out/evidence/installed-operation-replay-2026-10-13/manifest.json",
+    "sizeBytes": 13181,
+    "sha256": "7569115ed19eb1edd12a0e292b73e6e53b4f2a6f4a629a2401cf10a6018e194a"
+  },
+  "verification": {
+    "status": "PASS",
+    "scope": "Read-only frozen engineering evidence; no native producer execution by verifier",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-operation-replay-2026-10-13/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/installed-operation-replay-2026-10-13/verification.log",
+      "sizeBytes": 222,
+      "sha256": "d96faa0a81f4c4451ed6bb9b1f887d9e89b21802298a2b5aeb7ddb67c3b053ee"
+    }
+  },
+  "retainedArtifacts": 46,
+  "preservedBindings": 10,
+  "baselineSourceCommit": "a50dade048b6371f5ba993df0633d861993fcb18",
+  "executionBaseCommit": "2dc07921c71c2e9bfac7ca1e52d17cae8677e84e",
+  "dependentBuildSeconds": 49.358782052993774,
+  "focusedCTestEntries": 3,
+  "focusedCases": {
+    "seam_export_tests": 38,
+    "seam_external_beta_python_contract_tests": 434,
+    "seam_sample_review_cli_tests": 27
+  },
+  "focusedSeconds": 124.7,
+  "overlappingStandalonePolicyMethods": 9,
+  "newMockedPolicyMethods": 7,
+  "realNativeReplayCallsInsideExistingCases": 6,
+  "historicalSampleReplay": {
+    "status": "ENGINEERING_PASS",
+    "durationSeconds": 0.5430448055267334,
+    "verifierSha256": "8668a0064d4992594436fd57cbe939fef03d4e76a2da561a26982d22ba060921",
+    "observation": "FRESH_NATIVE_RENDER_MATCH",
+    "historicalExecution": "NOT_AUTHENTICATED",
+    "retainedExportUnchanged": true
+  },
+  "ignoredReceiptFields": [
+    "executionDateUnixMs",
+    "transactionId"
+  ],
+  "fixtureManifestBinding": {
+    "path": "out/evidence/installed-sample-export-2026-10-13/native-fixture/installed/manifest.json",
+    "sizeBytes": 7214,
+    "sha256": "593038ff11dff97af906673fdf6e525587fa6551b91c1331bd2649375ad4aba4",
+    "candidateDigestMatched": true
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Local operation replay, shared reference validator and focused synthetic controls only"
+  },
+  "fullSuite": "NOT_RUN",
+  "aggregateCoreThisUnit": "NOT_RUN",
+  "internetAssetsImported": false,
+  "humanAcceptance": "NOT_RUN",
+  "rightsApproval": "NOT_GRANTED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "authorizesRelease": false
+}

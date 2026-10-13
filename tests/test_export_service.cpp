@@ -161,6 +161,47 @@ std::int64_t committedRevision(const std::filesystem::path& destination) {
 
 }
 
+
+
+TEST_CASE("signed sample render-time guard prevents export-set commit and preserves source bytes") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("signed-sample-export-guard");
+  std::filesystem::create_directories(root / "audio");
+  const auto audio = root / "audio/a.wav";
+  CHECK(voicebank::writeMonoPcm16Wav(audio, 48000U, test::support::sineWave(48000U, 440.0, 0.1)));
+  const auto originalSha = core::sha256File(audio).value();
+  const auto bank = test::support::makeManifest({test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69, voicebank::UnitKind::Sustain, 4800)});
+  application::ProjectFactory factory{70881U};
+  auto project = factory.createProject("Render-time signed sample guard");
+  const auto track = factory.addVocalTrack(project, "Singer");
+  const auto region = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{960});
+  auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{960}, 69U, U"あ", domain::Language::Japanese);
+  project.findRegion(region)->lyrics.push_back(lyric); project.findRegion(region)->notes.push_back(note);
+  project.findVocalTrack(track)->voicebank = {bank.id, bank.version, std::string(64U, 'a')};
+  project.findVocalTrack(track)->styleSelection = {domain::VoiceStyleOrigin::Explicit, "original"};
+  auto pins = std::make_shared<voicebank::ExpectedAssetDigests>();
+  (*pins)["audio/a.wav"] = std::string(64U, 'f');
+  // Caller-provided pins exercise the guard. They are not a signed installation.
+  const std::vector<rendering::TrackSingerSource> sources{rendering::TrackVoicebankSource{
+      track, bank, root, std::string(64U, 'a'), voicebank::VoicebankTrust::UntrustedInstalled, pins}};
+  const auto destination = root / "export";
+  const auto refused = authoring::ExportService{}.exportSetWithSources(
+      project, sources, track, region, 1U, destination, {.recoverInterruptedSet = false});
+  CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(destination));
+  CHECK(!std::filesystem::exists(root / ".export-export-journal.json"));
+  CHECK(core::sha256File(audio).value() == originalSha);
+  (*pins)["audio/a.wav"] = originalSha;
+  const auto exported = authoring::ExportService{}.exportSetWithSources(
+      project, sources, track, region, 1U, destination, {.recoverInterruptedSet = false});
+  CHECK(exported); CHECK(exported.value().state == authoring::ExportState::Committed);
+  CHECK(exported.value().masterPeakAbs > 1e-4F);
+  CHECK(authoring::ExportService{}.inspectSetReadOnly(destination).value().state ==
+      authoring::ExportSetInspectionState::Committed);
+  CHECK(core::sha256File(audio).value() == originalSha);
+}
+
 TEST_CASE("released English stop coda bakes with a typed candidate and an inferred closure") {
   using namespace seam;
   for (const bool frication : {false,true}) {

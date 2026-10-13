@@ -76,7 +76,13 @@
     },
     "execution": "Independent read-only source/hash/count/PCM audit; no build, native execution or verifier execution"
   },
-  "replayValidator": "NOT_IMPLEMENTED",
+  "replayValidator": {
+    "atOriginalIncrement": "NOT_IMPLEMENTED",
+    "followup": "ENGINEERING_LOCAL_REPLAY_IMPLEMENTED",
+    "dossier": "docs/implementation/INSTALLED_OPERATION_REPLAY_2026-10-13.md",
+    "historicalExecution": "NOT_AUTHENTICATED",
+    "authorizesRelease": false
+  },
   "internetAssetsImported": false,
   "humanAcceptance": "NOT_RUN",
   "rightsApproval": "NOT_GRANTED",

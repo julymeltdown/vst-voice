@@ -12,8 +12,12 @@ was implemented in `95d093b1` and repaired/observed on 2026-10-12; see
 [recipe completion](../reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.md).
 The new [signed sample export unit](INSTALLED_SAMPLE_EXPORT_2026-10-13.md)
 connects signed consumed sample bytes to actual Final export artifacts. Older
-reference-only statements below describe their dated increments. Closed operation
-replay, remaining semantics, real authority and the canonical U45 hold stay open.
+reference-only statements below describe their dated increments. The separate
+[local operation replay](INSTALLED_OPERATION_REPLAY_2026-10-13.md) now compares
+installed sample/recipe observations and receipt semantics with fresh rendering
+through an externally pinned producer. Historical execution is not authenticated.
+Remaining continuity/measurement semantics, real authority and the canonical
+U45 hold stay open.
 
 ## Executable boundary
 

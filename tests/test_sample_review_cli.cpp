@@ -591,6 +591,63 @@ const std::string& nativeVerifierSha() {
   static const auto digest=core::sha256File(SEAM_TEST_VOICEBANK_CLI).value();
   return digest;
 }
+
+void checkInstalledOperationReplay(const formats::JsonValue& record,
+    const std::vector<std::string>& operation, const std::filesystem::path& root) {
+  const auto output = std::filesystem::path{operation.back()};
+  const auto before = treeDigest(output);
+  const auto path = root / "operation-replay-record.json";
+  CHECK(core::durableAtomicWriteTextNew(path, formats::stringifyJson(record, true) + "\n"));
+  const auto replay = [&](const std::filesystem::path& retained, const std::filesystem::path& exported,
+                          bool passed, std::string_view diagnostic = "") {
+    const std::vector<std::string> args{"-B",
+        (std::filesystem::path{SEAM_TEST_SOURCE_DIR} / "scripts/verify_installed_export_record.py").string(),
+        "--record", retained.string(), "--record-sha256", core::sha256File(retained).value(),
+        "--project", operation[1], "--package", operation[6], "--installed-directory", operation[9],
+        "--export-directory", exported.string(), "--public-key", operation[10],
+        "--public-key-sha256", core::sha256File(operation[10]).value(),
+        "--voicebank-cli", SEAM_TEST_VOICEBANK_CLI, "--cli-sha256", nativeVerifierSha()};
+    const auto run = authoring::runBoundedHelperProcessObserved({.executable=SEAM_TEST_PYTHON,.arguments=args});
+    CHECK(run); const auto* exited = std::get_if<authoring::HelperExited>(&run.value().termination);
+    if (!exited || exited->code != (passed ? 0U : 3U) || !run.value().output.standardError.empty())
+      throw seam::test::Failure{"Replay process: " + run.value().output.standardOutput + run.value().output.standardError};
+    const auto result = formats::parseJson(run.value().output.standardOutput); CHECK(result);
+    CHECK(result.value().find("passed")->asBool() == passed);
+    CHECK(!result.value().find("authorizesRelease")->asBool());
+    if (passed) {
+      CHECK(field(result.value(), "historicalExecution") == "NOT_AUTHENTICATED");
+      CHECK(field(result.value(), "observation") == "FRESH_NATIVE_RENDER_MATCH");
+    } else {
+      CHECK(result.value().find("errors")->asArray().front().asString().find(diagnostic) != std::string::npos);
+    }
+  };
+  replay(path, output, true);
+  auto alteredMeasurement = record;
+  alteredMeasurement.asObject()["masterPeakAbs"] = record.find("masterPeakAbs")->asNumber() + 0.1;
+  const auto measurementPath = root / "operation-replay-altered-measurement.json";
+  CHECK(core::durableAtomicWriteTextNew(measurementPath, formats::stringifyJson(alteredMeasurement, true) + "\n"));
+  replay(measurementPath, output, false, "differs from fresh native rendering");
+
+  const auto forgedOutput = copyTree(output, root / "operation-replay-forged-output");
+  auto audio = core::readFileBytesLimited(forgedOutput / "master.wav", 1ULL << 30U); CHECK(audio);
+  audio.value().back() ^= std::byte{1};
+  CHECK(core::durableAtomicWrite(forgedOutput / "master.wav", audio.value()));
+  const auto changedSha = core::sha256File(forgedOutput / "master.wav").value();
+  auto receipt = formats::parseJson(readText(forgedOutput / "receipt.json")); CHECK(receipt);
+  for (auto& file : receipt.value().asObject().at("files").asArray())
+    if (field(file, "path") == "master.wav") file.asObject()["sha256"] = changedSha;
+  CHECK(core::durableAtomicWriteText(forgedOutput / "receipt.json", formats::stringifyJson(receipt.value(), true) + "\n"));
+  auto forged = record;
+  forged.asObject()["masterSha256"] = changedSha;
+  forged.asObject()["exportReceiptSha256"] = core::sha256File(forgedOutput / "receipt.json").value();
+  for (auto& file : forged.asObject().at("artifacts").asArray())
+    if (field(file, "path") == "master.wav") file.asObject()["sha256"] = changedSha;
+  const auto forgedPath = root / "operation-replay-forged-record.json";
+  CHECK(core::durableAtomicWriteTextNew(forgedPath, formats::stringifyJson(forged, true) + "\n"));
+  // Every supplied hash is consistent. The native re-render must still expose the forgery.
+  replay(forgedPath, forgedOutput, false, "differs from fresh native rendering");
+  CHECK(treeDigest(output) == before);
+}
 #endif
 void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain::SingerResourceIdentity& resource,
     const std::filesystem::path& root, const std::filesystem::path& package,
@@ -721,6 +778,14 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
     const auto output=root/"observed-recipe-export";
     auto operation=args;operation[0]="export-installed-recipe-project";operation.push_back(output.string());
     const auto observed=cliSuccess(operation);
+#if defined(SEAM_TEST_PYTHON)
+    checkInstalledOperationReplay(observed, operation, root);
+#endif
+    auto wrongFamily = operation;
+    wrongFamily[0] = "export-installed-sample-project";
+    wrongFamily.back() = (root / "unsupported-recipe-as-sample").string();
+    cliRefusal(wrongFamily, "requires a verified installed sample");
+    CHECK(!std::filesystem::exists(wrongFamily.back()));
     CHECK(field(observed,"recordType")=="seam.u45.installed-recipe-export.v1");
     CHECK(field(observed,"result")=="ExportCommittedAndObserved");
     CHECK(field(observed,"resourceCapture")=="SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE");
@@ -1471,6 +1536,9 @@ TEST_CASE("Installed sample operation observes committed outputs without claimin
       field(published, "candidateSha256"), bankRoot.string(), keys.publicKey, output.string()};
   const auto before = treeDigest(bankRoot);
   const auto record = fixture.success(args);
+#if defined(SEAM_TEST_PYTHON)
+  checkInstalledOperationReplay(record, args, fixture.root);
+#endif
   CHECK(field(record, "recordType") == "seam.u45.installed-sample-export.v1");
   CHECK(field(record, "resourceCapture") == "SIGNED_ENTRIES_MATCHED_FROZEN_SAMPLE_ASSETS");
   CHECK(field(record, "result") == "ExportCommittedAndObserved");

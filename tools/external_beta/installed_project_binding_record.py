@@ -16,13 +16,8 @@ FIXED = {"schemaVersion": 1, "recordType": RECORD_TYPE, "result": "InstalledProj
 FIELDS = frozenset(FIXED) | {"installed", "project", "resourceLanguages"}
 
 
-def validate_record(record):
-    if not isinstance(record, dict) or set(record) != FIELDS:
-        raise ValueError("installed project record differs from its closed engineering schema")
-    for key, expected in FIXED.items():
-        if type(record[key]) is not type(expected) or record[key] != expected:
-            raise ValueError(f"invalid installed project {key}")
-    resource, binding = record["installed"], record["project"]
+def validate_installed_binding(resource, binding):
+    """Shared reference checks; only native replay derives recipe identity."""
     installed.validate_record(resource)
     if resource["recordType"] != installed.RECORD_TYPE:
         raise ValueError("installed project linkage requires an installed v2 record")
@@ -37,6 +32,16 @@ def validate_record(record):
     # Recipe id and schema version are derived by the native verifier from its
     # private signed snapshot. They are NOT the package id/version. Whole-record
     # replay checks them; Python must not guess them or reopen project paths.
+
+
+def validate_record(record):
+    if not isinstance(record, dict) or set(record) != FIELDS:
+        raise ValueError("installed project record differs from its closed engineering schema")
+    for key, expected in FIXED.items():
+        if type(record[key]) is not type(expected) or record[key] != expected:
+            raise ValueError(f"invalid installed project {key}")
+    resource, binding = record["installed"], record["project"]
+    validate_installed_binding(resource, binding)
     languages = record["resourceLanguages"]
     if not isinstance(languages, list) or not 1 <= len(languages) <= 4 or any(
             type(value) is not str or value not in ("en", "ja", "ko", "und") for value in languages):
