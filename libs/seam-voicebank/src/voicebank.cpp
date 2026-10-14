@@ -1,4 +1,6 @@
 #include "seam/voicebank/voicebank.hpp"
+#include "seam/phonemizer/english_resource.hpp"
+#include "seam/phonemizer/phonemizer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -105,6 +107,19 @@ Unit* Manifest::findUnit(std::string_view unitId) noexcept {
   return iterator == units.end() ? nullptr : &*iterator;
 }
 
+std::string_view Manifest::matchedPhone(std::string_view resolvedPhone) const {
+  if (language == domain::Language::English && languageContract &&
+      languageContract->vocabularyId == phonemizer::kEnglishVocabularyId &&
+      languageContract->vocabularySha256 == phonemizer::englishVocabularySha256() &&
+      languageContract->stressPolicy == "FOLD_LEXICAL_STRESS" &&
+      resolvedPhone.size() > 1U &&
+      (resolvedPhone.back() == '0' || resolvedPhone.back() == '1' || resolvedPhone.back() == '2') &&
+      phonemizer::isEnglishVocabularySymbol(resolvedPhone) && phonemizer::isVowelSymbol(resolvedPhone)) {
+    return resolvedPhone.substr(0U, resolvedPhone.size() - 1U);
+  }
+  return resolvedPhone;
+}
+
 core::Result<void> Manifest::validate() const {
   if (id.empty() || version.empty() || displayName.empty()) {
     return core::failure(core::ErrorCode::InvariantViolation,
@@ -118,6 +133,16 @@ core::Result<void> Manifest::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Voicebank language must be specified");
   }
+  if (languageContract && (language != domain::Language::English ||
+      languageContract->vocabularyId != phonemizer::kEnglishVocabularyId ||
+      languageContract->vocabularySha256 != phonemizer::englishVocabularySha256() ||
+      (languageContract->stressPolicy != "FOLD_LEXICAL_STRESS" &&
+       languageContract->stressPolicy != "DISTINGUISH_LEXICAL_STRESS"))) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+        "English bank languageContract must bind the frozen vocabulary and an explicit supported stress policy");
+  }
+  if (languageContract && units.size() > 65536U)
+    return core::failure(core::ErrorCode::Unsupported, "English bank inventory exceeds its bounded unit count");
   if (expectedSampleRate < 8000 || expectedSampleRate > 384000) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Voicebank sample rate is unsupported");
@@ -137,6 +162,16 @@ core::Result<void> Manifest::validate() const {
   for (const auto& unit : units) {
     const auto result = unit.validate();
     if (!result) return result;
+    if (languageContract) {
+      if (unit.phones.size() > 256U)
+        return core::failure(core::ErrorCode::Unsupported, "English bank unit phone count exceeds bounds", unit.id);
+      for (const auto& phone : unit.phones) {
+        if (!phonemizer::isEnglishVocabularySymbol(phone) ||
+            (languageContract->stressPolicy == "FOLD_LEXICAL_STRESS" && matchedPhone(phone) != phone))
+          return core::failure(core::ErrorCode::InvariantViolation,
+              "English bank phones must use its declared frozen vocabulary and stress policy", unit.id);
+      }
+    }
     if (!ids.insert(unit.id).second) {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Voicebank unit IDs must be unique",

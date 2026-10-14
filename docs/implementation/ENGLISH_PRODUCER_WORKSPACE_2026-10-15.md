@@ -135,3 +135,8 @@ R9 remain open.
 Usable Alpha remains **0/20 recorded passes**. U45's reconciliation hold and
 canonical acoustic tolerance work remain open. External Beta remains **BLOCKED**.
 Independent review of this exact implementation is pending.
+
+
+### Later bank-core integration, 2026-10-15
+
+[The explicit English sample-bank contract](ENGLISH_BANK_PHONE_CONTRACT_2026-10-15.md) now reaches native manifest serialization, automatic/forced/aligned selection, actual rendering and cache identity under focused checks. This closes the bank-core portion of the previously listed downstream gap. The normal producer draft still does not propagate its inventory declaration into a generated sample manifest; that integration and production admission remain open. This later change has separate evidence and pending independent review.

@@ -541,7 +541,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/take_inspection.cpp
 )
 target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
-target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core)
+target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core seam_phonemizer)
 seam_apply_compiler_options(seam_voicebank)
 
 add_library(seam_voicebank_production

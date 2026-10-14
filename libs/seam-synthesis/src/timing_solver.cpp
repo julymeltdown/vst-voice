@@ -62,7 +62,7 @@ core::Result<TimingPlan> TimingSolver::solve(
     const auto* unit = manifest.findUnit(entry.unitId);
     const auto covered = tokens.subspan(entry.tokenStart, entry.tokenCount);
     if (!supportsExplicitPhonemeTiming(covered) &&
-        !(unit && supportsAlignedPhonemeTiming(*unit, covered, alignments))) {
+        !(unit && supportsAlignedPhonemeTiming(*unit, covered, alignments, &manifest))) {
       return core::failure<TimingPlan>(core::ErrorCode::Conflict,
           "Selected unit cannot represent an interior phoneme timing edit", entry.unitId);
     }

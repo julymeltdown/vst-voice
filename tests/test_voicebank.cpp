@@ -5,6 +5,8 @@
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include "seam/voicebank/marker_editor.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/pitch_marks.hpp"
@@ -16,6 +18,35 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+
+TEST_CASE("English bank contract survives schema 4 and refuses silent stress or vocabulary changes") {
+  using namespace seam;
+  auto manifest=test::support::makeManifest({test::support::makeUnit("iy",{"iy"},"iy.wav",69,voicebank::UnitKind::Sustain,24000)});
+  const auto legacy=voicebank::ManifestJsonCodec{}.encode(manifest);CHECK(legacy);
+  CHECK(legacy.value().find("\"schemaVersion\": 3")!=std::string::npos);
+  CHECK(legacy.value().find("languageContract")==std::string::npos);
+  manifest.language=domain::Language::English;
+  manifest.languageContract=voicebank::Manifest::EnglishPhoneContract{
+      std::string{phonemizer::kEnglishVocabularyId},phonemizer::englishVocabularySha256(),"FOLD_LEXICAL_STRESS"};
+  CHECK(manifest.validate());CHECK(manifest.matchedPhone("iy0")=="iy");CHECK(manifest.matchedPhone("iy1")=="iy");CHECK(manifest.matchedPhone("iy2")=="iy");
+  CHECK(manifest.matchedPhone("jh")=="jh");CHECK(manifest.matchedPhone("a1")=="a1");CHECK(manifest.matchedPhone("pau")=="pau");
+  const auto encoded=voicebank::ManifestJsonCodec{}.encode(manifest);CHECK(encoded);
+  const auto decoded=voicebank::ManifestJsonCodec{}.decode(encoded.value());CHECK(decoded);CHECK(decoded.value()==manifest);
+  CHECK(encoded.value().find("\"schemaVersion\": 4")!=std::string::npos);
+  auto document=formats::parseJson(encoded.value());CHECK(document);
+  const auto refused=[&](formats::JsonValue value){CHECK(!voicebank::ManifestJsonCodec{}.decode(formats::stringifyJson(value,false)));};
+  auto bad=document.value();bad.asObject().erase("languageContract");refused(bad);
+  bad=document.value();bad.asObject()["schemaVersion"]=std::int64_t{3};refused(bad);
+  bad=document.value();bad.asObject()["languageContract"]=true;refused(bad);
+  bad=document.value();bad.asObject()["languageContract"].asObject()["extra"]=true;refused(bad);
+  bad=document.value();bad.asObject()["languageContract"].asObject()["vocabularySha256"]=std::string(64,'0');refused(bad);
+  bad=document.value();bad.asObject()["languageContract"].asObject()["stressPolicy"]="AUTO";refused(bad);
+  auto invalid=manifest;invalid.language=domain::Language::Japanese;CHECK(!invalid.validate());
+  invalid=manifest;invalid.units.front().phones={"jh"};CHECK(!invalid.validate());
+  invalid=manifest;invalid.units.front().phones={"iy1"};CHECK(!invalid.validate());
+  invalid.languageContract->stressPolicy="DISTINGUISH_LEXICAL_STRESS";CHECK(invalid.validate());CHECK(invalid.matchedPhone("iy1")=="iy1");
+  manifest.languageContract.reset();CHECK(manifest.matchedPhone("iy1")=="iy1");
+}
 
 TEST_CASE("voicebank content identity binds bounded per-unit alignment bytes") {
   const auto root = seam::test::support::temporaryDirectory("alignment-bank-identity");

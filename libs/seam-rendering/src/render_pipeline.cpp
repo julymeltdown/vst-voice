@@ -256,7 +256,7 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
           placement.tokenStart, placement.tokenCount);
       const auto* unit = snapshot.sample().voicebank->findUnit(placement.unitId);
       if (synthesis::hasMultipleNuclei(covered) &&
-          (!unit || !synthesis::supportsAlignedPhonemeTiming(*unit, covered, alignments))) {
+          (!unit || !synthesis::supportsAlignedPhonemeTiming(*unit, covered, alignments, snapshot.sample().voicebank.get()))) {
         return core::failure<synthesis::TimingPlan>(core::ErrorCode::Conflict,
             "Multi-nucleus rendering requires source alignment; author landmarks or select smaller units", placement.unitId);
       }

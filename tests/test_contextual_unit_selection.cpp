@@ -3,6 +3,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/rendering/project_renderer.hpp"
@@ -111,6 +112,83 @@ struct Fixture {
   }
 };
 }  // namespace
+
+namespace {
+struct EnglishFixtureCleanup {
+  std::filesystem::path root;
+  ~EnglishFixtureCleanup(){std::error_code error;std::filesystem::remove_all(root,error);}
+};
+void makeEnglish(Fixture& fixture,bool stressed) {
+  fixture.bank.language=domain::Language::English;
+  fixture.bank.languageContract=voicebank::Manifest::EnglishPhoneContract{
+      std::string{phonemizer::kEnglishVocabularyId},phonemizer::englishVocabularySha256(),"FOLD_LEXICAL_STRESS"};
+  auto* region=fixture.project.findRegion(fixture.region);
+  for (std::size_t i=0;i<fixture.tokens.size();++i) {
+    const auto symbol=stressed?"iy"+std::to_string(i):std::string{"iy"};
+    fixture.tokens[i].symbol=symbol;region->notes[i].phoneticHint=symbol;
+    region->lyrics[i].language=domain::Language::English;region->lyrics[i].surface=U"see";
+  }
+}
+void makeEnglishTone(Fixture& fixture) {
+  for (const auto& unit:fixture.bank.units) {
+    auto& audio=fixture.sources.at(unit.id);
+    for (std::size_t frame=0;frame<audio.interleaved.size();++frame)
+      audio.interleaved[frame]=static_cast<float>(0.25*std::sin(2.0*std::numbers::pi*440.0*static_cast<double>(frame)/48000.0));
+    CHECK(voicebank::writeMonoPcm16Wav(fixture.root/unit.audioPath,audio.sampleRate,audio.interleaved));
+  }
+}
+}
+
+TEST_CASE("declared English stress folding reaches actual snapshot render and preserves pronunciation") {
+  Fixture f;EnglishFixtureCleanup cleanup{f.root};makeEnglish(f,true);
+  f.add("english-iy",{"iy"},0.25F,0.25F);
+  makeEnglishTone(f);
+  const auto originalTokens=f.tokens;
+  const auto plan=f.select();CHECK(plan);CHECK(plan.value().entries.size()==3U);CHECK(f.tokens==originalTokens);
+  const auto snapshot=f.snapshot();CHECK(snapshot);
+  for (std::size_t i=0;i<3U;++i)CHECK(snapshot.value().phonemes->tokens[i].symbol=="iy"+std::to_string(i));
+  const auto rendered=rendering::PhraseRenderPipeline{}.render(snapshot.value());CHECK(rendered);
+  CHECK(!rendered.value().rendered.audio.samples.empty());
+  CHECK(std::all_of(rendered.value().rendered.audio.samples.begin(),rendered.value().rendered.audio.samples.end(),[](float v){return std::isfinite(v);}));
+  CHECK(std::any_of(rendered.value().rendered.audio.samples.begin(),rendered.value().rendered.audio.samples.end(),[](float v){return std::abs(v)>0.01F;}));
+  f.project.findRegion(f.region)->unitSelectionOverrides.push_back({.startKey=f.tokens[1].key,.tokenCount=1U,.unitId="english-iy"});
+  CHECK(f.snapshot());
+  f.bank.languageContract->stressPolicy="DISTINGUISH_LEXICAL_STRESS";CHECK(!f.select());CHECK(!f.snapshot());
+  f.bank.languageContract.reset();CHECK(!f.select());CHECK(!f.snapshot());
+  makeEnglish(f,true);f.tokens[0].symbol="a1";CHECK(!f.select());
+  f.bank.languageContract->vocabularySha256=std::string(64,'0');CHECK(!f.select());
+}
+
+TEST_CASE("English bank stress contract changes cache identity with the same selected audio") {
+  Fixture f;EnglishFixtureCleanup cleanup{f.root};makeEnglish(f,false);
+  f.add("english-iy",{"iy"},0.25F,0.25F);
+  makeEnglishTone(f);
+  const auto folded=f.snapshot();CHECK(folded);
+  f.bank.languageContract->stressPolicy="DISTINGUISH_LEXICAL_STRESS";
+  const auto exact=f.snapshot();CHECK(exact);CHECK(exact.value().contentHash!=folded.value().contentHash);
+  CHECK(exact.value().sample().unitPlan->selectionContextHash!=folded.value().sample().unitPlan->selectionContextHash);
+  const auto foldedAudio=rendering::PhraseRenderPipeline{}.render(folded.value());CHECK(foldedAudio);
+  const auto exactAudio=rendering::PhraseRenderPipeline{}.render(exact.value());CHECK(exactAudio);
+  CHECK(foldedAudio.value().rendered.audio.samples==exactAudio.value().rendered.audio.samples);
+}
+
+TEST_CASE("English stress-folded aligned units keep source landmarks exact through snapshot and timing") {
+  Fixture f;EnglishFixtureCleanup cleanup{f.root};makeEnglish(f,true);
+  f.add("english-multi",{"iy","iy","iy"},0.25F,0.25F);
+  makeEnglishTone(f);
+  CHECK(!f.snapshot());
+  const auto& unit=f.bank.units.front();
+  const auto raw=core::readFileBytesLimited(f.root/unit.audioPath,65536U);CHECK(raw);const auto hash=core::sha256Hex(raw.value());
+  const synthesis::SourcePhonemeAlignment alignment{unit.id,hash,{{"iy",960},{"iy",1920},{"iy",2880}}};
+  const auto encoded=synthesis::encodeSourcePhonemeAlignment(alignment,unit,hash,3840);CHECK(encoded);
+  std::filesystem::create_directories(f.root/"alignments");
+  CHECK(core::durableAtomicWriteText(f.root/"alignments"/(core::sha256Hex(unit.id)+".json"),encoded.value()));
+  f.project.findRegion(f.region)->phonemeOverrides.push_back({.key=f.tokens[1].key,.timing={.startOffset=time::Microseconds{1000}}});
+  const auto snapshot=f.snapshot();CHECK(snapshot);CHECK(snapshot.value().sample().unitPlan->entries.size()==1U);
+  CHECK(snapshot.value().sample().frozenAudio.front().sourceAlignment->landmarks[1].phone=="iy");
+  CHECK(snapshot.value().phonemes->tokens[1].symbol=="iy1");
+  CHECK(rendering::PhraseRenderPipeline{}.render(snapshot.value()));
+}
 
 TEST_CASE("contextual selection retains a locally worse predecessor for the best complete sequence") {
   Fixture f; f.chain();

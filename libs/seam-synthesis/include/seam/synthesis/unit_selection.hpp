@@ -111,7 +111,8 @@ struct SourceAlignmentEvidence final {
 };
 [[nodiscard]] bool supportsAlignedPhonemeTiming(
     const voicebank::Unit& unit, std::span<const domain::PhonemeToken> tokens,
-    std::span<const SourceAlignmentEvidence> alignments);
+    std::span<const SourceAlignmentEvidence> alignments,
+    const voicebank::Manifest* manifest = nullptr);
 
 struct UnitCandidate final {
   std::string unitId;

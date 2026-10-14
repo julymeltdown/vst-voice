@@ -25,10 +25,10 @@ bool supportsExplicitPhonemeTiming(std::span<const domain::PhonemeToken> tokens)
 
 bool supportsAlignedPhonemeTiming(
     const voicebank::Unit& unit, std::span<const domain::PhonemeToken> tokens,
-    std::span<const SourceAlignmentEvidence> alignments) {
+    std::span<const SourceAlignmentEvidence> alignments, const voicebank::Manifest* manifest) {
   if (tokens.size() != unit.phones.size()) return false;
   for (std::size_t i = 0; i < tokens.size(); ++i) {
-    if (tokens[i].symbol != unit.phones[i]) return false;
+    if ((manifest ? manifest->matchedPhone(tokens[i].symbol) : std::string_view{tokens[i].symbol}) != unit.phones[i]) return false;
   }
   return std::any_of(alignments.begin(), alignments.end(), [&](const auto& evidence) {
     return evidence.alignment && evidence.alignment->unitId == unit.id &&
@@ -43,12 +43,12 @@ const domain::Note* noteFor(const domain::VocalRegion& region,
   return region.findNote(token.key.noteId);
 }
 
-bool phonesMatch(const voicebank::Unit& unit,
+bool phonesMatch(const voicebank::Manifest& manifest, const voicebank::Unit& unit,
                  std::span<const domain::PhonemeToken> tokens,
                  std::size_t start) {
   if (unit.phones.empty() || start + unit.phones.size() > tokens.size()) return false;
   for (std::size_t index = 0; index < unit.phones.size(); ++index) {
-    if (unit.phones[index] != tokens[start + index].symbol) return false;
+    if (unit.phones[index] != manifest.matchedPhone(tokens[start + index].symbol)) return false;
   }
   return true;
 }
@@ -122,6 +122,16 @@ core::Result<std::vector<UnitCandidate>> UnitCandidateGenerator::generate(
     return core::failure<std::vector<UnitCandidate>>(core::ErrorCode::Unsupported,
         "Unit selection input exceeds bounded token/inventory limits");
   }
+  if (manifest.languageContract) {
+    for (const auto& unit : manifest.units) {
+      if (unit.phones.size() > 256U) return core::failure<std::vector<UnitCandidate>>(
+          core::ErrorCode::Unsupported, "English bank unit phone count exceeds bounds");
+      const auto checked = budget.spend(SelectionWork::Matching, 1U + unit.phones.size(), context.stop);
+      if (!checked) return core::Result<std::vector<UnitCandidate>>{checked.error()};
+    }
+    const auto valid = manifest.validate();
+    if (!valid) return core::Result<std::vector<UnitCandidate>>{valid.error()};
+  }
   if (overrides.empty() && !region.unitSelectionOverrides.empty()) overrides = region.unitSelectionOverrides;
   if (overrides.size() > kMaximumSelectionTokens) return core::failure<std::vector<UnitCandidate>>(
       core::ErrorCode::Unsupported, "Unit selection override budget exceeded");
@@ -163,7 +173,7 @@ core::Result<std::vector<UnitCandidate>> UnitCandidateGenerator::generate(
       if (!unit.enabled || unit.style != style || unit.phones.empty() || unit.phones.size() > tokens.size() - start) continue;
       spent = budget.spend(SelectionWork::Matching, unit.phones.size() + forced.size(), context.stop);
       if (!spent) return core::Result<std::vector<UnitCandidate>>{spent.error()};
-      if (!phonesMatch(unit, tokens, start)) continue;
+      if (!phonesMatch(manifest, unit, tokens, start)) continue;
       const auto end = start + unit.phones.size();
       if (std::any_of(forced.begin(), forced.end(), [&](const auto& span) {
         return start < span.end && end > span.start &&
@@ -173,7 +183,7 @@ core::Result<std::vector<UnitCandidate>> UnitCandidateGenerator::generate(
       spent = budget.spend(SelectionWork::Matching, covered.size() * (alignments.size() + 1U), context.stop);
       if (!spent) return core::Result<std::vector<UnitCandidate>>{spent.error()};
       if ((!supportsExplicitPhonemeTiming(covered) || (requireNucleusAlignment && hasMultipleNuclei(covered))) &&
-          !supportsAlignedPhonemeTiming(unit, covered, alignments)) continue;
+          !supportsAlignedPhonemeTiming(unit, covered, alignments, &manifest)) continue;
       if (explicitOverride != nullptr && unit.id != explicitOverride->unitId) continue;
       if (explicitOverride != nullptr &&
           unit.phones.size() != explicitOverride->tokenCount) {
@@ -243,15 +253,15 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
     }
     const auto* unit = manifest.findUnit(overrideValue.unitId);
     const auto start = static_cast<std::size_t>(std::distance(tokens.begin(), token));
-    if (unit && phonesMatch(*unit, tokens, start) && !supportsExplicitPhonemeTiming(tokens.subspan(start, unit->phones.size())) &&
-        !supportsAlignedPhonemeTiming(*unit, tokens.subspan(start, unit->phones.size()), alignments)) {
+    if (unit && phonesMatch(manifest, *unit, tokens, start) && !supportsExplicitPhonemeTiming(tokens.subspan(start, unit->phones.size())) &&
+        !supportsAlignedPhonemeTiming(*unit, tokens.subspan(start, unit->phones.size()), alignments, &manifest)) {
       return core::failure<UnitPlan>(core::ErrorCode::Conflict,
           "Forced unit cannot represent an interior phoneme timing edit; select smaller units",
           overrideValue.startKey.toString() + " -> " + overrideValue.unitId);
     }
     if (unit == nullptr || !unit->enabled || unit->style != style ||
         unit->phones.size() != overrideValue.tokenCount ||
-        !phonesMatch(*unit, tokens, start)) {
+        !phonesMatch(manifest, *unit, tokens, start)) {
       return core::failure<UnitPlan>(
           core::ErrorCode::Conflict,
           "Explicit unit selection no longer matches the phoneme sequence",
@@ -259,7 +269,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
     }
     const auto covered = tokens.subspan(start, unit->phones.size());
     if (requireNucleusAlignment && hasMultipleNuclei(covered) &&
-        !supportsAlignedPhonemeTiming(*unit, covered, alignments)) {
+        !supportsAlignedPhonemeTiming(*unit, covered, alignments, &manifest)) {
       return core::failure<UnitPlan>(core::ErrorCode::Conflict,
           "Forced multi-nucleus unit requires source alignment; author landmarks or select smaller units", unit->id);
     }
@@ -393,7 +403,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
           const auto spent = budget.spend(SelectionWork::Matching, 1U + unit.phones.size(), context.stop);
           if (!spent) return core::Result<UnitPlan>{spent.error()};
           if (!unit.enabled || unit.style != style || unit.id == candidate.unitId ||
-              !phonesMatch(unit, tokens, candidate.tokenStart) ||
+              !phonesMatch(manifest, unit, tokens, candidate.tokenStart) ||
               unit.phones.size() != candidate.tokenCount) {
             continue;
           }

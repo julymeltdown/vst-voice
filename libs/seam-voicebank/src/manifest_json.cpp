@@ -122,9 +122,9 @@ JsonValue encodeManifest(const Manifest& manifest) {
         {"pitchMarks", JsonValue{std::move(pitchMarks)}},
     });
   }
-  return JsonValue{Object{
+  Object object{
       {"formatId", JsonValue{"com.project-seam.voicebank"}},
-      {"schemaVersion", JsonValue{static_cast<std::int64_t>(Manifest::kSchemaVersion)}},
+      {"schemaVersion", JsonValue{static_cast<std::int64_t>(manifest.languageContract ? Manifest::kEnglishContractSchemaVersion : Manifest::kSchemaVersion)}},
       {"id", JsonValue{manifest.id}},
       {"version", JsonValue{manifest.version}},
       {"displayName", JsonValue{manifest.displayName}},
@@ -134,7 +134,12 @@ JsonValue encodeManifest(const Manifest& manifest) {
       {"expectedSampleRate", JsonValue{static_cast<std::int64_t>(manifest.expectedSampleRate)}},
       {"styles", JsonValue{std::move(styles)}},
       {"units", JsonValue{std::move(units)}},
-  }};
+  };
+  if (manifest.languageContract) object.emplace("languageContract", Object{
+      {"vocabularyId", manifest.languageContract->vocabularyId},
+      {"vocabularySha256", manifest.languageContract->vocabularySha256},
+      {"stressPolicy", manifest.languageContract->stressPolicy}});
+  return JsonValue{std::move(object)};
 }
 
 core::Result<std::int64_t> integerField(const JsonValue& object,
@@ -233,7 +238,7 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
                                    "Unsupported voicebank manifest format");
   }
   const auto schemaVersion = schema->asInt64();
-  if (schemaVersion < 1 || schemaVersion > Manifest::kSchemaVersion) {
+  if (schemaVersion < 1 || schemaVersion > Manifest::kEnglishContractSchemaVersion) {
     return core::failure<Manifest>(core::ErrorCode::Unsupported,
                                    "Unsupported voicebank manifest schema");
   }
@@ -257,6 +262,24 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
     manifest.characterVersion = characterVersion->asString();
   }
   manifest.language = parseLanguage(language->asString());
+  const auto* contract = root.find("languageContract");
+  if ((schemaVersion == Manifest::kEnglishContractSchemaVersion) != (contract != nullptr))
+    return core::failure<Manifest>(core::ErrorCode::ParseError,
+        "English bank languageContract requires schema 4 and cannot be silently discarded");
+  if (contract) {
+    if (!contract->isObject())
+      return core::failure<Manifest>(core::ErrorCode::ParseError, "English bank languageContract must be an object");
+    const auto* vocabularyId = contract->find("vocabularyId");
+    const auto* vocabularySha256 = contract->find("vocabularySha256");
+    const auto* stressPolicy = contract->find("stressPolicy");
+    if (contract->asObject().size() != 3U ||
+        vocabularyId == nullptr || !vocabularyId->isString() ||
+        vocabularySha256 == nullptr || !vocabularySha256->isString() ||
+        stressPolicy == nullptr || !stressPolicy->isString())
+      return core::failure<Manifest>(core::ErrorCode::ParseError, "English bank languageContract fields are invalid");
+    manifest.languageContract = Manifest::EnglishPhoneContract{
+        vocabularyId->asString(), vocabularySha256->asString(), stressPolicy->asString()};
+  }
   manifest.expectedSampleRate = static_cast<std::uint32_t>(sampleRateValue);
   std::vector<std::string> parsedStyles;
   parsedStyles.reserve(styles->asArray().size());

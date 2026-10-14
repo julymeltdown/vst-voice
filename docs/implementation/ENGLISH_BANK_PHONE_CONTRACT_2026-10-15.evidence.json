@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-bank-phone-contract",
+  "sourceBaseCommit": "4fd8ab423bbbaef7b5706ef8d2eae2802de71ba1",
+  "manifest": {
+    "path": "out/evidence/english-bank-contract-2026-10-15/manifest.json",
+    "sizeBytes": 11981,
+    "sha256": "bc481db44938f18484e67754f3fdd06a7a3af197a2131545ff427f2f591a6458"
+  },
+  "retainedArtifacts": 62,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS",
+    "sourceTree": "52f997cd0ff60628e23b39f0be15869a3a73fd12",
+    "log": {
+      "path": "out/evidence/english-bank-contract-2026-10-15/verification.log",
+      "sizeBytes": 194,
+      "sha256": "4e365025e60b5aba6c39441c21df821c1d601dd295a9a72e44aa6e9349983b66"
+    },
+    "scope": "Read-only retained hashes, immutable source bindings and receipts; verifier executed, no captured script or native replay."
+  },
+  "execution": {
+    "fullDependentReleaseRebuild": "PASS after test aggregate repair",
+    "initialFocusedCtest": "6 passing lanes; contextual lane failed on constant/DC fixture",
+    "repair": "Test-only periodic tone; raw renderer unchanged; full rebuild then affected lane passed",
+    "effectiveFocusedCtestLanes": 7,
+    "nativeCasesAcrossSixCtestLanes": 202,
+    "additionalEnglishCodecCases": 1,
+    "additionalLegacyVoicebankCases": 53,
+    "actualCli": "Old retained CLI refuses schema 4; current retained CLI validates same diagnostic bank with zero errors or warnings",
+    "changedCodeAndTestFilesBound": 11,
+    "testBinaryHashBindings": 8,
+    "retainedExecutables": 3,
+    "overwrittenFailedContextualExecutableRetained": false,
+    "allIntermediateBuildSourceVersionsRetained": false,
+    "hermeticOrAuthenticatedBuildProof": false,
+    "fullSuiteOrPhysicalAcceptance": false
+  },
+  "bank": {
+    "schema": 4,
+    "language": "en",
+    "explicitFrozenVocabularyAndStressPolicy": true,
+    "legacySchemasRemainExact": true,
+    "diagnosticAudio": "Generated 440 Hz periodic tone; fixture only",
+    "producerToManifestPropagation": "OPEN",
+    "sourceImport": false,
+    "sourceApproval": false,
+    "qualifiedProductionBank": false
+  },
+  "independentTechnicalReview": "PENDING",
+  "originalFemaleWavCensus": 1429,
+  "newOriginalFemaleWavs": 0,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "u45": "HELD",
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

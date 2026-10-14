@@ -77,6 +77,12 @@ struct Unit final {
 
 struct Manifest final {
   static constexpr std::int32_t kSchemaVersion = 3;
+  static constexpr std::int32_t kEnglishContractSchemaVersion = 4;
+
+  struct EnglishPhoneContract final {
+    std::string vocabularyId, vocabularySha256, stressPolicy;
+    friend bool operator==(const EnglishPhoneContract&, const EnglishPhoneContract&) = default;
+  };
 
   std::string id;
   std::string version;
@@ -87,6 +93,11 @@ struct Manifest final {
   std::uint32_t expectedSampleRate{48000};
   std::vector<std::string> styles{"original"};
   std::vector<Unit> units;
+  // Explicit English-only resource matching policy. Absent legacy declarations remain exact;
+  // folding never rewrites authored/resolved pronunciation or source-alignment landmarks.
+  std::optional<EnglishPhoneContract> languageContract;
+
+  [[nodiscard]] std::string_view matchedPhone(std::string_view resolvedPhone) const;
 
   [[nodiscard]] const Unit* findUnit(std::string_view unitId) const noexcept;
   [[nodiscard]] Unit* findUnit(std::string_view unitId) noexcept;

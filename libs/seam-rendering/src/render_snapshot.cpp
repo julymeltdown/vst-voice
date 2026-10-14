@@ -575,6 +575,12 @@ core::Result<std::string> buildIdentity(
   writer.tag(manifest.version);
   addEnum(writer, manifest.language);
   writer.integer(manifest.expectedSampleRate);
+  if (manifest.languageContract) {
+    writer.tag("seam.english-bank-language-contract.v1");
+    writer.tag(manifest.languageContract->vocabularyId);
+    writer.tag(manifest.languageContract->vocabularySha256);
+    writer.tag(manifest.languageContract->stressPolicy);
+  }
   addRenderOptions(writer, renderOptions);
   writer.integer(unitPlan.entries.size());
   for (std::size_t index = 0; index < unitPlan.entries.size(); ++index) {
@@ -1369,6 +1375,12 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   decision.integer(synthesis::kUnitSelectionRevision);
   decision.tag(style);
   decision.tag(blend ? blend->targetStyleId : std::string{});
+  if (voicebankValue.languageContract) {
+    decision.tag("seam.english-bank-language-contract.v1");
+    decision.tag(voicebankValue.languageContract->vocabularyId);
+    decision.tag(voicebankValue.languageContract->vocabularySha256);
+    decision.tag(voicebankValue.languageContract->stressPolicy);
+  }
   for (const auto* candidateUnit : orderedInventory) {
     const auto& unit = *candidateUnit;
     if (!unit.enabled || (unit.style != style && (!blend || unit.style != blend->targetStyleId)) ||
@@ -1380,7 +1392,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
       if (!spent) return core::Result<RenderSnapshot>{spent.error()};
       const auto covered = std::span<const domain::PhonemeToken>{phonemes.tokens}.subspan(start, unit.phones.size());
       if (std::equal(unit.phones.begin(), unit.phones.end(), covered.begin(),
-          [](const auto& phone, const auto& token) { return phone == token.symbol; })) {
+          [&voicebankValue](const auto& phone, const auto& token) { return phone == voicebankValue.matchedPhone(token.symbol); })) {
         matches = true;
         if (!synthesis::supportsExplicitPhonemeTiming(covered) || synthesis::hasMultipleNuclei(covered)) needsAlignment = true;
       }
