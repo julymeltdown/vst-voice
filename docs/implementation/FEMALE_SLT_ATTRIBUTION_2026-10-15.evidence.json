@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-slt-explicit-author-attribution",
+  "sourceBaseCommit": "ecee9147e3589611cce2df215a0e4e9a8fe341ca",
+  "manifest": {
+    "path": "out/evidence/female-slt-attribution-2026-10-15/manifest.json",
+    "sizeBytes": 61945,
+    "sha256": "e3eb4c2760e2613a41f1de39075f0d1f4c7100b2e14cd8ee118d86907b23e9ae"
+  },
+  "retainedArtifacts": 346,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS",
+    "immutableSourceTree": "84b4571e0ac51b072344cbfe73694802c0e800cf",
+    "log": {
+      "path": "out/evidence/female-slt-attribution-2026-10-15/verification.log",
+      "sizeBytes": 180,
+      "sha256": "6a8ed688658af6d198b3487ee0b607cfab4d0657f1d56c3a184c9869945bd042"
+    },
+    "scope": "Read-only retained hash/immutable-source/receipts, archive reference text, original license equality and unchanged WAV checks; verifier itself executed, no native or captured script execution."
+  },
+  "execution": {
+    "focusedCtestMethods": 32,
+    "actualDonorPreparationSeconds": 0.09428495899192058,
+    "unchangedWavBytes": 312,
+    "newNativeBuild": false,
+    "newNativeInspection": false,
+    "changedFilesPrePostBound": 3,
+    "inputsPrePostBound": 10,
+    "originalArchiveScriptsExecuted": false,
+    "hermeticBuildProof": false
+  },
+  "originalSourceReview": {
+    "commit": "2b9db5725aa6e1b5439d24e727bca26ccf3a7186",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13c8d-ad65-7d22-aff0-eab1cdb0b9f7",
+    "verdict": "APPROVE",
+    "scope": "Engineering/source-intake accuracy only",
+    "findings": 0,
+    "requiredChanges": 0,
+    "optionalNotes": [
+      "precise vocabulary/reviewer code citations",
+      "carry original author names with derived audio"
+    ],
+    "fullFinal": {
+      "path": "out/evidence/female-slt-attribution-2026-10-15/review-slt.md",
+      "sizeBytes": 15227,
+      "sha256": "225ece73b0c2c56db5c7994362667712757846c36e0488f6412d692cdc6f7cc2"
+    },
+    "grantsRightsOrBetaAcceptance": false
+  },
+  "thisAttributionImplementationReview": "PENDING",
+  "rightsAndBankAdmission": "NOT_APPROVED",
+  "newOriginalAudio": 0,
+  "originalFemaleWavCensus": 1429,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

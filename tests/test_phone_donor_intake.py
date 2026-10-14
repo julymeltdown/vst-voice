@@ -85,6 +85,21 @@ class PhoneDonorIntakeTests(unittest.TestCase):
         for path in (self.root / "one").iterdir():
             self.assertEqual(path.read_bytes(), (self.root / "two" / path.name).read_bytes())
 
+    def test_explicit_author_attribution_travels_with_license_and_modifications(self) -> None:
+        self.plan["license"]["attribution"] = "Fixture authors: Example One and Example Two — synthetic only."
+        self.save()
+        output=self.root/"attributed"
+        result=prepare(self.plan_path,output)
+        self.assertEqual("attribution.txt",result["retainedAttributionPath"])
+        notice=(output/result["retainedAttributionPath"]).read_text(encoding="utf-8")
+        self.assertIn(self.plan["license"]["attribution"],notice)
+        self.assertIn(self.plan["license"]["sourceUrl"],notice)
+        self.assertIn(result["changeNotice"],notice)
+        self.assertIn("does not establish performer rights",notice)
+        self.assertEqual(self.license.read_bytes(),(output/result["retainedLicensePath"]).read_bytes())
+        self.assertEqual("NOT_APPROVED",result["rightsClearance"])
+        self.assertEqual("NOT_APPROVED",result["bankAdmission"])
+
     def test_silent_pause_is_preserved_and_reported_without_acceptance(self) -> None:
         with wave.open(str(self.audio), "wb") as wav:
             wav.setnchannels(1)

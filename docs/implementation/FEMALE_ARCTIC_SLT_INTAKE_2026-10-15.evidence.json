@@ -113,10 +113,29 @@
     "humanListening": "NOT_RUN",
     "qualifiedBankCoverage": false,
     "AE1": "NOT_SATISFIED",
-    "independentTechnicalReview": "PENDING"
+    "independentTechnicalReview": "APPROVE exact 2b9db572, engineering/source-intake accuracy only; no findings or required changes"
   },
   "alphaRecordedPasses": 0,
   "alphaRequiredChecks": 20,
   "beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "independentReview": {
+    "commit": "2b9db5725aa6e1b5439d24e727bca26ccf3a7186",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13c8d-ad65-7d22-aff0-eab1cdb0b9f7",
+    "verdict": "APPROVE",
+    "scope": "Engineering/source-intake accuracy only",
+    "findings": 0,
+    "requiredChanges": 0,
+    "optionalNotes": [
+      "precise vocabulary/reviewer code citations",
+      "carry original author names with derived audio"
+    ],
+    "fullFinal": {
+      "path": "out/evidence/female-slt-attribution-2026-10-15/review-slt.md",
+      "sizeBytes": 15227,
+      "sha256": "225ece73b0c2c56db5c7994362667712757846c36e0488f6412d692cdc6f7cc2"
+    },
+    "grantsRightsOrBetaAcceptance": false
+  }
 }

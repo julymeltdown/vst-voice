@@ -72,7 +72,7 @@ coverage. The opaque middle label column is retained without treating it as a
 confidence or review score.
 
 SEAM's frozen vocabulary is `seam-en-arpabet-v1`, declared in
-`libs/seam-phonemizer/include/seam/phonemizer/english_resource.hpp:16` and listed
+`libs/seam-phonemizer/include/seam/phonemizer/english_resource.hpp:22` and listed
 in `libs/seam-phonemizer/src/english_resource.cpp:25`. It contains 93 symbols:
 24 consonants, 17 vowels with bare/0/1/2 stress forms, and pause. A static comparison
 against the exact held source finds one raw spelling mismatch: `jh`. The existing
@@ -94,7 +94,8 @@ finiteness and simple audibility. Passing it is not production QC. Draft creatio
 requires an explicitly registered producer at
 `apps/seam-voicebank-cli/sample_review_commands.cpp:154`; the review/publication
 commands require a registered independent reviewer and supplied decisions
-(`sample_review_commands.cpp:422`). This unit does not bypass those paths.
+(`libs/seam-voicebank-production/src/review_transition.cpp:161` and
+`libs/seam-voicebank-production/src/repository_candidate.cpp:369`). This unit does not bypass those paths.
 
 ## Next bank work
 
@@ -133,3 +134,8 @@ existing stash, `.github` and README Windows TODO are preserved.
 ### 2026-10-15 — unassigned English phone donor preparation
 
 The [phone donor unit](FEMALE_PHONE_DONOR_PREPARATION_2026-10-15.md) adds hash-bound automatic-label interval extraction with exact PCM preservation and unreviewed annotations. Registered CTest passes 31 methods (16 new/15 prior) after full Release build/current-target check. Four SLT originals yield 312 byte-deterministic proposals (159 single/153 adjacent pairs), all 312 native-reader checks pass; 36.9125 summed seconds represent 12.825 unique seconds, not new recordings or bank coverage. Raw `jh`, missing `axr`/stress, speech suitability and human/rights/actor holds remain. The next production gap is explicit English workspace inventory generation: native/Python paths still reject non-Japanese profiles. Independent implementation review pending; separate source-intake review active; exact a30f7969 APPROVE captured for separate integration. Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.
+
+
+### 2026-10-15 — Exact SLT intake review and explicit attribution follow-up
+
+Independent review APPROVED exact 2b9db572 for engineering/source-intake accuracy, with no findings or required changes. The complete verdict is retained in [the attribution follow-up](FEMALE_SLT_ATTRIBUTION_2026-10-15.md) and its evidence index. Its optional code-citation notes are corrected; fresh donor preparation carries Alan W Black and Kevin A. Lenzo’s names beside unchanged COPYING and modification notices. The new helper/packet passes 32 focused intake methods; all 312 donor WAV bytes and proposal rows match the prior root, which is preserved. This later implementation has no independent verdict yet; faf5 donor-code and ecee English-entry reviews are separate. No new original audio, source/performer rights, production actors, listening or bank approval. Census 1,429; Alpha 0/20, U45 held, Beta BLOCKED.

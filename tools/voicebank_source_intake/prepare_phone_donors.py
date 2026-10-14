@@ -163,6 +163,15 @@ def prepare(plan_path: Path, output: Path) -> dict:
     marker.write_text("Preparation has not completed. Do not import or approve this directory.\n")
     (output / "license-source.txt").write_bytes(license_bytes)
     (output / "intake-plan.json").write_bytes(raw_plan)
+    change_notice = "Source label spans copied into new mono PCM16 WAV containers. Ancillary chunks removed; " \
+                    "no resampling, normalization, pitch shift, phone alias or bank assignment."
+    # Keep the caller's explicit attribution beside the derived audio, including original author
+    # names where the source license requires them. These supplied words are not rights approval.
+    (output / "attribution.txt").write_text(
+        license_record["attribution"] + "\nSource license: " + license_record["sourceUrl"] +
+        "\nOriginal license text: license-source.txt\nModifications: " + change_notice +
+        "\nUnassigned and unapproved. Supplied attribution does not establish performer rights.\n",
+        encoding="utf-8")
     proposals = []
     for source, pcm, rate, labels, first, count in prepared:
         name = f"{source['id']}_l{first:05d}_n{count}.wav"
@@ -186,8 +195,7 @@ def prepare(plan_path: Path, output: Path) -> dict:
     result = {"schemaVersion": 1, "documentKind": "UnassignedPhoneDonorProposals", "status": "UNAPPROVED",
               "language": "en", "planSha256": digest(raw_plan), "labelContract": LABEL_CONTRACT,
               "license": license_record, "retainedLicensePath": "license-source.txt",
-              "changeNotice": "Source label spans copied into new mono PCM16 WAV containers. Ancillary chunks removed; "
-                              "no resampling, normalization, pitch shift, phone alias or bank assignment.",
+              "retainedAttributionPath": "attribution.txt", "changeNotice": change_notice,
               "producerRegistration": "NOT_REGISTERED", "performerRights": "NOT_ESTABLISHED",
               "rightsClearance": "NOT_APPROVED", "bankAdmission": "NOT_APPROVED", "proposals": proposals}
     (output / "donors.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")

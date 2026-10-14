@@ -125,3 +125,8 @@ preserved.
 ### Later English producer-entry implementation
 
 The Japanese-only entry gap above is addressed by [English producer workspace](ENGLISH_PRODUCER_WORKSPACE_2026-10-15.md): explicit English inventory/contract, native/Python parity and normal Studio/CLI creation/reopen. This does not import or approve these donor cuts; actual actors, source policy, downstream bank contract integration and singing coverage remain open.
+
+
+### 2026-10-15 — Exact SLT intake review and explicit attribution follow-up
+
+Independent review APPROVED exact 2b9db572 for engineering/source-intake accuracy, with no findings or required changes. The complete verdict is retained in [the attribution follow-up](FEMALE_SLT_ATTRIBUTION_2026-10-15.md) and its evidence index. Its optional code-citation notes are corrected; fresh donor preparation carries Alan W Black and Kevin A. Lenzo’s names beside unchanged COPYING and modification notices. The new helper/packet passes 32 focused intake methods; all 312 donor WAV bytes and proposal rows match the prior root, which is preserved. This later implementation has no independent verdict yet; faf5 donor-code and ecee English-entry reviews are separate. No new original audio, source/performer rights, production actors, listening or bank approval. Census 1,429; Alpha 0/20, U45 held, Beta BLOCKED.
