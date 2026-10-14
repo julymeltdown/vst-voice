@@ -160,7 +160,7 @@
   "standaloneAudioBlocks": "NOT_RUN",
   "windowsExecution": "NOT_RUN",
   "humanAcceptance": "NOT_RUN",
-  "closedNativeReplayReader": "NOT_IMPLEMENTED",
+  "closedNativeReplayReader": "LOCALLY_VERIFIED_ENGINEERING_ONLY_SEPARATE_UNIT",
   "qualification": "NOT_QUALIFIED",
   "alphaRecordedPasses": [
     0,
@@ -231,7 +231,21 @@
       "relativeCutAndBoundaryAssertions": "LOCALLY_VERIFIED",
       "failedProducerChangesAndReceiptChronology": "DOCUMENTED"
     },
-    "independentFollowupReview": "PENDING",
-    "authorizesRelease": false
-  }
+    "independentFollowupReview": "APPROVE",
+    "authorizesRelease": false,
+    "technicalReview": {
+      "status": "APPROVE",
+      "sourceCommit": "0b50d8bd4dcea23c621d2985801a49385e8e5097",
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "scope": "Previous test/document follow-up only; no approval of the new reader or release",
+      "verdict": {
+        "path": "out/evidence/installed-continuity-replay-2026-10-15/review-0b50d8bd.txt",
+        "sizeBytes": 8137,
+        "sha256": "16237383c7ed335b3f197cf211e9ec89eb04b93d558a813a53d00d371b1919fc"
+      },
+      "execution": "Read-only Git/hash/JSON/raw PCM/projection/Mach-O byte audit; no HTTP, writes, build, CTest, native or project/verifier execution"
+    }
+  },
+  "closedNativeReplayReaderAtOriginalUnit": "NOT_IMPLEMENTED",
+  "closedNativeReplayReaderDossier": "docs/implementation/INSTALLED_CONTINUITY_REPLAY_2026-10-15.md"
 }

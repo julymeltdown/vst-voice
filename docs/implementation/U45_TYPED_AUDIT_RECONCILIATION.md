@@ -281,3 +281,21 @@ This repairs a prerequisite for credible operation evidence. It does not add an
 operation record or prove asset bytes, signed installation, host behavior or human
 acceptance. The next observation must still connect the same captured admission
 and actual rendered artifacts; the existing U45 hold remains.
+
+
+### Installed procedural continuity replay prerequisite (2026-10-15)
+
+The [closed continuity reader](INSTALLED_CONTINUITY_REPLAY_2026-10-15.md) now
+requires zero raw differences and matching derived phone projections, reads the
+held retained outputs and observation, and compares every field with fresh
+caller-pinned native execution. Coordinated PCM and phone-projection forgeries
+with consistent artifact hashes are rejected by real replay. Full Release build
+and focused Python443/CLI27 checks passed. Nine mocked policy methods overlap
+the Python total; six new native reader calls are inside an existing CLI case.
+The evidence index retains277 artifacts/20 bindings, immutable source captures,
+receipts, raw controls and the previous unit's independent APPROVE0b50d8bd.
+This reader's technical review is pending. It is an engineering prerequisite,
+not canonical report integration or historical-execution authentication.
+U45_RECONCILIATION_HOLD, UNRESOLVED tolerances, Alpha0of20 and BetaBLOCKED remain.
+Actual scheduler/cache/neighbor, host/platform and released-resource/human
+requirements still need their own evidence and reviewed semantic integration.

@@ -648,6 +648,78 @@ void checkInstalledOperationReplay(const formats::JsonValue& record,
   replay(forgedPath, forgedOutput, false, "differs from fresh native rendering");
   CHECK(treeDigest(output) == before);
 }
+
+void checkInstalledContinuityReplay(const formats::JsonValue& record,
+    const std::vector<std::string>& operation, const std::filesystem::path& root, bool controls) {
+  const auto output = std::filesystem::path{operation.back()};
+  const auto before = treeDigest(output);
+  const auto replay = [&](const std::filesystem::path& retained, bool passed, std::string_view diagnostic = "") {
+    const auto observation = retained / "observation.json";
+    const std::vector<std::string> args{"-B",
+        (std::filesystem::path{SEAM_TEST_SOURCE_DIR} / "scripts/verify_installed_continuity_record.py").string(),
+        "--record", observation.string(), "--record-sha256", core::sha256File(observation).value(),
+        "--project", operation[1], "--package", operation[6], "--installed-directory", operation[9],
+        "--continuity-directory", retained.string(), "--public-key", operation[10],
+        "--public-key-sha256", core::sha256File(operation[10]).value(),
+        "--voicebank-cli", SEAM_TEST_VOICEBANK_CLI, "--cli-sha256", nativeVerifierSha()};
+    const auto run = authoring::runBoundedHelperProcessObserved({.executable=SEAM_TEST_PYTHON,.arguments=args});
+    CHECK(run); const auto* exited = std::get_if<authoring::HelperExited>(&run.value().termination);
+    if (!exited || exited->code != (passed ? 0U : 3U) || !run.value().output.standardError.empty())
+      throw seam::test::Failure{"Continuity replay process: " + run.value().output.standardOutput + run.value().output.standardError};
+    const auto result = formats::parseJson(run.value().output.standardOutput); CHECK(result);
+    CHECK(result.value().find("passed")->asBool() == passed);
+    CHECK(!result.value().find("authorizesRelease")->asBool());
+    if (passed) {
+      CHECK(field(result.value(), "historicalExecution") == "NOT_AUTHENTICATED");
+      CHECK(field(result.value(), "observation") == "FRESH_NATIVE_CONTINUITY_MATCH");
+      CHECK(result.value().find("ignoredRecordFields")->asArray().empty());
+    } else CHECK(result.value().find("errors")->asArray().front().asString().find(diagnostic) != std::string::npos);
+  };
+  replay(output, true);
+  if (controls) {
+    const auto writeRecord = [](const auto& path, const auto& value) {
+      CHECK(core::durableAtomicWriteText(path / "observation.json", formats::stringifyJson(value, true) + "\n"));
+    };
+    const auto altered = copyTree(output, root / "continuity-replay-altered-metrics");
+    auto measurement = record; measurement.asObject()["restartedMaxAbsDifference"] = 0.01;
+    writeRecord(altered, measurement);
+    replay(altered, false, "requires zero raw differences");
+
+    const auto projected = copyTree(output, root / "continuity-replay-forged-projection");
+    auto partition = formats::parseJson(readText(projected / "partition.json")); CHECK(partition);
+    const auto changePhones = [](auto& markers) {
+      for (auto& marker : markers.asArray()) marker.asObject()["phone"] = "forged-phone";
+    };
+    changePhones(partition.value().asObject().at("wholeMarkers"));
+    for (auto& chunk : partition.value().asObject().at("chunkMarkers").asArray())
+      for (const std::string mode : {"restarted", "resumed"}) changePhones(chunk.asObject().at(mode));
+    for (auto& boundary : partition.value().asObject().at("boundaries").asArray())
+      changePhones(boundary.asObject().at("insidePlannedPhones"));
+    CHECK(core::durableAtomicWriteText(projected / "partition.json", formats::stringifyJson(partition.value(), true) + "\n"));
+    auto projectedRecord = record;
+    for (auto& artifact : projectedRecord.asObject().at("artifacts").asArray())
+      if (field(artifact, "path") == "partition.json") artifact.asObject()["sha256"] = core::sha256File(projected / "partition.json").value();
+    writeRecord(projected, projectedRecord);
+    // Whole, split and boundary claims agree with each other, but not the fresh native plan.
+    replay(projected, false, "differs from fresh native rendering");
+
+    const auto forged = copyTree(output, root / "continuity-replay-forged-pcm");
+    auto forgedRecord = record;
+    for (auto& artifact : forgedRecord.asObject().at("artifacts").asArray()) {
+      const auto name = field(artifact, "path");
+      if (name != "whole.wav" && name != "restarted-joined.wav" && name != "resumed-joined.wav" &&
+          name != "restarted-0.wav" && name != "resumed-0.wav") continue;
+      auto raw = core::readFileBytesLimited(forged / name, 8ULL << 20U); CHECK(raw); CHECK(raw.value().size() > 44U);
+      raw.value()[44] ^= std::byte{1};
+      CHECK(core::durableAtomicWrite(forged / name, raw.value()));
+      artifact.asObject()["sha256"] = core::sha256File(forged / name).value();
+    }
+    writeRecord(forged, forgedRecord);
+    // The whole, both joins and both first windows agree; every supplied artifact hash is updated.
+    replay(forged, false, "differs from fresh native rendering");
+  }
+  CHECK(treeDigest(output) == before);
+}
 #endif
 void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     const domain::Project& original, domain::RegionId regionId, const std::filesystem::path& root) {
@@ -730,6 +802,9 @@ void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     }
     CHECK(voicebank::readWav(output / "restarted-joined.wav").value().interleaved == whole.value().interleaved);
     CHECK(voicebank::readWav(output / "resumed-joined.wav").value().interleaved == whole.value().interleaved);
+#if defined(SEAM_TEST_PYTHON)
+    checkInstalledContinuityReplay(observed, args, root, mode == "vibrato");
+#endif
     const auto digest = treeDigest(output);
     cliRefusal(args, "Continuity output directory must be new"); CHECK(treeDigest(output) == digest);
     for (const std::string invalid : {"0", "-1", "1001x", "4294967296"}) {

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-continuity-replay",
+  "sourceCommit": "0b50d8bd4dcea23c621d2985801a49385e8e5097",
+  "testedSourceState": "Base commit plus four captured source files; generated header is base; authenticated clean build lineage NOT_CLAIMED",
+  "finalSource": [
+    {
+      "repositoryPath": "tools/external_beta/installed_continuity_record.py",
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/final-source/tools/external_beta/installed_continuity_record.py",
+      "sizeBytes": 19681,
+      "sha256": "7c6f2018986c6e9d988158ec38dd27f733e02d3d0cfafef94a0ca105ec61b249"
+    },
+    {
+      "repositoryPath": "scripts/verify_installed_continuity_record.py",
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/final-source/scripts/verify_installed_continuity_record.py",
+      "sizeBytes": 1479,
+      "sha256": "a6f2637f8f31825f02ab4569edf5f5713ccc6f6ce09c4f1dd43829d0113b2414"
+    },
+    {
+      "repositoryPath": "tests/external_beta/test_installed_continuity_record.py",
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/final-source/tests/external_beta/test_installed_continuity_record.py",
+      "sizeBytes": 14129,
+      "sha256": "82a1b42fdd08d6457ea0b4ea333dd99b2f8aeafcb1eecf2d369825852f19f97b"
+    },
+    {
+      "repositoryPath": "tests/test_sample_review_cli.cpp",
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/final-source/tests/test_sample_review_cli.cpp",
+      "sizeBytes": 155304,
+      "sha256": "14f06984b6c67e99135d1c6c8b4c17bdfbc9d38307d8f6e42f6b0bf5471c9e34"
+    }
+  ],
+  "manifest": {
+    "path": "out/evidence/installed-continuity-replay-2026-10-15/manifest.json",
+    "sizeBytes": 52386,
+    "sha256": "3b41fbbe3813884c9d36f71b8fe07aabf325d28ea15604dc68b536709e67ac34"
+  },
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/verification.log",
+      "sizeBytes": 203,
+      "sha256": "298fdccda3e5d56c287d6fbabe25f86fd2144eb31cd0a526fbddbec20925dc65"
+    },
+    "scope": "Read-only hash/raw-word/derived projection audit; no producer/project module execution",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-continuity-replay-2026-10-15/verify.py"
+    ]
+  },
+  "retainedArtifacts": 277,
+  "preservedBindings": 20,
+  "producer": {
+    "path": "out/evidence/installed-continuity-replay-2026-10-15/seam_voicebank_cli",
+    "sizeBytes": 9797712,
+    "sha256": "8569a778ec8fe6c9b4bb4a53f4dcdf31791ca84f9482376e38835e8158afc539"
+  },
+  "generatedBuildHeader": {
+    "path": "out/evidence/installed-continuity-replay-2026-10-15/build_info.hpp",
+    "sizeBytes": 985,
+    "sha256": "952f54ea068202ddccd79492934a514df705ecd03def89a3c83af2c997c3972f"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1791997262.138807,
+    "elapsedSeconds": 27.16242604199215,
+    "exitCode": 0
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^(seam_external_beta_python_contract_tests|seam_sample_review_cli_tests)$",
+      "--output-on-failure"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1791997300.359686,
+    "elapsedSeconds": 90.69552949999343,
+    "exitCode": 0
+  },
+  "focusedCases": {
+    "seam_external_beta_python_contract_tests": 443,
+    "seam_sample_review_cli_tests": 27
+  },
+  "newMockedPolicyMethods": 9,
+  "overlappingStandalonePolicyMethods": 9,
+  "nativeReaderInvocationsInsideExistingCase": 6,
+  "freshNativeExecutionsInsideReaderCase": 5,
+  "directNativeTrials": 3,
+  "directReaderTrials": 6,
+  "originalParentDevelopmentReplays": 3,
+  "ignoredRecordFields": [],
+  "historicalExecution": "NOT_AUTHENTICATED",
+  "evidenceScope": "ENGINEERING_ONLY",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "This reader unit only"
+  },
+  "previousUnitTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "0b50d8bd4dcea23c621d2985801a49385e8e5097",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Previous test/document follow-up only; no approval of the new reader or release",
+    "verdict": {
+      "path": "out/evidence/installed-continuity-replay-2026-10-15/review-0b50d8bd.txt",
+      "sizeBytes": 8137,
+      "sha256": "16237383c7ed335b3f197cf211e9ec89eb04b93d558a813a53d00d371b1919fc"
+    },
+    "execution": "Read-only Git/hash/JSON/raw PCM/projection/Mach-O byte audit; no HTTP, writes, build, CTest, native or project/verifier execution"
+  },
+  "canonicalIntegration": "NOT_PERFORMED",
+  "canonicalTolerance": "UNRESOLVED",
+  "qualification": "NOT_QUALIFIED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "fullSuite": "NOT_RUN",
+  "snapshotSuiteThisUnit": "NOT_RUN",
+  "acousticF0Measurement": "NOT_RUN",
+  "acousticPhaseMeasurement": "NOT_RUN",
+  "neighborInvalidation": "NOT_RUN",
+  "schedulerExecution": "NOT_RUN_NO_CACHE_USED",
+  "standaloneAudioBlocks": "NOT_RUN",
+  "windowsExecution": "NOT_RUN",
+  "humanAcceptance": "NOT_RUN",
+  "internetAssetsImported": false,
+  "privateKeysCopied": false,
+  "authorizesRelease": false
+}
