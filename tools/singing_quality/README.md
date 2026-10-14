@@ -206,3 +206,15 @@ a new source-bound JSON file and never overwrites existing files.
 This middle-third note-median check is an engineering diagnostic. It does not
 replace phonetic steady-span or listening acceptance. See the
 [48-note execution and known broader-suite failure](../../docs/implementation/INSTALLED_CLAP_SONG_PITCH_2026-10-15.md).
+
+
+## Bank source-pitch diagnostics
+
+`test_bank_root_pitch.py` checks every listed unit with the source-bound native
+v3 output, window-centre membership and the actual legacy/schema-3 loop span.
+Its bounds classify diagnostic fixtures; a median near the declared pitch does
+not approve a spoken recording as a singer. Required shipped bank removal fails;
+missing optional local copies cannot skip later required inputs. See the
+[span correction, measurements and remaining qualification boundary](../../docs/implementation/BANK_ROOT_DIAGNOSTIC_2026-10-15.md).
+The previous broader-suite failure is repaired: 189 methods with 19 explicit skips
+pass; skipped native/listener/import lanes do not become verified by that result.

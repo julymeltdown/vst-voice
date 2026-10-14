@@ -1,0 +1,30 @@
+{
+  "formatId": "com.project-seam.bank-root-diagnostic-evidence-index",
+  "schemaVersion": 1,
+  "status": "DIAGNOSTIC_REPAIRED_VERIFIED",
+  "sourceBaseCommit": "c111cbac5ba183dee822441d637a516836a52a2f",
+  "manifest": {
+    "path": "out/evidence/bank-root-diagnostic-2026-10-15/manifest.json",
+    "sizeBytes": 9191,
+    "sha256": "9d025b7d3079ea5ba24513c1d9000475c532f520edbd4f9ed5b6d9c995494c9a",
+    "artifactCount": 49,
+    "preservedInputCount": 14
+  },
+  "bankMethods": 12,
+  "qualitySuite": {
+    "ctestEntries": 1,
+    "methods": 189,
+    "skips": 19,
+    "executedMethods": 170,
+    "exitCode": 0,
+    "elapsedSeconds": 2.4529288329940755
+  },
+  "realUnitRows": 11,
+  "shippedUnitRows": 9,
+  "fixtureTolerancesChanged": false,
+  "nativeRebuildThisUnit": false,
+  "physicalF0GroundTruth": false,
+  "productionQualification": "NOT_QUALIFIED",
+  "independentReview": "PENDING_AFTER_LIVE_CCBB39D6_REVIEW",
+  "beta": "BLOCKED"
+}
