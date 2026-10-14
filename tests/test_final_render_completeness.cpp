@@ -337,6 +337,37 @@ TEST_CASE("unsupported sample Formant remains a hard failure in Preview Final an
 }
 
 #ifdef SEAM_COMPLETENESS_CLAP
+TEST_CASE("CLAP Final accepts renderer provenance on a complete source project") {
+  CompletenessFixture f;
+  CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
+  const std::vector<voicebank::VoicebankSearchRoot> roots{{f.root, voicebank::VoicebankRootKind::Development}};
+  const auto scanned = voicebank::VoicebankCatalog{}.scan(roots);
+  CHECK(scanned); CHECK(scanned.value().size() == 1U);
+  f.project.findVocalTrack(f.track)->voicebank.contentHash = scanned.value().front().contentHash;
+  // Compare the same sound with absent provenance and a saved-export stamp.
+  // Neither project is warmed through Preview before requesting Final.
+  for (const bool stamped : {false, true}) {
+    auto project = f.project;
+    if (stamped) {
+      project.settings().renderedRenderAbi = "seam-render-abi-4.1-r1";
+      project.settings().renderedCompilerRevision = 21U;
+    }
+    CHECK(project.validate());
+    clap_editor::EditorRuntime runtime{std::move(project), {}, roots};
+    const auto prepared = runtime.prepareOfflineRender(std::chrono::seconds{15});
+    if (!prepared) {
+      throw test::Failure{std::string(stamped ? "Provenance-stamped" : "Unstamped") +
+          " Final preparation failed: " + prepared.error().message};
+    }
+    CHECK(runtime.offlineRenderReady());
+    const auto audio = runtime.acquireOfflineRenderedPreview();
+    CHECK(audio); CHECK(audio->status == clap_editor::PreviewStatus::Ready);
+    CHECK(!audio->interleaved.empty());
+    CHECK(std::any_of(audio->interleaved.begin(), audio->interleaved.end(),
+                      [](float value) { return value != 0.0F; }));
+  }
+}
+
 TEST_CASE("CLAP keeps a partial Preview available but refuses incomplete offline audio") {
   CompletenessFixture f;
   f.addBacking("missing.wav");

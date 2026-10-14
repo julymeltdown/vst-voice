@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-clap-song-review-supplement",
+  "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+  "reviewedSourceCommit": "fe340737c0709a45f1d48cdfec8ec0089ea814ce",
+  "independentReview": {
+    "status": "APPROVE",
+    "verdict": {
+      "path": "out/evidence/installed-clap-song-review-2026-10-15/review-fe340737.txt",
+      "sizeBytes": 17208,
+      "sha256": "d59b8c5051028dba4d347e8e0f349b962ec6ee9577f5c5f5d00c885dfe521cd2"
+    },
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Exact fe340737 engineering unit; no code change required; P2 historical evidence lineage and P3 native regression findings, not Beta approval."
+  },
+  "manifest": {
+    "path": "out/evidence/installed-clap-song-review-2026-10-15/manifest.json",
+    "sizeBytes": 7949,
+    "sha256": "fbaf03c81b849bee46fbeebd0b4d86132eafebf65f67786fcd641eab0b628092"
+  },
+  "retainedArtifacts": 39,
+  "preservedBindings": 8,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/installed-clap-song-review-2026-10-15/verification.log",
+      "sizeBytes": 133,
+      "sha256": "a344b6a1edc707b68558249edf6fd3355ee53991cb902a63a2f733e5ed79328e"
+    },
+    "scope": "Read-only retained source/receipt/Git/PCM audit; no native executable or retained runtime script execution."
+  },
+  "runtimeSourceSha256": "f33adc8418048c7d992b655f1901508cf130f2699d81c591a0d64e585d599a99",
+  "historicalLineage": "UNAUTHENTICATED_SOURCE_WRITTEN_AFTER_ORIGINAL_BUILD_AND_TESTS",
+  "laterEvidence": "Source bytes match fe340737 and integrating HEAD. Full rebuild after controlled mutation restoration compiled runtime source. Final CTest receipt hashes sources and all relevant child binaries before and after; direct host receipt binds host/plugin/project. This is later evidence, not reconstructed historical execution or a hermetic/authenticated build.",
+  "mutationScope": "Former provenance-including encoding behavior applied to current source; not an execution of the entire historical ccbb39d6 build.",
+  "mutationHarnessError": "Initial wrapper searched stdout for the native failure written to stderr; expected native failure and source restoration were already complete. Original wrapper and receipts are retained; corrected read-only validator passes.",
+  "runs": {
+    "mutation-build": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/mutation-build.receipt.json",
+        "sizeBytes": 3429,
+        "sha256": "5d965b331fe7b87c737bc7f6353bbfffaa695e6f0a1c640c2e81b6117951c38d"
+      },
+      "exitCode": 0,
+      "durationSeconds": 5.589327667024918,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "mutation-regression": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/mutation-regression.receipt.json",
+        "sizeBytes": 4023,
+        "sha256": "207491926deacaf7e7e185b4c9dca897f0c3372354c512e35840e5f476fd2446"
+      },
+      "exitCode": 1,
+      "durationSeconds": 0.4329507499933243,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "mutation-check": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/mutation-check.receipt.json",
+        "sizeBytes": 4014,
+        "sha256": "743d010e30c3fb2cf0c5fce3b5b6578374c6c78fdb6cfbfcb1c256e851edb721"
+      },
+      "exitCode": 0,
+      "durationSeconds": 0.042520334012806416,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "full-build": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/full-build.receipt.json",
+        "sizeBytes": 3365,
+        "sha256": "b8e12dbf7bc849648c1995a68ffff34bc7e8e250390b5636b7d670be6e3444e5"
+      },
+      "exitCode": 0,
+      "durationSeconds": 22.635546500008786,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "focused-ctest": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/focused-ctest.receipt.json",
+        "sizeBytes": 3484,
+        "sha256": "877eb36ec08f3d24836af2326a6b445a390e67a2ef8588ea8c4b2c30d2d93e79"
+      },
+      "exitCode": 0,
+      "durationSeconds": 11.974893709004391,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "focused-bound-ctest": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/focused-bound-ctest.receipt.json",
+        "sizeBytes": 6964,
+        "sha256": "c13440b98ad80c7023dcff00d38a1ff62688daad85a382031ea18fd6232b95be"
+      },
+      "exitCode": 0,
+      "durationSeconds": 10.768167000001995,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": true,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    },
+    "direct-song": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-review-2026-10-15/direct-song.receipt.json",
+        "sizeBytes": 6165,
+        "sha256": "2b36d115433754d46c57f986baf0d269a3ca330c4d27e21601b46a6460ab787d"
+      },
+      "exitCode": 0,
+      "durationSeconds": 0.5670162909955252,
+      "sourceBaseCommit": "770dd92319497422a430922cb59a99d4814dd110",
+      "fullBeforeAfterBindingsRetained": true,
+      "explicitCTestChildBinaryBindings": false,
+      "scope": "Read full receipt in retained root; no reconstructed or authenticated historical execution."
+    }
+  },
+  "primaryFocusedCounts": {
+    "ctestEntries": 2,
+    "pythonHostMethods": 8,
+    "nativeCompletenessCases": 13,
+    "newNativeCases": 1,
+    "controlPreparationsInNewCase": 2,
+    "overlap": "Two CTest runs repeat the same cases; native fixture invocations inside Python are overlapping journey cases. Do not sum repetitions."
+  },
+  "directSong": {
+    "wavBytes": 16032044,
+    "wavSha256": "581d9404098f8965c9d961653f28051adb50d0650b76786c6401a5b2445ae9a9",
+    "sampleRate": 48000,
+    "channels": 2,
+    "frames48k": 2004000,
+    "peak": 0.10547714680433273,
+    "finite": true,
+    "noteWindowsAcrossTwoRates": 96,
+    "framesSummedAcrossTwoRates": 3845175
+  },
+  "rawWavIdenticalToOriginalFeEvidence": true,
+  "newUnitIndependentReview": "PENDING",
+  "nativeRegressionUses": "Local generated tone sample-bank fixture; not qualified source or listening evidence.",
+  "originalInstalledSongDependencies": "Historical absolute installation paths remain required; resource replay is not self-contained.",
+  "freshPackageSignatureVerification": false,
+  "physicalDeviceOrDAWAcceptance": false,
+  "humanAcceptance": false,
+  "releasedInternetBankAcceptance": false,
+  "releaseEligible": false,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED"
+}

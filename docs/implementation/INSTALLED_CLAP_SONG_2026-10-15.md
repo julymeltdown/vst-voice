@@ -47,7 +47,12 @@ Two separate problems prevented the loaded-plugin journey:
 
 ## Executed checks and retained audio
 
-The full untargeted Release rebuild after the library repair passed in 4.369s.
+The recorded full untargeted Release rebuild after the library repair passed in 4.369s.
+**Review correction:** the committed runtime source was written after this build
+and its CTest, so these historical logs do not bind the complete committed bytes
+to the tested plugin. The [later review supplement](INSTALLED_CLAP_SONG_REVIEW_2026-10-15.md)
+adds a source-bound rebuild, native provenance regression and direct song run;
+it does not authenticate historical execution.
 Eight focused CTest entries passed in 33.337s: five Python methods, 73 native
 cases (5/12/3/12/7/34), and the phase-12b executable. The latter is one program,
 not a newly counted native case. Native child calls in the Python methods
@@ -108,3 +113,13 @@ tolerance/integration, physical-device/DAW/Windows and release evidence remain.
 Alpha is **0/20 recorded passes**, Beta **BLOCKED**, U45 held, and the original
 goal **ACTIVE**. Canonical files, recordings, stash, `.github` and README's
 Windows TODO remain unchanged.
+
+
+## Independent review update
+
+**Review in English** approves exact `fe340737c0709a45f1d48cdfec8ec0089ea814ce`
+for engineering scope, with a P2 historical lineage finding and P3 native regression
+follow-up. The full 17,208-byte verdict is retained by the [review supplement](INSTALLED_CLAP_SONG_REVIEW_2026-10-15.md).
+No code change to the repair was required. Later supplementary evidence and its new
+native test need their own review; approval does not extend to later publication,
+pitch or host-admission units, rights/listening, canonical gates or Beta.
