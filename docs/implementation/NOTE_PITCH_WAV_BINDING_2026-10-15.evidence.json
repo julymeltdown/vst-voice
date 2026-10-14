@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "unit": "note-pitch-wav-binding",
+  "sourceBaseCommit": "06803bb56de422626b731b921113d9183ba4b3e6",
+  "manifest": {
+    "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/manifest.json",
+    "sizeBytes": 19364,
+    "sha256": "4fb0fd8224c676a5c8f8cf92fe1eab72ef054bac66cefb164838cb2f984c81eb"
+  },
+  "retainedArtifacts": 108,
+  "preservedBindings": 12,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/verification.log",
+      "sizeBytes": 492,
+      "sha256": "9d12ec48332e60765b2a25d7ceddb6399f03d311f811ce83cb0191cba0532755"
+    },
+    "scope": "Read-only held bytes/Git, source/mutations/receipts/input and native binary bindings, two-protocol report/mono derivation audit, archived roots and canonical state; no retained code execution."
+  },
+  "review": {
+    "reviewedCommit": "c111cbac5ba183dee822441d637a516836a52a2f",
+    "status": "APPROVE_EXACT_C111_ENGINEERING_ONLY",
+    "findings": 3,
+    "priorities": [
+      "P3",
+      "P3",
+      "P3"
+    ],
+    "requiredChanges": 0,
+    "verdict": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/review-c111cbac.txt",
+      "sizeBytes": 18179,
+      "sha256": "22c5398186dd3385742a86e7536bdc71a8ab1389a6844d478a009d7a6c137fea"
+    },
+    "newFollowUpStatus": "PENDING",
+    "extendsPriorApproval": false
+  },
+  "changes": {
+    "metadata": "Hash and parse same WAV bytes; native rate/channels/extent must match actual RIFF geometry. Mono protocol requires one channel and matching frameCount.",
+    "offsets": "Negative host offset refused; existing host-seconds/render-ticks models unchanged.",
+    "mockFixtures": "Scorer and three dependent bank mock tests use valid silent WAVs with mocked pitch features; no bank classification/tolerance changes.",
+    "receiptSeparation": "inputs/ and runs/ disjoint; bounded labels and exclusive new receipt creation."
+  },
+  "tests": {
+    "scorerMethods": 39,
+    "newMethods": 10,
+    "existingOffsetMethodsStrengthened": 2,
+    "baselineFailingAssertions": 16,
+    "baselineAffectedMethods": 7,
+    "malformedContainerSubcases": 10,
+    "wrongModelFailures": 2,
+    "weakControlPasses": 2,
+    "initialBroader": {
+      "methods": 199,
+      "failures": 1,
+      "errors": 2,
+      "skips": 19,
+      "reason": "Dependent bank fixtures were non-WAV identity bytes."
+    },
+    "finalBroader": {
+      "methods": 199,
+      "executed": 180,
+      "skips": 19,
+      "failures": 0,
+      "errors": 0,
+      "ctestEntries": 1
+    }
+  },
+  "execution": {
+    "baseline-tests": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/baseline-tests.json",
+        "sizeBytes": 3565,
+        "sha256": "6bb3183c9dd82e5eb8ad0a30735b7aa183864916db78ecf2bf0aeedc7ec7e613"
+      },
+      "elapsedSeconds": 0.26069833399378695,
+      "exitCode": 1
+    },
+    "channels-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/channels-refusal.json",
+        "sizeBytes": 8823,
+        "sha256": "b892c7e029246af59d9e739ce9be421cd79f38599efa98ff4f4e8e01ae49d00a"
+      },
+      "elapsedSeconds": 0.05826470800093375,
+      "exitCode": 2
+    },
+    "extent-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/extent-refusal.json",
+        "sizeBytes": 8822,
+        "sha256": "068813a3b859e194ccde3c1ce3cd57a13a1af89ccca42749b39c16b211c42769"
+      },
+      "elapsedSeconds": 0.060252334020333365,
+      "exitCode": 2
+    },
+    "follow-host-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/follow-host-refusal.json",
+        "sizeBytes": 8808,
+        "sha256": "c17ffa05a4d5313dd78e49cb401a9020a49e81ef17803ebadf93bae6f83fe323"
+      },
+      "elapsedSeconds": 0.062463542009936646,
+      "exitCode": 2
+    },
+    "host-wrong-strong": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/host-wrong-strong.json",
+        "sizeBytes": 3671,
+        "sha256": "1888d04cc44337455c9719975fb74a8c549db75ade1fba9ea6bc38f01295c693"
+      },
+      "elapsedSeconds": 0.08652895901468582,
+      "exitCode": 1
+    },
+    "host-wrong-weak": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/host-wrong-weak.json",
+        "sizeBytes": 3671,
+        "sha256": "00dd8a9adb4cd3bee6b4ad94ef22dff784a40fdcb88b7dacfe4686569d9828bd"
+      },
+      "elapsedSeconds": 0.07854950000182725,
+      "exitCode": 0
+    },
+    "master-score": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/master-score.json",
+        "sizeBytes": 7749,
+        "sha256": "e1b461a14443ee21a59ed9caee2d0cd3f9576245a3acdbfb83ba78e01db0c2b1"
+      },
+      "elapsedSeconds": 0.0855481670005247,
+      "exitCode": 0
+    },
+    "mono-extract": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/mono-extract.json",
+        "sizeBytes": 7374,
+        "sha256": "ffeb3cd22ada15e999d0c5038b52723df0e47379e4b4129d054e75b41892a1c3"
+      },
+      "elapsedSeconds": 0.9624881670169998,
+      "exitCode": 0
+    },
+    "mono-score": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/mono-score.json",
+        "sizeBytes": 8218,
+        "sha256": "b449dff656e22b8e0bd80ef65a84fe55f884615a703d968e02aa2983122fa455"
+      },
+      "elapsedSeconds": 1.0667925830057357,
+      "exitCode": 0
+    },
+    "negative-controls": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/negative-controls.json",
+        "sizeBytes": 8294,
+        "sha256": "a11edb8d90a19e8a26cb64728dcbbf098af8fc1ef41f718be126989c05e4be57"
+      },
+      "elapsedSeconds": 0.9354427499929443,
+      "exitCode": 0
+    },
+    "negative-host-offset-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/negative-host-offset-refusal.json",
+        "sizeBytes": 8812,
+        "sha256": "3dda5e71356255f0c0cf9b2612278af379b0d127077cee5d2aa16c93ca8760ee"
+      },
+      "elapsedSeconds": 0.06101787500665523,
+      "exitCode": 2
+    },
+    "offset-controls": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/offset-controls.json",
+        "sizeBytes": 3560,
+        "sha256": "5f1f0f22c724b9f2e7e6ef8976d7db1ba6a2016f8612201a3706c061a24c583f"
+      },
+      "elapsedSeconds": 0.6146715829963796,
+      "exitCode": 0
+    },
+    "quality-contract-repaired": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/quality-contract-repaired.json",
+        "sizeBytes": 8331,
+        "sha256": "b65406b4931ed25f42178ef8a9ec8ce6f009a7f79b371d96d34e86c23d307b6e"
+      },
+      "elapsedSeconds": 2.5926279579871334,
+      "exitCode": 0
+    },
+    "quality-contract": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/quality-contract.json",
+        "sizeBytes": 7362,
+        "sha256": "b70d0a4da1071efcaf56257f9accb082e2d1af3b065f2b1234055a1123066069"
+      },
+      "elapsedSeconds": 3.043098416994326,
+      "exitCode": 8
+    },
+    "rate-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/rate-refusal.json",
+        "sizeBytes": 8819,
+        "sha256": "843bfdc447a8366d5a30e382e4c139430d5b5aeb87dcb802d8645e75aa44852e"
+      },
+      "elapsedSeconds": 0.058672457991633564,
+      "exitCode": 2
+    },
+    "render-wrong-strong": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/render-wrong-strong.json",
+        "sizeBytes": 3652,
+        "sha256": "2129d6f271bbdb13040b919160f6b7ef13b01312c772f788ef376cb5ebcb837b"
+      },
+      "elapsedSeconds": 0.07983349999994971,
+      "exitCode": 1
+    },
+    "render-wrong-weak": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/render-wrong-weak.json",
+        "sizeBytes": 3652,
+        "sha256": "753aaabfb2626361b07f07557ab2358f73953d62f3fef071209fa14d94365b56"
+      },
+      "elapsedSeconds": 0.08222537499386817,
+      "exitCode": 0
+    },
+    "repaired-tests": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/repaired-tests.json",
+        "sizeBytes": 3563,
+        "sha256": "6f410d48ad30e057f26ea97d81e71f69f3e077399adae31baf9fba13074debb0"
+      },
+      "elapsedSeconds": 0.2346171669778414,
+      "exitCode": 0
+    },
+    "source-hash-refusal": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/source-hash-refusal.json",
+        "sizeBytes": 8822,
+        "sha256": "d675f404a45d80eced0351cd2e0b17dd1f1cdc55d3917a7d1d72d2257710c699"
+      },
+      "elapsedSeconds": 0.06036729100742377,
+      "exitCode": 2
+    },
+    "wrong-render-offset": {
+      "receipt": {
+        "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/runs/wrong-render-offset.json",
+        "sizeBytes": 8964,
+        "sha256": "52cd4dae5ef5c524b375dff32ba12080d80a9fba9e0da958414978522752a942"
+      },
+      "elapsedSeconds": 0.07772600001771934,
+      "exitCode": 1
+    }
+  },
+  "actualSong": {
+    "masterReport": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/reports/master.json",
+      "sizeBytes": 28650,
+      "sha256": "65619369fd0163ff957ad4b2bcb70e270a9ad1585808f4bd7f979ee91c5ead1e"
+    },
+    "monoReport": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/reports/mono.json",
+      "sizeBytes": 28579,
+      "sha256": "be6136df307ee4954c51f02e93f6fefe6eb817de9b3728ed27e146f3cca1db58"
+    },
+    "notesPerReport": 48,
+    "selectedFramesPerReport": 2530,
+    "masterSource": "Copied original direct-v3 native analysis; no new stereo native analyze execution.",
+    "monoSource": "Exact original left-channel words, original L/R byte-identical; actual unchanged native FFT-v3 CLI extraction and actual stem route.",
+    "masterAnalysisFrames": 7821,
+    "monoAnalysisFrames": 7829,
+    "masterSummary": {
+      "noteCount": 48,
+      "measuredNoteCount": 48,
+      "passedNoteCount": 48,
+      "selectedFrameCount": 2530,
+      "medianAbsoluteFrameCents": 0.3091230823295145,
+      "framesWithin50Cents": 2530,
+      "maximumAbsoluteFrameCents": 2.6204765876699123,
+      "maximumAbsoluteNoteMedianCents": 0.6804533036967991
+    },
+    "monoSummary": {
+      "noteCount": 48,
+      "measuredNoteCount": 48,
+      "passedNoteCount": 48,
+      "selectedFrameCount": 2530,
+      "medianAbsoluteFrameCents": 0.3091230823221157,
+      "framesWithin50Cents": 2530,
+      "maximumAbsoluteFrameCents": 2.6204765876699123,
+      "maximumAbsoluteNoteMedianCents": 0.6804533036994891
+    },
+    "refusals": 6,
+    "wrongOffsetMeasuredNotes": 47,
+    "wrongOffsetPassedNotes": 6,
+    "countsNotAdditive": true
+  },
+  "retention": {
+    "archivedPitchArtifacts": 71,
+    "archivedBankArtifacts": 49,
+    "historicalSourceHashNegativeInput": "LOST_OVERWRITTEN_BY_ITS_RECEIPT",
+    "freshNegativeInputsRetained": 6,
+    "historicalVerifier": "Unconditional live bank-test comparison is superseded by immutable historical Git audit; old root unchanged."
+  },
+  "nativeRebuilt": false,
+  "authenticatedExecution": false,
+  "downloadsThisUnit": 0,
+  "alphaRecordedPasses": 0,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

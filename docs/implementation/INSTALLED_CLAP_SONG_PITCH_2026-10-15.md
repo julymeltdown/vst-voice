@@ -73,13 +73,15 @@ recorded in `setup-errors.txt`; inventory corrected the path before freezing.
 `out/evidence/installed-clap-song-pitch-2026-10-15/manifest.json` binds **71 artifacts / eight preserved inputs**,
 12722 bytes, SHA-256 `b37eea0671dfa79922af47aed095efc281fe863859bedbc990827ba407f25aee`. Parent/final source, native
 binary/header/source observations, original/final tests, native analysis, reports,
-negative inputs and all command receipts/stdout/stderr are retained. The read-only
+the FollowHost negative project and all command receipts/stdout/stderr are retained.
+The source-hash negative analysis was overwritten by its own receipt at
+`mismatched-analysis.json`; that modified historical input is not retained. The read-only
 verifier recomputes this fixed song's note/frame error statistics and checks input,
 source, receipt and canonical status hashes; it does not rerun native code or provide
 independent F0 ground truth. Replay needs the prior retained song/project paths.
 
 ```sh
-python3 -B out/evidence/installed-clap-song-pitch-2026-10-15/verify.py --source-commit HEAD
+python3 -B out/evidence/installed-clap-song-pitch-review-2026-10-15/verify.py --source-commit '<exact-follow-up-source-commit>'
 ```
 
 The source refresh verifier again checks 297 distinct unchanged internet WAVs:
@@ -99,3 +101,20 @@ Resolve the demo-bank classification next, then retain any peer findings before
 claiming reviewed integration. Full classical/neural/resource/target/DAW/release
 requirements and unresolved tolerance/semantic integration remain. Alpha is 0/20
 recorded passes, Beta BLOCKED, U45 held and the full goal ACTIVE.
+
+## Later independent review and local follow-up
+
+Exact **c111cbac APPROVE**, engineering only, is now retained in the
+[WAV-binding follow-up](NOTE_PITCH_WAV_BINDING_2026-10-15.md), with three P3 findings
+and no required changes. This earlier section describes historical execution and
+pending review at that time. The later unit addresses WAV/header metadata agreement,
+weak offset-test discrimination and fresh negative-input retention locally; its own
+review is pending. It also migrates three dependent mock fixtures without changing
+bank diagnostics, and the later broader run passes199 methods with19 skips.
+
+The original frozen verifier's unconditional working-tree equality for the parent
+bank test became stale after d9860c7e, even with `--source-commit`. The replacement
+read-only audit uses exact historical Git blobs, rehashes all71 original artifacts,
+recomputes later stereo/mono reports and preserves the lost-input disclosure. It does
+not execute the old verifier or recreate a missing historical analysis. Original
+source/analysis/report bytes and the contemporaneous broader failure remain unchanged.

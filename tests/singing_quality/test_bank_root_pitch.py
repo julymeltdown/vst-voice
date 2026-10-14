@@ -245,10 +245,15 @@ class BankRootPitchTest(unittest.TestCase):
                         + format(spread, ".2f"))
 
     def run_mocked_features(self, transform, start=2048, end=3072):
-        # Source/protocol mechanics only; these bytes are not a native WAV.
+        # Source/protocol mechanics only. Silent WAV geometry is real, but the
+        # declared pitch frames are mocked and are not native measurements.
         with tempfile.TemporaryDirectory() as temporary:
             wav = Path(temporary) / 'mock.wav'
-            wav.write_bytes(b'mocked source identity, not native audio')
+            samples = b'\0' * (8192 * 2)
+            header = b'RIFF' + struct.pack('<I', 36 + len(samples)) + b'WAVEfmt '
+            header += struct.pack('<IHHIIHH', 16, 1, 1, 48000, 96000, 2, 16)
+            header += b'data' + struct.pack('<I', len(samples))
+            wav.write_bytes(header + samples)
             features = {'formatId': 'com.project-seam.training-pitch-features', 'schemaVersion': 1,
                         'sourceSha256': hashlib.sha256(wav.read_bytes()).hexdigest(),
                         'sampleRate': 48000, 'frameCount': 8192, 'windowFrames': 2048, 'hopSize': 256,

@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import struct
 import tempfile
 from unittest.mock import patch
 
@@ -19,6 +20,26 @@ from tools.singing_quality.score_rendered_notes import (
 
 def _project(ppq=960, bpm=120.0):
     return {"ppq": ppq, "tempoMap": [{"tick": 0, "bpm": bpm}]}
+
+
+def _chunk(name, payload):
+    return name + struct.pack("<I", len(payload)) + payload + b"\0" * (len(payload) % 2)
+
+
+def _riff(body):
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def _mock_wav(rate, extent, channels, encoding=1, bits=16, extensible=False):
+    # Valid silent PCM geometry; pitch frames are mocked independently. This is
+    # not evidence that a native estimator measured the declared mocked pitches.
+    alignment = channels * (bits // 8)
+    fmt = struct.pack("<HHIIHH", 0xfffe if extensible else encoding, channels,
+                      rate, rate * alignment, alignment, bits)
+    if extensible:
+        fmt += struct.pack("<HHI", 22, bits, 0)
+        fmt += struct.pack("<IHH8s", encoding, 0, 0x10, b"\x80\0\0\xaa\0\x38\x9b\x71")
+    return _riff(b"WAVE" + _chunk(b"fmt ", fmt) + _chunk(b"data", b"\0" * (extent * alignment)))
 
 
 class ScoreRenderedNotesTests(unittest.TestCase):
@@ -82,14 +103,15 @@ class ScoreRenderedNotesTests(unittest.TestCase):
         self.assertEqual((440.0, 2), score_note(frames, 256, 0, 2048, window=2048))
 
     def run_project(self, project, pitch_at, rate=48000, extra=(), native=False,
-                    feature_change=None, report_alias=False):
+                    feature_change=None, report_alias=False, wav_change=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             wav = root / "track.wav"
-            wav.write_bytes(b"mocked feature source; not a native audio fixture")
+            extent = rate * 5
+            blob = _mock_wav(rate, extent, 2 if native else 1)
+            wav.write_bytes(wav_change(blob) if wav_change else blob)
             path = root / "project.seam"
             path.write_text(json.dumps(project))
-            extent = rate * 5
             features = {"formatId": "com.project-seam.training-pitch-features", "schemaVersion": 1,
                         "sourceSha256": hashlib.sha256(wav.read_bytes()).hexdigest(),
                         "sampleRate": rate, "frameCount": extent, "windowFrames": 2048,
@@ -183,13 +205,83 @@ class ScoreRenderedNotesTests(unittest.TestCase):
         project = self.simple_project()
         project["tempoMap"].append({"tick": 960, "bpm": 60})
         project["settings"]["hostStartOffsetTick"] = 1920
-        self.assertEqual(0, self.run_project(project, lambda second: 440.0 if second >= 1.5 else 220.0))
+        # Correct centres lie at 1.667..1.833 s; adding ticks before the tempo
+        # map instead puts their middle third at 1.833..2.167 s.
+        self.assertEqual(0, self.run_project(project, lambda second: 440.0 if 1.5 <= second < 1.84 else 220.0))
 
     def test_render_shift_occurs_before_tempo_projection(self):
         project = self.simple_project()
         project["tempoMap"].append({"tick": 960, "bpm": 60})
-        self.assertEqual(0, self.run_project(project, lambda second: 440.0 if second >= 1.5 else 220.0,
+        self.assertEqual(0, self.run_project(project, lambda second: 440.0 if second >= 1.84 else 220.0,
                                            extra=("--render-offset-ticks", "1920")))
+
+    def test_analysis_rate_must_match_the_hashed_wav_header(self):
+        self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0, native=True,
+                                           feature_change=lambda f: f.update(sampleRate=44100)))
+
+    def test_analysis_channels_must_match_the_hashed_wav_header(self):
+        self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0, native=True,
+                                           feature_change=lambda f: f.update(channels=1)))
+
+    @staticmethod
+    def extend_feature_grid(features):
+        key = "frames" if "frames" in features else "frameCount"
+        features[key] += 256
+        features["pitchFrames"].append({**features["pitchFrames"][-1],
+                                        "sourceFrame": features["pitchFrames"][-1]["sourceFrame"] + 256})
+
+    def test_analysis_extent_must_match_the_hashed_wav_header(self):
+        self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0, native=True,
+                                           feature_change=self.extend_feature_grid))
+
+    def test_mono_feature_extent_must_match_the_hashed_wav_header(self):
+        self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0,
+                                           feature_change=self.extend_feature_grid))
+
+    def test_mono_feature_protocol_cannot_describe_a_stereo_wav(self):
+        self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0,
+                                           wav_change=lambda _: _mock_wav(48000, 240000, 2)))
+
+    def test_negative_host_offset_is_refused_even_if_notes_still_have_positive_times(self):
+        project = self.simple_project()
+        project["vocalTracks"][0]["regions"][0]["startTick"] = 1920
+        project["settings"]["hostStartOffsetTick"] = -960
+        self.assertEqual(2, self.run_project(project, lambda second: 440.0))
+
+    def test_native_pcm_and_float_wav_geometry_is_supported(self):
+        for encoding, bits in [(1, 8), (1, 16), (1, 24), (1, 32), (3, 32)]:
+            with self.subTest(encoding=encoding, bits=bits):
+                self.assertEqual(0, self.run_project(self.simple_project(), lambda second: 440.0,
+                    native=True, rate=44100,
+                    wav_change=lambda _: _mock_wav(44100, 220500, 2, encoding, bits)))
+
+    def test_extensible_pcm_and_float_wav_geometry_is_supported(self):
+        for encoding, bits in [(1, 16), (3, 32)]:
+            with self.subTest(encoding=encoding, bits=bits):
+                self.assertEqual(0, self.run_project(self.simple_project(), lambda second: 440.0,
+                    native=True, wav_change=lambda _: _mock_wav(48000, 240000, 2, encoding, bits, True)))
+
+    def test_padded_unknown_wav_chunk_does_not_change_frame_count(self):
+        self.assertEqual(0, self.run_project(self.simple_project(), lambda second: 440.0, native=True,
+            wav_change=lambda raw: _riff(raw[8:36] + _chunk(b"JUNK", b"x") + raw[36:])))
+
+    def test_ambiguous_or_malformed_wav_geometry_is_refused_after_hash_rebinding(self):
+        changes = {
+            "non-wave": lambda raw: b"not a WAV",
+            "riff-size": lambda raw: raw[:4] + b"\0" * 4 + raw[8:],
+            "truncated-data": lambda raw: _riff(raw[8:-1]),
+            "duplicate-format": lambda raw: _riff(raw[8:] + _chunk(b"fmt ", raw[20:36])),
+            "duplicate-data": lambda raw: _riff(raw[8:] + _chunk(b"data", b"\0" * 4)),
+            "missing-padding": lambda raw: _riff(raw[8:] + b"JUNK\x01\0\0\0x"),
+            "byte-rate": lambda raw: raw[:28] + struct.pack("<I", 1) + raw[32:],
+            "alignment": lambda raw: raw[:32] + struct.pack("<H", 2) + raw[34:],
+            "unsupported-encoding": lambda raw: raw[:20] + struct.pack("<H", 7) + raw[22:],
+            "incomplete-frame": lambda raw: _riff(raw[8:36] + _chunk(b"data", raw[44:-1])),
+        }
+        for name, change in changes.items():
+            with self.subTest(name=name):
+                self.assertEqual(2, self.run_project(self.simple_project(), lambda second: 440.0,
+                                                     native=True, wav_change=change))
 
     def test_follow_host_document_tempo_is_refused(self):
         project = self.simple_project()

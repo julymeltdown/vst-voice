@@ -203,6 +203,12 @@ native metadata; `--render-offset-ticks` explicitly shifts regions before tempo
 projection. FollowHost requires its captured map and is refused. `--report` creates
 a new source-bound JSON file and never overwrites existing files.
 
+Metadata must agree with the same held WAV's RIFF rate, channels and frame extent;
+mono training features require an actual mono WAV. The hash and geometry check
+does not authenticate native F0 or execution. See the
+[WAV binding and discriminating offset controls](../../docs/implementation/NOTE_PITCH_WAV_BINDING_2026-10-15.md)
+for the later locally verified repair, real stereo/mono runs and archived-review limits.
+
 This middle-third note-median check is an engineering diagnostic. It does not
 replace phonetic steady-span or listening acceptance. See the
 [48-note execution and known broader-suite failure](../../docs/implementation/INSTALLED_CLAP_SONG_PITCH_2026-10-15.md).

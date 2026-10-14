@@ -26,6 +26,7 @@ import json
 import math
 import pathlib
 import statistics
+import struct
 import subprocess
 import sys
 
@@ -82,18 +83,63 @@ def extract_features(cli: pathlib.Path, wav: pathlib.Path) -> dict:
     return json.loads(result.stdout)
 
 
+def wav_geometry(raw: bytes) -> tuple[int, int, int]:
+    """Read uncompressed RIFF geometry without decoding or trusting analysis JSON."""
+    if len(raw) < 44 or raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+        raise ValueError("pitch source must be RIFF/WAVE")
+    if struct.unpack_from("<I", raw, 4)[0] + 8 != len(raw):
+        raise ValueError("WAV RIFF size does not match held bytes")
+    position, chunks = 12, {}
+    while position < len(raw):
+        if position + 8 > len(raw):
+            raise ValueError("truncated WAV chunk header")
+        name, size = struct.unpack_from("<4sI", raw, position)
+        start, end = position + 8, position + 8 + size
+        if end + size % 2 > len(raw):
+            raise ValueError("truncated WAV chunk or padding")
+        if name in (b"fmt ", b"data"):
+            if name in chunks:
+                raise ValueError("duplicate WAV format/data chunk")
+            chunks[name] = (start, size)
+        position = end + size % 2
+    if b"fmt " not in chunks or b"data" not in chunks or chunks[b"fmt "][1] < 16:
+        raise ValueError("WAV needs format and sample data")
+    start, size = chunks[b"fmt "]
+    fmt = raw[start:start + size]
+    encoding, channels, rate, byte_rate, alignment, bits = struct.unpack_from("<HHIIHH", fmt)
+    if encoding == 0xfffe:
+        if (len(fmt) < 40 or struct.unpack_from("<H", fmt, 16)[0] < 22
+                or len(fmt) < 18 + struct.unpack_from("<H", fmt, 16)[0]
+                or fmt[26:40] != b"\0\0\0\0\x10\0\x80\0\0\xaa\0\x38\x9b\x71"):
+            raise ValueError("unsupported or truncated extensible WAV format")
+        encoding = struct.unpack_from("<H", fmt, 24)[0]
+    if ((encoding == 1 and bits not in (8, 16, 24, 32))
+            or (encoding == 3 and bits != 32) or encoding not in (1, 3)):
+        raise ValueError("pitch source needs PCM8/16/24/32 or Float32 WAV")
+    if (not 1 <= channels <= 8 or not 8000 <= rate <= 384000
+            or alignment != channels * (bits // 8) or byte_rate != rate * alignment):
+        raise ValueError("invalid WAV rate/channels/block geometry")
+    data_size = chunks[b"data"][1]
+    if data_size == 0 or data_size % alignment:
+        raise ValueError("WAV needs nonempty complete audio frames")
+    return rate, channels, data_size // alignment
+
+
 def feature_metadata(features: dict, wav: pathlib.Path) -> dict:
     if not isinstance(features, dict):
         raise ValueError("native pitch features must be an object")
     integer(features["schemaVersion"], "schemaVersion", 1)
-    if features["sourceSha256"] != hashlib.sha256(wav.read_bytes()).hexdigest():
+    raw = wav.read_bytes()
+    if features["sourceSha256"] != hashlib.sha256(raw).hexdigest():
         raise ValueError(f"analysis source hash does not match {wav}")
+    wav_rate, wav_channels, wav_frames = wav_geometry(raw)
     rate = integer(features["sampleRate"], "sampleRate", 1)
     if (features["formatId"], features["schemaVersion"]) == ("com.project-seam.training-pitch-features", 1):
         meta = {"algorithm": features["algorithm"], "coverage": features["coverage"],
                 "windowFrames": features["windowFrames"], "hopFrames": features["hopSize"],
                 "minimumHz": features["minimumHz"], "maximumHz": features["maximumHz"]}
         extent = integer(features["frameCount"], "frameCount", 1)
+        meta["channels"] = 1  # Native extract-pitch admits only mono sources.
         expected = ("fft-autocorrelation-v3", "full-hop-zero-padded")
     elif (features["formatId"], features["schemaVersion"]) == ("com.project-seam.voicebank-analysis", 2):
         meta = dict(features["pitchAnalysis"])
@@ -102,6 +148,8 @@ def feature_metadata(features: dict, wav: pathlib.Path) -> dict:
         expected = ("direct-autocorrelation-v3", "CompleteWindows")
     else:
         raise ValueError("unsupported native pitch feature format/version")
+    if rate != wav_rate or meta["channels"] != wav_channels or extent != wav_frames:
+        raise ValueError("native analysis rate/channels/frame extent does not match the hashed WAV")
     if (meta["algorithm"], meta["coverage"]) != expected:
         raise ValueError("unsupported native pitch algorithm/coverage")
     window = integer(meta["windowFrames"], "windowFrames", 1)
@@ -152,7 +200,7 @@ def projected_notes(project: dict, track: dict, rate: int, render_offset: int) -
     settings = project.get("settings", {})
     if settings.get("bounceTimingAuthority", "fixed-audio") != "fixed-audio":
         raise ValueError("FollowHost requires a captured host timeline; document tempo is insufficient")
-    offset = seconds_at(integer(settings.get("hostStartOffsetTick", 0), "hostStartOffsetTick"), ppq, points)
+    offset = seconds_at(integer(settings.get("hostStartOffsetTick", 0), "hostStartOffsetTick", 0), ppq, points)
     notes = []
     for region_index, region in enumerate(track["regions"]):
         region_start = integer(region["startTick"], "region startTick", 0)

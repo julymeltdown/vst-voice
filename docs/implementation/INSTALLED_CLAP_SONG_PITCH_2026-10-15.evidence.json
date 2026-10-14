@@ -34,8 +34,34 @@
   },
   "nativeAnalyzerRebuiltThisUnit": false,
   "authenticatedExecution": false,
-  "independentReview": "PENDING_AFTER_LIVE_CCBB39D6_REVIEW",
+  "independentReview": "APPROVE_EXACT_C111CBAC_ENGINEERING_ONLY",
   "beta": "BLOCKED",
   "humanListening": "NOT_RUN",
-  "productionBankQualification": "NOT_QUALIFIED"
+  "productionBankQualification": "NOT_QUALIFIED",
+  "review": {
+    "sourceCommit": "c111cbac5ba183dee822441d637a516836a52a2f",
+    "findings": 3,
+    "requiredChanges": 0,
+    "verdict": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/review-c111cbac.txt",
+      "sizeBytes": 18179,
+      "sha256": "22c5398186dd3385742a86e7536bdc71a8ab1389a6844d478a009d7a6c137fea"
+    },
+    "extendsLaterApproval": false
+  },
+  "historicalNegativeInputRetention": {
+    "sourceHashAnalysis": "LOST_OVERWRITTEN_BY_ITS_RECEIPT",
+    "followHostProject": "RETAINED",
+    "originalInputs": "Original project/WAV/analysis bytes preserved."
+  },
+  "localFollowUp": {
+    "dossier": "docs/implementation/NOTE_PITCH_WAV_BINDING_2026-10-15.md",
+    "manifest": {
+      "path": "out/evidence/installed-clap-song-pitch-review-2026-10-15/manifest.json",
+      "sizeBytes": 19364,
+      "sha256": "4fb0fd8224c676a5c8f8cf92fe1eab72ef054bac66cefb164838cb2f984c81eb"
+    },
+    "status": "LOCALLY_VERIFIED_REVIEW_PENDING",
+    "historicalRootUnchanged": true
+  }
 }
