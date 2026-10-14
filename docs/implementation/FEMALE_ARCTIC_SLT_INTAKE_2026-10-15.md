@@ -128,3 +128,8 @@ source/rights acceptance, production import or Beta promotion is claimed. Alpha
 remains 0/20 recorded passes, U45 remains held, Beta remains BLOCKED and the full
 goal stays ACTIVE. Original sources, frozen prior evidence, canonical requirements,
 existing stash, `.github` and README Windows TODO are preserved.
+
+
+### 2026-10-15 — unassigned English phone donor preparation
+
+The [phone donor unit](FEMALE_PHONE_DONOR_PREPARATION_2026-10-15.md) adds hash-bound automatic-label interval extraction with exact PCM preservation and unreviewed annotations. Registered CTest passes 31 methods (16 new/15 prior) after full Release build/current-target check. Four SLT originals yield 312 byte-deterministic proposals (159 single/153 adjacent pairs), all 312 native-reader checks pass; 36.9125 summed seconds represent 12.825 unique seconds, not new recordings or bank coverage. Raw `jh`, missing `axr`/stress, speech suitability and human/rights/actor holds remain. The next production gap is explicit English workspace inventory generation: native/Python paths still reject non-Japanese profiles. Independent implementation review pending; separate source-intake review active; exact a30f7969 APPROVE captured for separate integration. Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.

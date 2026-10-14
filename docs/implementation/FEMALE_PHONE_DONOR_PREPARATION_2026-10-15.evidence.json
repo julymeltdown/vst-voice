@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-phone-donor-preparation",
+  "sourceBaseCommit": "2b9db5725aa6e1b5439d24e727bca26ccf3a7186",
+  "manifest": {
+    "path": "out/evidence/female-phone-donors-2026-10-15/manifest.json",
+    "sizeBytes": 116274,
+    "sha256": "438210139aa0eb9ba35688875c82b8b2c868b2117e67cf5e726acc435ac99f4c"
+  },
+  "retainedArtifacts": 667,
+  "preservedBindings": 14,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/female-phone-donors-2026-10-15/verification.log",
+      "sizeBytes": 257,
+      "sha256": "ff5f163f89081bffea27c19140f698002fbeb0d0b6b3dbe770d6c9116d64cb5d"
+    },
+    "replay": "python3 out/evidence/female-phone-donors-2026-10-15/verify.py --source-commit <exact-integrated-commit>",
+    "scope": "Read-only hashes, unchanged source copies, independently recomputed rational frame boundaries/PCM, repeats, receipts and canonical pins. Verifier/Git reads run; no captured runtime script/native binary executes."
+  },
+  "sourceCensus": {
+    "newDownloads": 0,
+    "existingOriginalFemaleWavs": 1429,
+    "copiedOriginalWavs": 4,
+    "newWavAcquisitionsFromDerivatives": 0
+  },
+  "output": {
+    "proposals": 312,
+    "singlePhoneSpans": 159,
+    "adjacentTwoPhoneSpans": 153,
+    "sourceIds": [
+      "arctic_a0090",
+      "arctic_a0136",
+      "arctic_a0219",
+      "arctic_a0239"
+    ],
+    "rawNonPausePhones": [
+      "aa",
+      "ae",
+      "ah",
+      "ao",
+      "aw",
+      "ax",
+      "ay",
+      "b",
+      "ch",
+      "d",
+      "dh",
+      "eh",
+      "er",
+      "ey",
+      "f",
+      "g",
+      "hh",
+      "ih",
+      "iy",
+      "jh",
+      "k",
+      "l",
+      "m",
+      "n",
+      "ng",
+      "ow",
+      "oy",
+      "p",
+      "r",
+      "s",
+      "sh",
+      "t",
+      "th",
+      "uh",
+      "uw",
+      "v",
+      "w",
+      "y",
+      "z",
+      "zh"
+    ],
+    "summedProposalSeconds": 36.9125,
+    "uniqueSelectedSourceSeconds": 12.825,
+    "minimumFrames": 300,
+    "maximumFrames": 8100,
+    "nativeReaderChecks": 312,
+    "nativeReaderNonSilent": 312,
+    "nativeClippedSamples": 0,
+    "nativeReaderElapsedSeconds": 1.9789271249901503,
+    "newSourceDownloads": 0,
+    "phoneticCoverageQualified": false,
+    "sourceType": "speech",
+    "unapproved": true
+  },
+  "runs": {
+    "full-build-current": {
+      "path": "out/evidence/female-phone-donors-2026-10-15/full-build-current.json",
+      "sizeBytes": 3120,
+      "sha256": "f95bd967975d8ffd5b4a202ccebb3c482bde826e703bbd6e2fed8c13305865ee"
+    },
+    "focused-tests": {
+      "path": "out/evidence/female-phone-donors-2026-10-15/focused-tests.json",
+      "sizeBytes": 3205,
+      "sha256": "d23ea19cc9920317360327eba5348c9c9fd9a026e797f4d25f2511ce41e27389"
+    },
+    "prepare-one": {
+      "path": "out/evidence/female-phone-donors-2026-10-15/prepare-one.json",
+      "sizeBytes": 3403,
+      "sha256": "f23a9b7d029204251f0048a8bd76ef08cd7710a832e2d228a816a53825d5c220"
+    },
+    "prepare-repeat": {
+      "path": "out/evidence/female-phone-donors-2026-10-15/prepare-repeat.json",
+      "sizeBytes": 3406,
+      "sha256": "de058f37b0fe13fac52d02fe20d912dcceb0ae2fe3beb106ec2717e330793059"
+    }
+  },
+  "nativeReader": {
+    "path": "out/evidence/female-phone-donors-2026-10-15/native-donor-inspections.json",
+    "sizeBytes": 363309,
+    "sha256": "50d1fe2f9564a275eda079259e6893c2b51ec623a0e22d3165b515849b7677d2"
+  },
+  "buildBoundary": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "toolStreamTruncated": true,
+    "elapsedSecondsClaimed": false,
+    "sourceBinaryPrePostCapture": false
+  },
+  "focusedTests": {
+    "methods": 31,
+    "newDonorMethods": 16,
+    "existingSustainMethods": 15,
+    "nativeOrHumanJourneysNotInferred": true
+  },
+  "productionGap": {
+    "englishWorkspaceInventory": "UNIMPLEMENTED (native and Python generators Japanese-only)",
+    "notClosedByThisUnit": true
+  },
+  "review": {
+    "independentTechnicalReview": "PENDING",
+    "separateSourceIntakeReview": "ACTIVE",
+    "separateScorerReviewedCommit": "a30f7969a71297e525baa40541e3536198f1803d",
+    "separateScorerVerdict": "APPROVE, no findings; captured, separate metadata integration pending"
+  },
+  "approval": {
+    "assignment": "NOT_ASSIGNED",
+    "phoneticPitchListeningReview": "NOT_REVIEWED",
+    "productionActors": "NOT_REGISTERED",
+    "sourceRightsPolicy": "PENDING",
+    "bankAdmission": "NOT_APPROVED",
+    "AE1": "NOT_SATISFIED"
+  },
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}
