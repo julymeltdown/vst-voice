@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "unit": "donor-and-english-exact-reviews",
+  "sourceBaseCommit": "d5ecc1f952844be2910ca5b1eedef20b60fbcc0a",
+  "manifest": {
+    "path": "out/evidence/phone-donor-review-2026-10-15/manifest.json",
+    "sizeBytes": 1892,
+    "sha256": "3d43c0213a0609d06b744f6aaea561f2f2673ab262d73833203c5e8b5a1b8e2f"
+  },
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/phone-donor-review-2026-10-15/verification.log",
+      "sizeBytes": 171,
+      "sha256": "258ed5622a68096a279c1cabc4f5bb3281bd2efe5620e34a041f5baf76e95a44"
+    },
+    "scope": "Lead read-only review-record/hash/Git checks only; no new native build/test/captured replay"
+  },
+  "retainedArtifacts": 4,
+  "preservedBindings": 6,
+  "reviews": [
+    {
+      "commit": "faf5f420f038ae81b3da7502bce9899ce480a79c",
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "turnId": "01a13c9b-e99e-70b0-a93e-1267ebd9f6f0",
+      "verdict": "APPROVE",
+      "findings": 1,
+      "requiredCodeChanges": 0,
+      "scope": "Engineering only; read-only reviewer calculations, no native/script/test/build execution",
+      "fullFinal": {
+        "path": "out/evidence/phone-donor-review-2026-10-15/review-faf5f420.md",
+        "sizeBytes": 14811,
+        "sha256": "72956253d75c53b0600e26c3aa8ac08cb1778535654b4ad0779dfcac98fd64f6"
+      }
+    },
+    {
+      "commit": "ecee9147e3589611cce2df215a0e4e9a8fe341ca",
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "turnId": "01a13cac-7f9e-7d71-9af1-45c91887e616",
+      "verdict": "APPROVE",
+      "findings": 0,
+      "requiredCodeChanges": 0,
+      "scope": "Engineering only; read-only reviewer calculations, no native/script/test/build execution",
+      "fullFinal": {
+        "path": "out/evidence/phone-donor-review-2026-10-15/review-ecee9147.md",
+        "sizeBytes": 15582,
+        "sha256": "65d038b40644f11f93db82c2ba39ae66f03aa2a8299aa8ad5be05d974ff121a0"
+      }
+    }
+  ],
+  "attributionP2": "OPEN pending exact 4fd8ab42 review",
+  "newSourceDownloads": 0,
+  "originalFemaleWavCensus": 1429,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

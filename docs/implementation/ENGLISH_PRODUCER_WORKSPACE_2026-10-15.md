@@ -140,3 +140,8 @@ Independent review of this exact implementation is pending.
 ### Later bank-core integration, 2026-10-15
 
 [The explicit English sample-bank contract](ENGLISH_BANK_PHONE_CONTRACT_2026-10-15.md) now reaches native manifest serialization, automatic/forced/aligned selection, actual rendering and cache identity under focused checks. This closes the bank-core portion of the previously listed downstream gap. The normal producer draft still does not propagate its inventory declaration into a generated sample manifest; that integration and production admission remain open. This later change has separate evidence and pending independent review.
+
+
+## 2026-10-15 — Exact donor and English producer review checkpoint
+
+[The exact review record](DONOR_AND_ENGLISH_REVIEW_2026-10-15.md) retains engineering APPROVE for faf5f420 (one P2 attribution-data finding, no required code changes) and ecee9147 (no findings or required changes). The old frozen donor packet inaccurately claims author retention and must not serve as an import/provenance packet. Fresh 4fd8ab42 output is awaiting exact independent review; P2 closure is pending. No new runtime, acquisition, musical/source admission or Beta acceptance. Original female census 1,429; Alpha 0/20, U45 held, Beta BLOCKED. Producer-to-manifest integration remains open.

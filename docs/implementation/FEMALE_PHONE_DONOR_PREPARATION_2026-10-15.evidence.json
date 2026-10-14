@@ -156,5 +156,21 @@
   "alphaRecordedPasses": 0,
   "alphaRequiredChecks": 20,
   "beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "currentExactReview": {
+    "commit": "faf5f420f038ae81b3da7502bce9899ce480a79c",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13c9b-e99e-70b0-a93e-1267ebd9f6f0",
+    "verdict": "APPROVE",
+    "findings": 1,
+    "requiredCodeChanges": 0,
+    "scope": "Engineering only; read-only reviewer calculations, no native/script/test/build execution",
+    "fullFinal": {
+      "path": "out/evidence/phone-donor-review-2026-10-15/review-faf5f420.md",
+      "sizeBytes": 14811,
+      "sha256": "72956253d75c53b0600e26c3aa8ac08cb1778535654b4ad0779dfcac98fd64f6"
+    }
+  },
+  "historicalAttributionClaim": "INACCURATE; frozen packet is not an import/provenance packet",
+  "attributionP2": "OPEN; fresh 4fd8ab42 output awaiting exact review"
 }

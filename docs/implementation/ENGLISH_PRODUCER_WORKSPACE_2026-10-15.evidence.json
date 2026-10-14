@@ -17,7 +17,8 @@
       "sizeBytes": 168,
       "sha256": "cbfb900d8027147d76c8bebec2e714f1c156ac99f13eed3733512cc417852145"
     },
-    "scope": "Read-only retained artifacts, immutable source-tree bindings, stable run receipts and empty English draft; verifier itself executed, no captured script or native replay."
+    "scope": "Read-only retained artifacts, immutable source-tree bindings, stable run receipts and empty English draft; verifier itself executed, no captured script or native replay.",
+    "exactReplay": "python3 out/evidence/english-producer-workspace-2026-10-15/verify.py --source-commit ecee9147e3589611cce2df215a0e4e9a8fe341ca"
   },
   "execution": {
     "fullReleaseBuild": "PASS after missing-header repair",
@@ -42,11 +43,25 @@
     "musicalOrHumanApproval": false,
     "nativeReopen": "covered by production_draft and Studio app tests"
   },
-  "independentTechnicalReview": "PENDING",
+  "independentTechnicalReview": "APPROVE",
   "sourceApproval": false,
   "qualifiedBank": false,
   "alphaRecordedPasses": 0,
   "alphaRequiredChecks": 20,
   "beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "currentExactReview": {
+    "commit": "ecee9147e3589611cce2df215a0e4e9a8fe341ca",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13cac-7f9e-7d71-9af1-45c91887e616",
+    "verdict": "APPROVE",
+    "findings": 0,
+    "requiredCodeChanges": 0,
+    "scope": "Engineering only; read-only reviewer calculations, no native/script/test/build execution",
+    "fullFinal": {
+      "path": "out/evidence/phone-donor-review-2026-10-15/review-ecee9147.md",
+      "sizeBytes": 15582,
+      "sha256": "65d038b40644f11f93db82c2ba39ae66f03aa2a8299aa8ad5be05d974ff121a0"
+    }
+  }
 }

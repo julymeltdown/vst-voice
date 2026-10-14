@@ -130,3 +130,8 @@ The Japanese-only entry gap above is addressed by [English producer workspace](E
 ### 2026-10-15 — Exact SLT intake review and explicit attribution follow-up
 
 Independent review APPROVED exact 2b9db572 for engineering/source-intake accuracy, with no findings or required changes. The complete verdict is retained in [the attribution follow-up](FEMALE_SLT_ATTRIBUTION_2026-10-15.md) and its evidence index. Its optional code-citation notes are corrected; fresh donor preparation carries Alan W Black and Kevin A. Lenzo’s names beside unchanged COPYING and modification notices. The new helper/packet passes 32 focused intake methods; all 312 donor WAV bytes and proposal rows match the prior root, which is preserved. This later implementation has no independent verdict yet; faf5 donor-code and ecee English-entry reviews are separate. No new original audio, source/performer rights, production actors, listening or bank approval. Census 1,429; Alpha 0/20, U45 held, Beta BLOCKED.
+
+
+## 2026-10-15 — Exact donor and English producer review checkpoint
+
+[The exact review record](DONOR_AND_ENGLISH_REVIEW_2026-10-15.md) retains engineering APPROVE for faf5f420 (one P2 attribution-data finding, no required code changes) and ecee9147 (no findings or required changes). The old frozen donor packet inaccurately claims author retention and must not serve as an import/provenance packet. Fresh 4fd8ab42 output is awaiting exact independent review; P2 closure is pending. No new runtime, acquisition, musical/source admission or Beta acceptance. Original female census 1,429; Alpha 0/20, U45 held, Beta BLOCKED. Producer-to-manifest integration remains open.
