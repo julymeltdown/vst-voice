@@ -649,6 +649,77 @@ void checkInstalledOperationReplay(const formats::JsonValue& record,
   CHECK(treeDigest(output) == before);
 }
 #endif
+void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
+    const domain::Project& original, domain::RegionId regionId, const std::filesystem::path& root) {
+  const auto installed = std::filesystem::path{bindingArguments[9]};
+  const auto before = treeDigest(installed);
+  for (const std::string mode : {"vibrato", "legato", "nasal"}) {
+    auto project = original; auto* region = project.findRegion(regionId); CHECK(region);
+    region->notes.front().vibrato.enabled = mode == "vibrato";
+    region->notes.front().vibrato.startFraction = 0.2F;
+    region->notes.front().vibrato.phaseTurns = 0.25F;
+    if (mode == "legato") {
+      region->notes.front().durationTick = time::Tick{480};
+      region->notes.front().articulation = domain::NoteArticulation::Legato;
+      application::ProjectFactory factory{1888888U};
+      auto [unusedLyric, second] = factory.makeNote(time::Tick{480}, time::Tick{480}, 67U, U"あ", domain::Language::Japanese);
+      (void)unusedLyric;
+      second.lyricTokenId = region->notes.front().lyricTokenId;
+      second.articulation = domain::NoteArticulation::Legato; second.vibrato.enabled = false;
+      region->notes.push_back(second);
+    } else if (mode == "nasal") region->lyrics.front().surface = U"な";
+    const auto path = root / ("continuity-" + mode + ".seam");
+    CHECK(formats::ProjectJsonCodec{}.save(project, path));
+    const auto output = root / ("continuity-" + mode);
+    auto args = bindingArguments; args[0] = "observe-installed-procedural-continuity";
+    args[1] = path.string(); args[2] = core::sha256File(path).value();
+    const auto secondNoteFrame = project.tempoMap().sampleFrameAt(region->startTick + time::Tick{480}, project.settings().sampleRate);
+    args.push_back(mode == "nasal" ? "1001" : mode == "legato" ? std::to_string(secondNoteFrame + 100) : "11003");
+    args.push_back(output.string());
+    const auto observed = cliSuccess(args);
+    CHECK(field(observed, "recordType") == "seam.u45.installed-procedural-continuity.v1");
+    CHECK(field(observed, "scope") == "SELECTED_PROCEDURAL_SNAPSHOT_API");
+    CHECK(observed.find("exactFloat32WordsEqual")->asBool());
+    CHECK(observed.find("restartedMergedMarkerProjectionMatches")->asBool());
+    CHECK(observed.find("resumedMergedMarkerProjectionMatches")->asBool());
+    CHECK(!observed.find("authorizesRelease")->asBool()); CHECK(!observed.find("releaseEligible")->asBool());
+    CHECK(field(observed, "acousticPhaseMeasurement") == "NOT_RUN");
+    CHECK(field(observed, "canonicalTolerance") == "UNRESOLVED");
+    const auto retained = formats::parseJson(readText(output / "observation.json")); CHECK(retained);
+    CHECK(retained.value() == observed);
+    for (const auto& artifact : observed.find("artifacts")->asArray())
+      CHECK(core::sha256File(output / field(artifact, "path")).value() == field(artifact, "sha256"));
+    const auto whole = voicebank::readWav(output / "whole.wav"); CHECK(whole); CHECK(whole.value().bitsPerSample == 32U);
+    CHECK(std::any_of(whole.value().interleaved.begin(), whole.value().interleaved.end(), [](float x) { return x != 0.0F; }));
+    for (const auto& chunk : observed.find("chunks")->asArray()) {
+      const auto index = chunk.find("index")->asInt64();
+      CHECK(field(chunk, "sharedCompiledContextSha256") == field(observed, "compiledContextSha256"));
+      CHECK(chunk.find("restartedDifferentFloat32Words")->asInt64() == 0);
+      CHECK(chunk.find("resumedDifferentFloat32Words")->asInt64() == 0);
+      for (const std::string source : {"restarted", "resumed"}) {
+        const auto pcm = voicebank::readWav(output / (source + "-" + std::to_string(index) + ".wav")); CHECK(pcm);
+        const auto start = chunk.find("startFrame")->asInt64() - observed.find("startFrame")->asInt64();
+        CHECK(pcm.value().frameCount() == static_cast<std::size_t>(chunk.find("endFrame")->asInt64() - chunk.find("startFrame")->asInt64()));
+        CHECK(std::equal(pcm.value().interleaved.begin(), pcm.value().interleaved.end(), whole.value().interleaved.begin() + start));
+      }
+    }
+    CHECK(voicebank::readWav(output / "restarted-joined.wav").value().interleaved == whole.value().interleaved);
+    CHECK(voicebank::readWav(output / "resumed-joined.wav").value().interleaved == whole.value().interleaved);
+    const auto digest = treeDigest(output);
+    cliRefusal(args, "Continuity output directory must be new"); CHECK(treeDigest(output) == digest);
+    for (const std::string invalid : {"0", "-1", "1001x", "4294967296"}) {
+      auto bad = args; bad[12] = (root / ("continuity-refused-" + mode + invalid)).string(); bad[11] = invalid;
+      cliRefusal(bad, "Continuity chunk frames must be a positive integer"); CHECK(!std::filesystem::exists(bad[12]));
+    }
+    auto shortOnly = args; shortOnly[11] = "1920000"; shortOnly[12] = (root / ("continuity-no-chunks-" + mode)).string();
+    cliRefusal(shortOnly, "at least two forced chunks"); CHECK(!std::filesystem::exists(shortOnly[12]));
+    auto tooMany = args; tooMany[11] = "1"; tooMany[12] = (root / ("continuity-too-many-chunks-" + mode)).string();
+    cliRefusal(tooMany, "more chunks than the configured budget"); CHECK(!std::filesystem::exists(tooMany[12]));
+    auto installationOutput = args; installationOutput[12] = (installed / "must-not-write-continuity").string();
+    cliRefusal(installationOutput, "must not modify the installation"); CHECK(!std::filesystem::exists(installationOutput[12]));
+  }
+  CHECK(treeDigest(installed) == before);
+}
 void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain::SingerResourceIdentity& resource,
     const std::filesystem::path& root, const std::filesystem::path& package,
     const std::filesystem::path& installed, const std::string& key) {
@@ -756,6 +827,7 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
     track->proceduralRecipe->resource=resource;
     track->proceduralRecipe->installation=expected;
     track->proceduralRecipe->path=(installed/expected.recipeEntry).string();restore();
+    checkProceduralContinuity(args, project, regionId, root);
     const auto frozen = rendering::captureProceduralSource(*track,
         rendering::TrackRecipeFileSource{trackId, *track->proceduralRecipe, root});
     CHECK(frozen);
@@ -1536,6 +1608,10 @@ TEST_CASE("Installed sample operation observes committed outputs without claimin
       field(published, "candidateSha256"), bankRoot.string(), keys.publicKey, output.string()};
   const auto before = treeDigest(bankRoot);
   const auto record = fixture.success(args);
+  auto continuity = args; continuity[0] = "observe-installed-procedural-continuity"; continuity.pop_back();
+  continuity.push_back("1001"); continuity.push_back((fixture.root / "unsupported-sample-continuity").string());
+  cliRefusal(continuity, "requires a verified installed recipe");
+  CHECK(!std::filesystem::exists(continuity.back()));
 #if defined(SEAM_TEST_PYTHON)
   checkInstalledOperationReplay(record, args, fixture.root);
 #endif

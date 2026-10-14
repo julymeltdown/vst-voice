@@ -16,6 +16,11 @@ reference-only statements below describe their dated increments. The separate
 [local operation replay](INSTALLED_OPERATION_REPLAY_2026-10-13.md) now compares
 installed sample/recipe observations and receipt semantics with fresh rendering
 through an externally pinned producer. Historical execution is not authenticated.
+The [installed procedural continuity observer](INSTALLED_PROCEDURAL_CONTINUITY_2026-10-15.md)
+now retains actual whole, restarted-owned-window and resumed-stream PCM with raw
+float-word differences and derived plan projections. It is a selected procedural
+snapshot API prerequisite, not host or release-case acceptance; classical crops
+and unavailable neural execution cannot substitute for stateful chunk evidence.
 Remaining continuity/measurement semantics, real authority and the canonical
 U45 hold stay open.
 

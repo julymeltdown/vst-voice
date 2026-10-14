@@ -1,5 +1,6 @@
 #include "candidate_package_commands.hpp"
 #include "project_binding_commands.hpp"
+#include "procedural_continuity_commands.hpp"
 #include "signal_cancellation.hpp"
 
 #include "seam/candidate_packaging/candidate_package.hpp"
@@ -11,6 +12,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <map>
 #include <set>
@@ -354,8 +356,8 @@ core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured
 }
 
 int verifyInstalledProjectBinding(int argc, char** argv,
-    std::optional<production::ResourceCandidateKind> exportKind = {}) {
-  if (argc != (exportKind ? 13 : 12)) { printCandidatePackageUsage(); return 1; }
+    std::optional<production::ResourceCandidateKind> exportKind = {}, bool continuity = false) {
+  if (argc != (continuity ? 14 : exportKind ? 13 : 12)) { printCandidatePackageUsage(); return 1; }
   SignalCancellation cancellation;
   if (!cancellation.install()) return fail({core::ErrorCode::IoError, "Cannot install verification cancellation handlers", {}});
   const auto options=trustedKey(argv[11]);
@@ -375,6 +377,17 @@ int verifyInstalledProjectBinding(int argc, char** argv,
     if (std::find(value.languages.begin(),value.languages.end(),language.asString())==value.languages.end())
       return fail({core::ErrorCode::Conflict,"Project language is absent from the signed resource declaration",{}});
   if (cancellation.token().stop_requested()) return fail({core::ErrorCode::Conflict,"Installed project binding cancelled",{}},&cancellation);
+  if (continuity) {
+    std::uint32_t frames = 0U; const std::string_view text{argv[12]};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), frames);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || frames == 0U)
+      return fail({core::ErrorCode::InvalidArgument, "Continuity chunk frames must be a positive integer", {}}, &cancellation);
+    const auto destination = absolute(argv[13]); if (!destination) return fail(destination.error(), &cancellation);
+    const auto result = observeInstalledProceduralContinuity(capture.value(), value, installedRecord(value),
+        installed.value(), destination.value(), frames, cancellation.token());
+    if (!result) return fail(result.error(), &cancellation);
+    print(result.value().asObject()); return 0;
+  }
   if (exportKind) {
     const auto destination = absolute(argv[12]);
     if (!destination) return fail(destination.error(), &cancellation);
@@ -458,6 +471,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
   if (argc >= 2 && std::string_view{argv[1]} == "verify-installed-project-binding") return verifyInstalledProjectBinding(argc,argv);
   if (argc < 2) return std::nullopt;
   const std::string_view command{argv[1]};
+  if (command == "observe-installed-procedural-continuity") return verifyInstalledProjectBinding(argc, argv, {}, true);
   if (command == "export-installed-recipe-project") return verifyInstalledProjectBinding(argc, argv, production::ResourceCandidateKind::Recipe);
   if (command == "export-installed-sample-project") return verifyInstalledProjectBinding(argc, argv, production::ResourceCandidateKind::Sample);
   if (command == "inspect-candidate") return inspectCandidate(argc, argv);
@@ -472,6 +486,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
 }
 
 void printCandidatePackageUsage() {
+  std::cerr << "  observe-installed-procedural-continuity PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALLED PUBLIC_KEY CHUNK_FRAMES NEW_OUTPUT_DIRECTORY\n";
   std::cerr << "  export-installed-sample-project PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALLED PUBLIC_KEY OUTPUT_DIRECTORY\n";
   std::cerr << "  export-installed-recipe-project PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALLED PUBLIC_KEY OUTPUT_DIRECTORY\n";
   std::cerr << "  verify-installed-project-binding PROJECT SHA TRACK REGION LANGUAGES PACKAGE PACKAGE_SHA CANDIDATE_SHA INSTALL_DIR KEY\n";

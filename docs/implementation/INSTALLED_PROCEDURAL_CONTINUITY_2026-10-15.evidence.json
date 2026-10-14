@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-procedural-continuity-observation",
+  "sourceCommit": "312997181e3af83ed690515e5ca3ffa6f6d682c3",
+  "testedSourceState": "BASE_PLUS_EXACT_CAPTURED_DIRTY_FILES_NOT_AUTHENTICATED_BUILD_LINEAGE",
+  "finalSource": [
+    {
+      "path": "CMakeLists.txt",
+      "sizeBytes": 202746,
+      "sha256": "7184ccbc7d64816db036a8d8c29c30f0409dd5d404bac3fb72e1465eb339570f"
+    },
+    {
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "sizeBytes": 33077,
+      "sha256": "e0becf29576aa50533cd8dacf2c2c636f00ef2f6b64e51c34131023ee7806094"
+    },
+    {
+      "path": "apps/seam-voicebank-cli/procedural_continuity_commands.cpp",
+      "sizeBytes": 25279,
+      "sha256": "17b06bd0ac3b7154c904418db9527ba2d642204ec1a2316512601cfa2f30a9ec"
+    },
+    {
+      "path": "apps/seam-voicebank-cli/procedural_continuity_commands.hpp",
+      "sizeBytes": 678,
+      "sha256": "e51f60c79d629b833dc0d998e7cff90516f882d32e84b3fef3393612005f4bdf"
+    },
+    {
+      "path": "tests/test_sample_review_cli.cpp",
+      "sizeBytes": 148549,
+      "sha256": "eb222a4ce9f5ac16a93614c544bae187f4aa608cdf6d3ddda73017f4f549b1e3"
+    }
+  ],
+  "manifest": {
+    "path": "out/evidence/installed-procedural-continuity-2026-10-15/manifest.json",
+    "sizeBytes": 38765,
+    "sha256": "dda60a8d7871380c7a6c09aad8911570e647b63f5872af1835f8f5ffe040633a"
+  },
+  "retainedArtifacts": 208,
+  "preservedBindings": 10,
+  "producer": {
+    "path": "out/evidence/installed-procedural-continuity-2026-10-15/seam_voicebank_cli",
+    "sizeBytes": 9797712,
+    "sha256": "ee20e5088069ba037d41be9491acb4e2142c0fd11bd5d1d2f69e96c5853e2067"
+  },
+  "generatedBuildHeader": {
+    "path": "out/evidence/installed-procedural-continuity-2026-10-15/generated-version.hpp",
+    "sizeBytes": 985,
+    "sha256": "0da71846e00d0f5ed33f1426b81bc27f360330dc37657c21ba81b53a4a3f7106"
+  },
+  "verification": {
+    "status": "PASS_RETAINED_BYTES_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-procedural-continuity-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/installed-procedural-continuity-2026-10-15/verification.log",
+      "sizeBytes": 1226,
+      "sha256": "9d2c10d19d6f510fc84c874ec43d44a32993f3d04a2deecd462675f108ff0471"
+    },
+    "historicalExecution": "NOT_AUTHENTICATED",
+    "optionalImmutableSourceComparison": "--source-commit IMPLEMENTATION_COMMIT"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "startedUnix": 1791993664.730687,
+    "durationSeconds": 15.189627885818481,
+    "exitCode": 0
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-V",
+      "-R",
+      "^(seam_sample_review_cli_tests|seam_performance_snapshot_tests)$"
+    ],
+    "startedUnix": 1791993679.979008,
+    "durationSeconds": 27.095129013061523,
+    "exitCode": 0
+  },
+  "focusedCases": {
+    "snapshot": 66,
+    "cli": 27,
+    "total": 93,
+    "observerTrialsEmbeddedInExistingCliCase": 3,
+    "separateNativeTrialCalls": 3
+  },
+  "trials": [
+    {
+      "mode": "vibrato",
+      "chunkFrames": 11003,
+      "chunks": 3,
+      "differentFloat32WordsBothPaths": 0,
+      "maxAbsDifferenceBothPaths": 0,
+      "mergedPhoneProjectionBothPaths": true
+    },
+    {
+      "mode": "legato",
+      "chunkFrames": 12100,
+      "chunks": 2,
+      "differentFloat32WordsBothPaths": 0,
+      "maxAbsDifferenceBothPaths": 0,
+      "mergedPhoneProjectionBothPaths": true
+    },
+    {
+      "mode": "nasal",
+      "chunkFrames": 1001,
+      "chunks": 24,
+      "differentFloat32WordsBothPaths": 0,
+      "maxAbsDifferenceBothPaths": 0,
+      "mergedPhoneProjectionBothPaths": true
+    }
+  ],
+  "failedRun": {
+    "snapshotPass": 66,
+    "cliPass": 26,
+    "cliFail": 1,
+    "focusedExitCode": 8,
+    "directProbeExitCode": 2,
+    "cause": "Fixture cut 24101 exceeded 24000-frame context; tempo-map-derived cut is 12100"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "executionScope": "SELECTED_PROCEDURAL_SNAPSHOT_API",
+  "fixtureScope": "SYNTHETIC_ENGINEERING_ONLY",
+  "canonicalTolerance": "UNRESOLVED",
+  "acousticF0Measurement": "NOT_RUN",
+  "acousticPhaseMeasurement": "NOT_RUN",
+  "neighborInvalidation": "NOT_RUN",
+  "schedulerExecution": "NOT_RUN_NO_CACHE_USED",
+  "standaloneAudioBlocks": "NOT_RUN",
+  "windowsExecution": "NOT_RUN",
+  "humanAcceptance": "NOT_RUN",
+  "closedNativeReplayReader": "NOT_IMPLEMENTED",
+  "qualification": "NOT_QUALIFIED",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "fullSuite": "NOT_RUN",
+  "authorizesRelease": false
+}
