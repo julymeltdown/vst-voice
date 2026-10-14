@@ -19,14 +19,39 @@
     "scope": "Read-only retained bytes, immutable parent Git, exact mutations, source/executable bindings, counts and canonical state; no retained code execution."
   },
   "review": {
-    "status": "PENDING",
+    "status": "APPROVE",
     "priorReviewedCommit": "c27d1d6f5b9a883b48ea8c11c170998b68ac7a04",
     "priorVerdict": "APPROVE engineering only",
     "followUpsAddressedLocally": [
       "Dynamic mutex exclusion control",
       "Terminal outcome commitment under admission"
     ],
-    "extendsPriorApproval": false
+    "extendsPriorApproval": false,
+    "reviewedCommit": "06803bb56de422626b731b921113d9183ba4b3e6",
+    "scope": "Exact engineering unit only",
+    "requiredChanges": 0,
+    "findings": [
+      {
+        "priority": "P3",
+        "topic": "Two concurrent runs omitted from dossier",
+        "state": "DISCLOSED_LOCALLY"
+      }
+    ],
+    "recordManifest": {
+      "path": "out/evidence/publication-outcome-review-2026-10-15/manifest.json",
+      "sizeBytes": 2158,
+      "sha256": "da9b85e4602a2011231a96ae50e70f40d2709a48dbfd26734e4a00b49cb8d856"
+    },
+    "verdict": {
+      "path": "out/evidence/publication-outcome-review-2026-10-15/review-06803bb5.txt",
+      "sizeBytes": 18658,
+      "sha256": "6ca015352687fb5b3bbcff53844f87e0df0d542782e640e3c5e6bcdd98b23bb5"
+    },
+    "recordVerification": {
+      "path": "out/evidence/publication-outcome-review-2026-10-15/verification.log",
+      "sizeBytes": 141,
+      "sha256": "31a56c0281e5032dc86c87f4f3799d7610ea832d4ffa8f3cc0631c983681a88d"
+    }
   },
   "controls": {
     "newNativeCases": 6,
@@ -177,7 +202,23 @@
     "authenticatedBuildLineage": false,
     "atomicCrossReaderSnapshot": false,
     "initialChildBindingGap": "Preserved first wrapper names absent runtime/song executables and unused generic host/plugin. Actual editor host/plugin/native CTest entries are bound by repeated run.bound.py execution.",
-    "downloadsThisUnit": 0
+    "downloadsThisUnit": 0,
+    "concurrentRuns": [
+      {
+        "runs": [
+          "focused-tests",
+          "tsan-build"
+        ],
+        "note": "First focused CTest overlaps targeted TSan build; incidental TSan binding changes, never executed by this CTest. Separate tsan-tests has stable bindings."
+      },
+      {
+        "runs": [
+          "focused-tests",
+          "owner-runtime-tests"
+        ],
+        "note": "Separate runtime filter runs within first CTest window. Stable executable binding; not additive counts."
+      }
+    ]
   },
   "alphaRecordedPasses": 0,
   "alphaRequiredChecks": 20,

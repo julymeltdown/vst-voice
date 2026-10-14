@@ -60,5 +60,5 @@ the four older late controls still pass. Four outcome-ordering controls fail on 
 observed parent and pass after repair; reentrant notification also passes. Full
 Release build, eight focused entries (253 native cases/11 Python methods), nine
 additional runtime cases and Debug TSan (48 coordinator cases) pass. This follow-up
-has its own 69-artifact/nine-input root and awaits independent review. It does not
+has its own 69-artifact/nine-input root. Independent review APPROVES exact `06803bb5` for engineering scope and closes both P3s. Its one documentation finding is disclosed in the outcome dossier. It does not
 retroactively extend the exact c27 approval or change this frozen review root.

@@ -64,13 +64,19 @@
     "beta": "BLOCKED",
     "localFollowUp": {
       "dossier": "docs/implementation/PUBLICATION_OUTCOME_ADMISSION_2026-10-15.md",
-      "state": "ADDRESSED_LOCALLY_REVIEW_PENDING",
+      "state": "EXACT_06803BB5_ENGINEERING_APPROVED",
       "manifest": {
         "path": "out/evidence/publication-progress-2026-10-15/manifest.json",
         "sizeBytes": 12298,
         "sha256": "42d1cca6e39a876a93eeced8c375fde8e40bb053fffe5c1514902093191926f4"
       },
-      "extendsExactC27Approval": false
+      "extendsExactC27Approval": false,
+      "reviewedCommit": "06803bb56de422626b731b921113d9183ba4b3e6",
+      "reviewRecord": {
+        "path": "out/evidence/publication-outcome-review-2026-10-15/manifest.json",
+        "sizeBytes": 2158,
+        "sha256": "da9b85e4602a2011231a96ae50e70f40d2709a48dbfd26734e4a00b49cb8d856"
+      }
     }
   },
   "verdict": {

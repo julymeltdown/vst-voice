@@ -2,7 +2,7 @@
 
 Date: 2026-10-15, Asia/Seoul. Integrating base:
 `45c8b2603b133243be4fdbdf48bf020583565964`. Local engineering verification
-passes; this new unit's independent review is **PENDING**.
+passes. Independent review **APPROVES exact `06803bb56de422626b731b921113d9183ba4b3e6`**, engineering scope only; no required changes.
 
 The exact `c27d1d6f` review approved physical publication/revocation serialization
 but identified two P3 follow-ups. Its four late-result controls could not distinguish
@@ -80,8 +80,7 @@ Child native invocations are not additional cases or human/DAW journeys. The sep
 
 The first focused run passed in **43.952 s**, but its wrapper named absent runtime/song
 binaries and the unused generic CLAP host/plugin instead of the actual editor children.
-That original script, receipt and streams are preserved. Its coordinator/runtime-filter
-and TSan executable bindings are valid; no editor-child binding is claimed from it.
+That original script, receipt and streams are preserved. Its coordinator/runtime-filter bindings are valid; no editor-child binding is claimed from it. The first focused run (06:30:29.637–06:31:13.589 KST) overlapped the targeted TSan build (06:30:29.633–06:30:35.651), so its incidental TSan binding changed during the run and is not a stable binding. The separate runtime-filter run (06:30:51.905–06:30:52.804) ran inside the same focused CTest window. Focused CTest does not execute the TSan binary; the separate TSan run has stable bindings. Neither overlap supplies an independent run of the same test counts.
 `run.bound.py` corrects the inventory and repeats the focused run in **39.750 s**, hashing
 all seven actual native CTest entries, the actual CLAP editor host/plugin, journey children,
 the runtime-filter executable and TSan binary before/after. All remain unchanged. The
@@ -107,8 +106,7 @@ It executes no retained native binary or runtime script. This is consistent loca
 source/build/run evidence, not authenticated or hermetic build provenance.
 
 The original c27 review remains APPROVE for that exact older engineering unit. Its two
-P3s are addressed by this separate locally verified implementation; independent approval
-of this unit is pending. The peer's exact c111cbac review has separately become terminal
+P3s are closed by the independently approved exact `06803bb5` implementation. The reviewer raised one P3 documentation finding: the two run overlaps above. This separate documentation unit discloses them; it does not extend that approval to later commits. The peer's exact c111cbac review has separately become terminal
 APPROVE, with three P3s, and its full verdict is preserved for the next scorer follow-up.
 This publication unit does not resolve those scorer findings or approve the later bank
 diagnostic/admission/provenance/fixture units.
@@ -120,3 +118,7 @@ Windows, acoustic criteria/tolerance ownership, original/classical/neural/R9/rel
 resources and reviewed integration remain. Canonical Alpha stays **0/20 recorded passes**,
 U45 held, Beta **BLOCKED**, full goal ACTIVE. `.github`, README Windows TODO, original
 recordings, historical frozen evidence and the existing stash are preserved.
+
+## Exact independent review record
+
+The full verdict is retained under `out/evidence/publication-outcome-review-2026-10-15`. Its separate manifest pins three artifacts and eight inputs. A read-only audit checks the verdict, three immutable Git/current source bindings, canonical pins and both receipt timing relationships. No new build, test or native execution ran for this record. The exact a30f7969 WAV-binding follow-up is dispatched for its own review; its approval is pending.

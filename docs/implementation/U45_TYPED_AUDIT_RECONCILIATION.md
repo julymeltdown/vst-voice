@@ -448,3 +448,8 @@ The [review dossier](PUBLICATION_ADMISSION_REVIEW_2026-10-15.md) records exact c
 ### 2026-10-15 — note-pitch WAV binding, reconciliation hold retained
 
 [WAV-bound scoring](NOTE_PITCH_WAV_BINDING_2026-10-15.md) records exact c111 engineering APPROVE and locally addresses its three P3s. New metadata/container/offset controls pass39 methods; repaired dependent mock fixtures restore the broader199 methods/19 skips. Actual stereo and native mono routes pass48 notes/2530 selected frames each. Source-hash historical negative input loss is disclosed; fresh negative inputs are held separately from receipts. The108-artifact/12-input read-only audit preserves old roots and uses immutable historical Git. Follow-up review pending; no physical F0, criteria/tolerance, source/actors/listening/DAW/platform/resource acceptance is inferred. U45 held, Alpha0of20/BetaBLOCKED/full goalACTIVE remain.
+
+
+### 2026-10-15 — exact publication-outcome review recorded
+
+Independent peer review APPROVES `06803bb56de422626b731b921113d9183ba4b3e6` for engineering only, closing both c27 P3s. One P3 documentation finding is addressed by disclosing the first focused CTest/TSan-build overlap and nested owner-runtime filter; separate TSan and bound focused receipts remain stable, counts are not additive. Full verdict, immutable source bindings, eight pins and receipt overlap checks are retained under `out/evidence/publication-outcome-review-2026-10-15`. No new native build/test; no later-unit, source, human or Beta approval. Exact a30f7969 review is dispatched and pending. Alpha 0/20, U45 held, Beta BLOCKED; full goal ACTIVE.
