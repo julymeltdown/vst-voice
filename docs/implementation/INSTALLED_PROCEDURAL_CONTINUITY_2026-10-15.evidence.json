@@ -126,11 +126,29 @@
     "cliFail": 1,
     "focusedExitCode": 8,
     "directProbeExitCode": 2,
-    "cause": "Fixture cut 24101 exceeded 24000-frame context; tempo-map-derived cut is 12100"
+    "cause": "Fixture cut 24101 exceeded 24000-frame context; tempo-map-derived cut is 12100",
+    "postFailedRunProducerChanges": [
+      "Modification/change timestamps included in owned-file identity",
+      "Final reopening and rehashing of every owned output",
+      "scoreNotes added to partition.json"
+    ],
+    "unchangedDspPaths": [
+      "rendering",
+      "PCM comparison",
+      "marker merging"
+    ]
   },
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE_ENGINEERING_ONLY_WITH_TWO_NONBLOCKING_P3",
+    "sourceCommit": "ae90c8e6638f89fd944b358ec21b99cb9c067e97",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/installed-procedural-continuity-followup-2026-10-15/review-31299718-ae90c8e6-a2013d93.txt",
+      "sizeBytes": 17517,
+      "sha256": "4ba7f88415fb4cc471bb72422586c2bfb8a8a72b206e4d690ec1348e70a1b71b"
+    },
+    "execution": "Independent read-only Git/source/retained binary/hash/JSON/WAV/plan geometry/HTTP audit; no build, CTest, native execution or repository verifier run",
+    "grantsSourceHumanOrBetaApproval": false
   },
   "executionScope": "SELECTED_PROCEDURAL_SNAPSHOT_API",
   "fixtureScope": "SYNTHETIC_ENGINEERING_ONLY",
@@ -151,5 +169,69 @@
   "betaStatus": "BLOCKED",
   "fullGoal": "ACTIVE",
   "fullSuite": "NOT_RUN",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "recordCapPracticalLimit": "64 KiB can lower the usable chunk count below 64; late refusal retains diagnostics",
+  "reviewFollowup": {
+    "manifest": {
+      "path": "out/evidence/installed-procedural-continuity-followup-2026-10-15/manifest.json",
+      "sizeBytes": 20281,
+      "sha256": "8e42c574173446ffeee03b965b7d6034d12cc5f9de2c1e6f15bc629844a53812"
+    },
+    "artifacts": 109,
+    "preservedBindings": 6,
+    "verification": {
+      "status": "PASS_READ_ONLY",
+      "command": [
+        "python3",
+        "-B",
+        "out/evidence/installed-procedural-continuity-followup-2026-10-15/verify.py"
+      ],
+      "log": {
+        "path": "out/evidence/installed-procedural-continuity-followup-2026-10-15/verification.log",
+        "sizeBytes": 394,
+        "sha256": "eaa046658eddb3460cce3d9553169dc5dfe209e2c5157df74a26cea0138a6f4b"
+      },
+      "finalSourceComparison": "Optional --source-commit uses immutable Git blobs; no live source dependency"
+    },
+    "fullBuild": {
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "startedUnix": 1791995799.8233302,
+      "durationSeconds": 28.351845500001218,
+      "exitCode": 0
+    },
+    "focusedCTest": {
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-V",
+        "-R",
+        "^seam_sample_review_cli_tests$"
+      ],
+      "startedUnix": 1791995828.22259,
+      "durationSeconds": 15.813774542009924,
+      "exitCode": 0
+    },
+    "nativeCliCasesPassed": 27,
+    "testOnlySourceChange": true,
+    "boundaryGeometry": {
+      "nonzeroLegatoStart": 6000,
+      "secondNoteStart": 18000,
+      "verifiedBoundary": 18100,
+      "oldAbsoluteFormulaCounterexampleBoundary": 24100,
+      "counterexampleFloatWordsEqual": true
+    },
+    "p3Disposition": {
+      "relativeCutAndBoundaryAssertions": "LOCALLY_VERIFIED",
+      "failedProducerChangesAndReceiptChronology": "DOCUMENTED"
+    },
+    "independentFollowupReview": "PENDING",
+    "authorizesRelease": false
+  }
 }

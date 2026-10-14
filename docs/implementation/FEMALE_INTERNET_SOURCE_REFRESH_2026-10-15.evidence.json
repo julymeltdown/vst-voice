@@ -52,8 +52,16 @@
   "sourcePerformerApproval": "NOT_GRANTED",
   "productionBankQualification": "NOT_QUALIFIED",
   "technicalReview": {
-    "status": "PENDING",
-    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+    "status": "APPROVE_SOURCE_AND_DOCUMENT_EVIDENCE_ONLY",
+    "sourceCommit": "a2013d936934616172714e4c500ec7e9cece7da0",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/installed-procedural-continuity-followup-2026-10-15/review-31299718-ae90c8e6-a2013d93.txt",
+      "sizeBytes": 17517,
+      "sha256": "4ba7f88415fb4cc471bb72422586c2bfb8a8a72b206e4d690ec1348e70a1b71b"
+    },
+    "execution": "Independent read-only Git/source/retained binary/hash/JSON/WAV/plan geometry/HTTP audit; no build, CTest, native execution or repository verifier run",
+    "grantsSourceHumanOrBetaApproval": false
   },
   "alphaRecordedPasses": [
     0,
@@ -61,5 +69,6 @@
   ],
   "betaStatus": "BLOCKED",
   "fullGoal": "ACTIVE",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "httpTimeFieldMeaning": "retrievedUnix is request-start time, not response-completion time"
 }

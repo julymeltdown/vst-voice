@@ -83,5 +83,15 @@
   ],
   "betaStatus": "BLOCKED",
   "fullGoal": "ACTIVE",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "scopeCorrectionReview": {
+    "status": "APPROVE_DOCUMENTATION_BOOKKEEPING_ONLY",
+    "sourceCommit": "312997181e3af83ed690515e5ca3ffa6f6d682c3",
+    "verdict": {
+      "path": "out/evidence/installed-procedural-continuity-followup-2026-10-15/review-31299718-ae90c8e6-a2013d93.txt",
+      "sizeBytes": 17517,
+      "sha256": "4ba7f88415fb4cc471bb72422586c2bfb8a8a72b206e4d690ec1348e70a1b71b"
+    },
+    "execution": "Independent read-only Git/source/retained binary/hash/JSON/WAV/plan geometry/HTTP audit; no build, CTest, native execution or repository verifier run"
+  }
 }

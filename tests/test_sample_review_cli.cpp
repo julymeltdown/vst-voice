@@ -659,6 +659,9 @@ void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     region->notes.front().vibrato.startFraction = 0.2F;
     region->notes.front().vibrato.phaseTurns = 0.25F;
     if (mode == "legato") {
+      // Exercise a nonzero phrase origin: chunk size is relative, not an
+      // absolute sample-frame position in the saved song.
+      region->startTick = time::Tick{240};
       region->notes.front().durationTick = time::Tick{480};
       region->notes.front().articulation = domain::NoteArticulation::Legato;
       application::ProjectFactory factory{1888888U};
@@ -674,7 +677,8 @@ void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     auto args = bindingArguments; args[0] = "observe-installed-procedural-continuity";
     args[1] = path.string(); args[2] = core::sha256File(path).value();
     const auto secondNoteFrame = project.tempoMap().sampleFrameAt(region->startTick + time::Tick{480}, project.settings().sampleRate);
-    args.push_back(mode == "nasal" ? "1001" : mode == "legato" ? std::to_string(secondNoteFrame + 100) : "11003");
+    const auto firstNoteFrame = project.tempoMap().sampleFrameAt(region->startTick + region->notes.front().startTick, project.settings().sampleRate);
+    args.push_back(mode == "nasal" ? "1001" : mode == "legato" ? std::to_string(secondNoteFrame - firstNoteFrame + 100) : "11003");
     args.push_back(output.string());
     const auto observed = cliSuccess(args);
     CHECK(field(observed, "recordType") == "seam.u45.installed-procedural-continuity.v1");
@@ -687,6 +691,27 @@ void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     CHECK(field(observed, "canonicalTolerance") == "UNRESOLVED");
     const auto retained = formats::parseJson(readText(output / "observation.json")); CHECK(retained);
     CHECK(retained.value() == observed);
+    const auto partition = formats::parseJson(readText(output / "partition.json")); CHECK(partition);
+    const auto& boundaries = partition.value().find("boundaries")->asArray(); CHECK(!boundaries.empty());
+    const auto insidePhone = [](const formats::JsonValue& boundary, std::string_view phone) {
+      const auto frame = boundary.find("frame")->asInt64();
+      const auto& markers = boundary.find("insidePlannedPhones")->asArray();
+      return std::any_of(markers.begin(), markers.end(), [&](const auto& marker) {
+        return field(marker, "phone") == phone && marker.find("startFrame")->asInt64() < frame &&
+            frame < marker.find("endFrame")->asInt64();
+      });
+    };
+    if (mode == "legato") {
+      const auto& notes = partition.value().find("scoreNotes")->asArray(); CHECK(notes.size() == 2U);
+      CHECK(notes[0].find("endFrame")->asInt64() == notes[1].find("startFrame")->asInt64());
+      CHECK(boundaries[0].find("frame")->asInt64() == notes[1].find("startFrame")->asInt64() + 100);
+      CHECK(notes[0].find("startFrame")->asInt64() == firstNoteFrame); CHECK(firstNoteFrame != 0);
+      CHECK(insidePhone(boundaries[0], "a"));
+    } else if (mode == "nasal") CHECK(insidePhone(boundaries[0], "n"));
+    else {
+      CHECK(boundaries.size() == 2U);
+      for (const auto& boundary : boundaries) CHECK(insidePhone(boundary, "a"));
+    }
     for (const auto& artifact : observed.find("artifacts")->asArray())
       CHECK(core::sha256File(output / field(artifact, "path")).value() == field(artifact, "sha256"));
     const auto whole = voicebank::readWav(output / "whole.wav"); CHECK(whole); CHECK(whole.value().bitsPerSample == 32U);
