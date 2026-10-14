@@ -334,9 +334,16 @@
     "execution": "Read-only Git/live remote/source/hash/JSON/Mach-O/timestamp/count audit; no writes/build/CTest/native/retained scripts"
   },
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
+    "sourceCommit": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "This host/test/CMake/evidence unit only"
+    "verdict": {
+      "path": "out/evidence/clap-host-review-followup-2026-10-15/review-ccbb39d6.txt",
+      "sizeBytes": 19109,
+      "sha256": "df5af2c0c65174cbe63cde8e38d6324c537410ff51e8844bd6efb3d0d7fdef3f"
+    },
+    "scope": "Exact earlier host/test/CMake/evidence unit, engineering only; three P3 follow-ups and no required changes. Current later host changes require their own review.",
+    "execution": "Independent read-only Git, retained bytes, hash, timestamp, JSON, PCM and source calculations; no build, native executable, CTest or retained-script execution."
   },
   "freshPackageSignatureVerification": "NOT_PERFORMED_ORIGINAL_PACKAGE_DELETED",
   "privateKeysCopied": false,

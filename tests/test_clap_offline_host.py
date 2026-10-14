@@ -140,6 +140,112 @@ class ClapOfflineHostTests(unittest.TestCase):
                 self.assertIn("Pinned project output would replace input", result.stderr)
                 self.assertEqual(digest, hashlib.sha256(project.read_bytes()).hexdigest())
 
+    def test_ambiguous_arguments_are_refused_before_plugin_loading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trials = [
+                ["--project", "", "--project-sha256", ""],
+                ["--project", "first.seam", "--project", "second.seam",
+                 "--project-sha256", "0" * 64],
+                ["--project-sha256", "0" * 64, "--project-sha256", "1" * 64,
+                 "--project", "missing.seam"],
+                ["--offline-only"],
+                ["--audio", ""],
+                ["--summary", ""],
+                ["--audio", "--summary", str(root / "capture.json")],
+                ["--project", "--offline-only", "--project-sha256", "0" * 64],
+            ]
+            for extra in trials:
+                with self.subTest(arguments=extra):
+                    result = subprocess.run(
+                        [str(ARGS.runner), "--plugin", str(root / "must-not-load.clap"),
+                         "--offline-only", *extra], capture_output=True, text=True,
+                        timeout=10, check=False,
+                    )
+                    self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                    self.assertIn("Usage:", result.stderr)
+                    self.assertNotIn("Unable to load", result.stderr)
+            self.assertFalse((root / "capture.json").exists())
+
+    def test_follow_host_budget_and_unmuted_notes_are_admitted_before_loading(self):
+        project = self.installed_project()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for beats, muted, accepted in [(124, False, True), (125, False, False),
+                                            (4, True, False)]:
+                with self.subTest(beats=beats, muted=muted):
+                    data = json.loads(project.read_text())
+                    data["tempoMap"] = [{"tick": 0, "bpm": 120}]
+                    data["settings"]["hostStartOffsetTick"] = 0
+                    track = data["vocalTracks"][0]
+                    track["muted"] = muted
+                    region = track["regions"][0]
+                    region["startTick"] = 0
+                    region["durationTick"] = beats * data["ppq"]
+                    candidate = root / "candidate.seam"
+                    candidate.write_text(json.dumps(data))
+                    result = subprocess.run(
+                        [str(ARGS.runner), "--plugin", str(root / "must-not-load.clap"),
+                         "--offline-only", "--project", str(candidate), "--project-sha256",
+                         hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                         "--audio", str(root / "must-not-exist.wav")],
+                        capture_output=True, text=True, timeout=10, check=False,
+                    )
+                    self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                    # Exact boundary reaches module admission; beyond it does not.
+                    self.assertIn("Unable to load" if accepted else
+                                  "Pinned project exceeds offline probe budget", result.stderr)
+                    self.assertFalse((root / "must-not-exist.wav").exists())
+
+    def test_pinned_capture_outputs_preserve_existing_files_and_are_distinct(self):
+        project = self.installed_project()
+        digest = hashlib.sha256(project.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trials = [("audio", "direct"), ("summary", "direct"),
+                      ("audio", "hardlink")]
+            if os.name != "nt":
+                trials += [("summary", "symlink"), ("audio", "dangling")]
+            for index, (option, kind) in enumerate(trials):
+                with self.subTest(option=option, kind=kind):
+                    sentinel = root / f"preserved-{index}.bin"
+                    sentinel.write_bytes(b"Private owned input; preserve exact bytes.\n")
+                    before = sentinel.read_bytes()
+                    output = root / f"alias-{index}.bin"
+                    missing = root / f"missing-{index}.bin"
+                    if kind == "hardlink":
+                        os.link(sentinel, output)
+                    elif kind == "symlink":
+                        output.symlink_to(sentinel)
+                    elif kind == "dangling":
+                        output.symlink_to(missing)
+                    else:
+                        output = sentinel
+                    other = root / f"fresh-{index}.bin"
+                    arguments = ["--audio", str(output if option == "audio" else other),
+                                 "--summary", str(output if option == "summary" else other)]
+                    result = subprocess.run(
+                        [str(ARGS.runner), "--plugin", str(ARGS.plugin), "--offline-only",
+                         "--project", str(project), "--project-sha256", digest, *arguments],
+                        capture_output=True, text=True, timeout=120, check=False,
+                    )
+                    self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                    self.assertIn("Pinned project capture outputs must be new and distinct", result.stderr)
+                    self.assertEqual(before, sentinel.read_bytes())
+                    self.assertFalse(other.exists())
+                    self.assertFalse(missing.exists())
+            same = root / "same-output.bin"
+            result = subprocess.run(
+                [str(ARGS.runner), "--plugin", str(ARGS.plugin), "--offline-only",
+                 "--project", str(project), "--project-sha256", digest,
+                 "--audio", str(same), "--summary", str(same)],
+                capture_output=True, text=True, timeout=120, check=False,
+            )
+            self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+            self.assertIn("Pinned project capture outputs must be new and distinct", result.stderr)
+            self.assertFalse(same.exists())
+            self.assertEqual(digest, hashlib.sha256(project.read_bytes()).hexdigest())
+
     def test_tuned_installed_lyric_song_bounces_after_producer_source_is_removed(self):
         result = subprocess.run(
             [str(ARGS.song_journey_runner),

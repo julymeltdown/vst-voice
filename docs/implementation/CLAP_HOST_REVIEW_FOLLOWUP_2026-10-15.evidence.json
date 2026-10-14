@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "unit": "clap-host-review-followup",
+  "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+  "manifest": {
+    "path": "out/evidence/clap-host-review-followup-2026-10-15/manifest.json",
+    "sizeBytes": 10678,
+    "sha256": "207213f01b66adff8e00aea03302888c3e80c709d421e440eff419859369f2fd"
+  },
+  "retainedArtifacts": 55,
+  "preservedBindings": 8,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/clap-host-review-followup-2026-10-15/verification.log",
+      "sizeBytes": 120,
+      "sha256": "ebdb3ed68e96b5b5e8bfa6dc05b89e8c9abf2f236c734b1ae18d2b27d8901f40"
+    },
+    "scope": "Read-only retained bytes, receipts, Git source comparison and 75 prior artifact hashes; no plugin or retained runtime script execution."
+  },
+  "runs": {
+    "baseline-regressions": {
+      "label": "baseline-regressions",
+      "argv": [
+        "python3",
+        "-B",
+        "out/evidence/clap-host-review-followup-2026-10-15/run_regressions.py",
+        "tests/test_clap_offline_host.py",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-host",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-plugin",
+        "out/evidence/clap-host-review-followup-2026-10-15/fixture-runner"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009429.5465758,
+      "durationSeconds": 1.6567022919771262,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 20749,
+        "sha256": "0800d65826273be71b4cd18557fdf0f1d4ae26ab8e87ec09afff4b5ace31f889"
+      }
+    },
+    "baseline-corrected-regressions": {
+      "label": "baseline-corrected-regressions",
+      "argv": [
+        "python3",
+        "-B",
+        "out/evidence/clap-host-review-followup-2026-10-15/run_regressions.py",
+        "tests/test_clap_offline_host.py",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-host",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-plugin",
+        "out/evidence/clap-host-review-followup-2026-10-15/fixture-runner"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009475.132504,
+      "durationSeconds": 0.5755892079905607,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 20719,
+        "sha256": "0050438a533892cdaf7814ec54b1d3833e1be8b6eb8f2235699a931e1580ab04"
+      }
+    },
+    "full-build": {
+      "label": "full-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009502.1732512,
+      "durationSeconds": 25.672550582996337,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 23314,
+        "sha256": "85b2ee8a0c1f3117c923ec9e6e6c45115bcb47347c421a327f6ee392f08deade"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "repaired-regressions": {
+      "label": "repaired-regressions",
+      "argv": [
+        "python3",
+        "-B",
+        "out/evidence/clap-host-review-followup-2026-10-15/run_regressions.py",
+        "tests/test_clap_offline_host.py",
+        "build/release/seam_clap_editor_host",
+        "build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "out/evidence/clap-host-review-followup-2026-10-15/fixture-runner"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009533.8202481,
+      "durationSeconds": 0.5469389999925625,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 617,
+        "sha256": "e26a423d4614925b60a238cc96d7df7f785b0404cd45ececb32aee141e70ca64"
+      }
+    },
+    "focused-ctest": {
+      "label": "focused-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-R",
+        "^(seam_clap_offline_host_tests|seam_procedural_install_journey_tests|seam_original_singer_song_journey_tests|seam_clap_editor_host_smoke|seam_clap_plugin_host_smoke)$",
+        "-V",
+        "--output-on-failure"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009545.959927,
+      "durationSeconds": 31.09661354200216,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 11870,
+        "sha256": "70f618afbc712cab4e434f5e5e5e9cd3187ae2f36e1b0d0c5d6177b4f74a7e66"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "baseline-owned-destination": {
+      "label": "baseline-owned-destination",
+      "argv": [
+        "python3",
+        "-B",
+        "out/evidence/clap-host-review-followup-2026-10-15/owned_destination_probe.py",
+        "baseline",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-host",
+        "out/evidence/clap-host-review-followup-2026-10-15/baseline-plugin"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009617.8781812,
+      "durationSeconds": 0.21787475000019185,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 1072,
+        "sha256": "162a729e6585ff4dc85aa965854f1bd006bdead258fe0a87092910ac76d76d76"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "repaired-owned-destination": {
+      "label": "repaired-owned-destination",
+      "argv": [
+        "python3",
+        "-B",
+        "out/evidence/clap-host-review-followup-2026-10-15/owned_destination_probe.py",
+        "repaired",
+        "build/release/seam_clap_editor_host",
+        "build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+      "startedUnix": 1792009644.901422,
+      "durationSeconds": 0.09558045800076798,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 1045,
+        "sha256": "c4fc0543b40e0a9c2b82109d2b8644d94bc50ff399e1c69ff521a4f6f75cc709"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  },
+  "focusedCounts": {
+    "ctestEntries": 4,
+    "pythonMethods": 8,
+    "nativeJourneyCases": 41,
+    "nativeClapPlayerSmoke": 1,
+    "newPythonMethods": 3,
+    "separatelyRepeatedFocusedMethods": 3,
+    "overlap": "Three regression methods are included in the eight-method CTest; child fixture invocations are overlapping journey cases, not additional cases."
+  },
+  "priorUnitTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/clap-host-review-followup-2026-10-15/review-ccbb39d6.txt",
+      "sizeBytes": 19109,
+      "sha256": "df5af2c0c65174cbe63cde8e38d6324c537410ff51e8844bd6efb3d0d7fdef3f"
+    },
+    "scope": "Exact earlier installed-project unit; three P3 follow-ups, no required changes; not approval of this later unit."
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "scope": "Current admission/test/evidence changes"
+  },
+  "limits": {
+    "noteCount": 256,
+    "fixedAudioEndSecondsIncludingPlacementRest": 65,
+    "followHostBeats": 128,
+    "requiresUnmutedNotes": true,
+    "pinnedCaptureOutputs": "new and distinct at admission",
+    "concurrentFilesystemReplacementProtected": false,
+    "newFilesInsideResourceDirectoriesForbidden": false
+  },
+  "directDestinationComparison": {
+    "baseline": {
+      "argv": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/clap-host-review-followup-2026-10-15/baseline-host",
+        "--plugin",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/clap-host-review-followup-2026-10-15/baseline-plugin",
+        "--offline-only",
+        "--project",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/clap-host-review-followup-2026-10-15/probe-input.seam",
+        "--project-sha256",
+        "82bfae56e2f8a474e3ed54aab5849666617958f0f73a39f6b1eb4920c715bf29",
+        "--audio",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/tmpcc1yarwr/private-owned-input.bin",
+        "--summary",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/tmpcc1yarwr/fresh-summary.json"
+      ],
+      "exitCode": 0,
+      "beforeBytes": 49,
+      "afterBytes": 672044,
+      "beforeSha256": "405a71fb8422ab208482a039ea6a17a6bc2f7e95e07c4de4f9d3993fe8633818",
+      "afterSha256": "dff8d2e76f1baf33c697d00e7b86286af2de7e3f9357fb326c5b9ded8de2285d",
+      "summaryWritten": true,
+      "inputProjectSha256": "82bfae56e2f8a474e3ed54aab5849666617958f0f73a39f6b1eb4920c715bf29",
+      "phase": "baseline"
+    },
+    "repaired": {
+      "argv": [
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_clap_editor_host",
+        "--plugin",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "--offline-only",
+        "--project",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/clap-host-review-followup-2026-10-15/probe-input.seam",
+        "--project-sha256",
+        "82bfae56e2f8a474e3ed54aab5849666617958f0f73a39f6b1eb4920c715bf29",
+        "--audio",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/tmpbn9xi_0f/private-owned-input.bin",
+        "--summary",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/tmpbn9xi_0f/fresh-summary.json"
+      ],
+      "exitCode": 1,
+      "beforeBytes": 49,
+      "afterBytes": 49,
+      "beforeSha256": "405a71fb8422ab208482a039ea6a17a6bc2f7e95e07c4de4f9d3993fe8633818",
+      "afterSha256": "405a71fb8422ab208482a039ea6a17a6bc2f7e95e07c4de4f9d3993fe8633818",
+      "summaryWritten": false,
+      "inputProjectSha256": "82bfae56e2f8a474e3ed54aab5849666617958f0f73a39f6b1eb4920c715bf29",
+      "phase": "repaired"
+    }
+  },
+  "initialSetupError": "Muted test region was shorter than its note; retained initial test source reconstructed by one stated literal replacement, not claimed as a contemporaneous capture. Corrected baseline still has 15 failures, including valid muted-only refusal.",
+  "scope": "ENGINEERING_ONLY_INTERNAL_LOADED_CLAP_HOST",
+  "buildHeaderSourceCommit": "d9860c7e90d6ccd7af284bdf59cc26c12c4046f0",
+  "authenticatedBuildLineage": false,
+  "relocatedResourceReplay": false,
+  "humanAcceptance": false,
+  "freshPackageSignatureVerification": false,
+  "beta": "BLOCKED",
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "releaseEligible": false
+}

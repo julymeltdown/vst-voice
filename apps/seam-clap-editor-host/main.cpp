@@ -26,6 +26,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -291,6 +292,16 @@ bool outputReplacesInput(const std::filesystem::path& input,
   return error || source == destination;
 }
 
+bool freshCaptureOutput(const std::filesystem::path& output) {
+  if (output.empty()) return true;
+  std::error_code error;
+  // symlink_status also refuses dangling links, which could create an input
+  // through their target. This is admission-time protection, not a file lock.
+  const auto status = std::filesystem::symlink_status(output, error);
+  if (error && error != std::errc::no_such_file_or_directory) return false;
+  return status.type() == std::filesystem::file_type::not_found;
+}
+
 // Finite engineering-probe limits: allow the 30–60-second song fixture plus
 // placement/rest time. The FollowHost control has a separate captured-beat bound.
 constexpr double kMaximumOfflineEndSeconds = 65.0;
@@ -300,26 +311,34 @@ constexpr seam::time::Tick kProbeLeadingRest{960};
 
 bool withinOfflineProbeBudget(const seam::domain::Project& project) {
   std::size_t notes = 0U;
+  bool unmutedNotes = false;
   const auto offset = project.tempoMap().secondsAt(project.settings().hostStartOffsetTick);
+  const auto ppq = static_cast<std::int64_t>(project.tempoMap().ppq());
+  // FollowHost adds two host beats, one region beat and the fixed leading rest.
+  const auto maximumRegionEnd = (kMaximumFollowHostBeat - 3) * ppq -
+      kProbeLeadingRest.value();
   for (const auto& track : project.vocalTracks()) {
     for (const auto& region : track.regions) {
       if (region.notes.size() > kMaximumOfflineNotes - notes) return false;
       notes += region.notes.size();
+      unmutedNotes = unmutedNotes || (!track.muted && !region.notes.empty());
       // The domain already checked the original region end. Leave room for
       // probeOffline's leading rest, FollowHost's extra beat and its two-beat
       // host placement before any of those Tick additions can overflow.
       const auto padding = kProbeLeadingRest.value() +
-          3 * static_cast<std::int64_t>(project.tempoMap().ppq());
+          3 * ppq;
       const auto regionEnd = region.startTick + region.durationTick;
       if (regionEnd.value() > std::numeric_limits<std::int64_t>::max() - padding)
         return false;
+      if (!track.muted &&
+          regionEnd.value() > maximumRegionEnd) return false;
       // probeOffline inserts this leading rest before it asks the loaded plugin for Final.
       const auto end = project.tempoMap().secondsAt(
           regionEnd + kProbeLeadingRest) + offset;
       if (!std::isfinite(end) || end > kMaximumOfflineEndSeconds) return false;
     }
   }
-  return notes > 0U;
+  return unmutedNotes;
 }
 
 struct OfflineChecks final {
@@ -806,18 +825,26 @@ int main(int argc, char** argv) {
   bool offlineOnly = false;
   bool stateDirtyProbe = false;
   bool invalidArguments = false;
+  std::vector<std::string> seenArguments;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
-    if (argument == "--plugin" && index + 1 < argc) {
+    if (std::find(seenArguments.begin(), seenArguments.end(), argument) != seenArguments.end()) {
+      invalidArguments = true;
+      break;
+    }
+    seenArguments.push_back(argument);
+    const auto hasValue = index + 1 < argc && argv[index + 1][0] != '\0' &&
+        std::string_view(argv[index + 1]).find("--") != 0U;
+    if (argument == "--plugin" && hasValue) {
       pluginPath = argv[++index];
-    } else if (argument == "--screenshot" && index + 1 < argc) {
+    } else if (argument == "--screenshot" && hasValue) {
       screenshotPath = argv[++index];
-    } else if (argument == "--summary" && index + 1 < argc) {
+    } else if (argument == "--summary" && hasValue) {
       summaryPath = argv[++index];
-    } else if (argument == "--audio" && index + 1 < argc) {
+    } else if (argument == "--audio" && hasValue) {
       audioPath = argv[++index];
     } else if (argument == "--target-runtime-fixture-root" &&
-               index + 1 < argc) {
+               hasValue) {
       targetRuntimeFixtureRoot = argv[++index];
     } else if (argument == "--expect-missing-bank") {
       expectMissingBank = true;
@@ -825,9 +852,9 @@ int main(int argc, char** argv) {
       offlineOnly = true;
     } else if (argument == "--state-dirty-probe") {
       stateDirtyProbe = true;
-    } else if (argument == "--project" && index + 1 < argc) {
+    } else if (argument == "--project" && hasValue) {
       inputProjectPath = argv[++index];
-    } else if (argument == "--project-sha256" && index + 1 < argc) {
+    } else if (argument == "--project-sha256" && hasValue) {
       inputProjectSha256 = argv[++index];
     } else {
       invalidArguments = true;
@@ -870,12 +897,18 @@ int main(int argc, char** argv) {
       return 1;
     }
     if (!withinOfflineProbeBudget(decoded.value())) {
-      std::cerr << "Pinned project exceeds offline probe budget (256 notes, 65 seconds including placement/rest)\n";
+      std::cerr << "Pinned project exceeds offline probe budget (unmuted notes required; "
+                   "256 notes, 65 seconds including placement/rest, 128 FollowHost beats)\n";
       return 1;
     }
     if (outputReplacesInput(inputProjectPath, audioPath) ||
         outputReplacesInput(inputProjectPath, summaryPath)) {
       std::cerr << "Pinned project output would replace input\n";
+      return 1;
+    }
+    if (!freshCaptureOutput(audioPath) || !freshCaptureOutput(summaryPath) ||
+        (!audioPath.empty() && !summaryPath.empty() && outputReplacesInput(audioPath, summaryPath))) {
+      std::cerr << "Pinned project capture outputs must be new and distinct\n";
       return 1;
     }
     inputProject = decoded.value();
