@@ -114,7 +114,8 @@ def required_sequences(profile: dict[str, Any]) -> list[dict[str, Any]]:
     if "sustain" in kinds:
         sequences.extend({"kind": "sustain", "phones": [vowel]} for vowel in vowels)
     if "release" in kinds:
-        sequences.extend({"kind": "release", "phones": [vowel, "R"]} for vowel in vowels)
+        release = "pau" if profile["language"] == "en" else "R"
+        sequences.extend({"kind": "release", "phones": [vowel, release]} for vowel in vowels)
     if "breath" in kinds:
         sequences.append({"kind": "breath", "phones": ["br"]})
     if "glottal-attack" in kinds:

@@ -17,6 +17,7 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/native_ui/accessibility_tree.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/audio_input_device.hpp"
@@ -1026,6 +1027,38 @@ TEST_CASE("Voicebank Studio takes reviewed recordings to an installed bank the s
   float peak = 0.0F;
   for (const auto sample : master.value().interleaved) peak = std::max(peak, std::fabs(sample));
   CHECK(peak > 0.01F);
+}
+
+TEST_CASE("Voicebank Studio selects the English inventory and reopens its producer without approval") {
+  const auto root=test::support::temporaryDirectory("studio-app-english-producer");
+  struct Cleanup {std::filesystem::path path; ~Cleanup(){std::error_code e;std::filesystem::remove_all(path,e);}} cleanup{root};
+  auto microphone=std::make_shared<MicrophoneScript>();
+  StudioHarness studio{root,microphone};
+  voicebank_studio_native::Options options;options.startDesigner=true;
+  CHECK(studio.app->open(options).hasValue());
+  const auto destination=root/"english-voice";
+  studio.dialogs->newWorkspaces={platform::IFileDialog::NewProducerWorkspaceInput{
+      .destination=destination,.projectId="english-voice",.producerId="engineering-fixture-producer",
+      .inventory=platform::IFileDialog::NewProducerWorkspaceInput::Inventory::EnglishFull}};
+  CHECK(studio.activate("create-producer").hasValue());
+  CHECK(studio.settle([&]{return studio.app->productionProject()!=nullptr;}));
+  const auto* project=studio.app->productionProject();
+  CHECK(project!=nullptr);if (project==nullptr)return;
+  CHECK(project->language=="en");CHECK(project->unitAssignments.size()==3441U);
+  CHECK(project->takes.empty());CHECK(project->reviews.empty());CHECK(project->sourceStrategies.empty());
+  CHECK(microphone->opens==0U);
+  CHECK(std::all_of(project->unitAssignments.begin(),project->unitAssignments.end(),[](const auto& row){
+    return row.state==seam::voicebank_production::UnitQueueState::Missing && row.takeId.empty();
+  }));
+  seam::native_ui::VoicebankStudioController reopened;
+  CHECK(reopened.beginOpenProducerFolder(destination,"engineering-fixture-producer"));
+  const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds{30};
+  while (reopened.proceduralImportBusy() && std::chrono::steady_clock::now()<deadline) {
+    CHECK(reopened.pollProceduralCandidateImport().hasValue());
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!reopened.proceduralImportBusy());CHECK(reopened.productionProject()!=nullptr);
+  if (reopened.productionProject())CHECK(reopened.productionProject()->language=="en");
 }
 
 TEST_CASE("Voicebank Studio records and imports takes through its own actions; refused or lost input stays actionable") {

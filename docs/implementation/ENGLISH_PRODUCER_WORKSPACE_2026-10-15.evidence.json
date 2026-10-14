@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-producer-workspace",
+  "sourceBaseCommit": "4087dbcc925167e92d140c76131b74e41fe35c76",
+  "manifest": {
+    "path": "out/evidence/english-producer-workspace-2026-10-15/manifest.json",
+    "sizeBytes": 11808,
+    "sha256": "7b6f44c3ee49d209ece35162296ba1d5a79029f43cb9bc9021e25f4cadfcea99"
+  },
+  "retainedArtifacts": 62,
+  "preservedBindings": 6,
+  "verification": {
+    "status": "PASS",
+    "sourceTree": "adaf3313e8ceee3ed3237869daf456a7576ca608",
+    "log": {
+      "path": "out/evidence/english-producer-workspace-2026-10-15/verification.log",
+      "sizeBytes": 168,
+      "sha256": "cbfb900d8027147d76c8bebec2e714f1c156ac99f13eed3733512cc417852145"
+    },
+    "scope": "Read-only retained artifacts, immutable source-tree bindings, stable run receipts and empty English draft; verifier itself executed, no captured script or native replay."
+  },
+  "execution": {
+    "fullReleaseBuild": "PASS after missing-header repair",
+    "focusedCtestLanes": 6,
+    "nativeCases": 138,
+    "ctestPythonMethods": 17,
+    "separateNativePythonParityMethods": 9,
+    "studioModalAndAudio": "SCRIPTED",
+    "physicalOrHumanAcceptance": false,
+    "allChangedCodeAndTestFilesBound": 14,
+    "hermeticBuildProof": false
+  },
+  "workspace": {
+    "status": "PASS",
+    "inventorySha256": "50612c318eba505e0e1611c0162987aab10880fd8c611262c40659272f35c6ee",
+    "scriptSha256": "6e5585339a5a3736c5b92ffcdbb3a5002516175dc2819a55c7512445a2607b46",
+    "units": 6882,
+    "sequences": 1147,
+    "assignments": 3441,
+    "externalDraftValidatorPassed": true,
+    "sourcesImported": false,
+    "musicalOrHumanApproval": false,
+    "nativeReopen": "covered by production_draft and Studio app tests"
+  },
+  "independentTechnicalReview": "PENDING",
+  "sourceApproval": false,
+  "qualifiedBank": false,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

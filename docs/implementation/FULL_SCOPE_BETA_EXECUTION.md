@@ -9233,3 +9233,8 @@ The [phone donor unit](FEMALE_PHONE_DONOR_PREPARATION_2026-10-15.md) adds hash-b
 ### 2026-10-15 — exact WAV-bound scorer independent approval
 
 Independent peer review APPROVES `a30f7969a71297e525baa40541e3536198f1803d` for engineering only, with zero findings/required changes; all three c111 P3s close. Full verdict and separate read-only Git/source/gate/manifest audit are retained under `out/evidence/note-pitch-wav-binding-review-2026-10-15`; no new build/test/native run for the record. Later bank, source-intake and phone-donor units are not approved by this verdict. Native/Python English producer inventory creation remains the next production gap. Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.
+
+
+## 2026-10-15 — English producer inventory and normal workspace entry
+
+Native/Python English inventory generation now binds the frozen 93-symbol vocabulary and explicit stress policy; Studio offers the full English preset. Actual CLI creation, external draft validation, native/controller reopening and Japanese byte compatibility pass. Full Release rebuild precedes six CTest lanes (138 native cases, 17 Python methods); nine separate native/Python parity methods pass. The retained full-English fixture has 6,882 planned alternate takes / 3,441 missing assignments / no imported source, take or review. See [the code-level dossier](ENGLISH_PRODUCER_WORKSPACE_2026-10-15.md) and its evidence index (62 artifacts, six preserved bindings). Exact implementation independent review pending. This closes producer entry only; downstream English sample-manifest/resource contract integration, real actors, source rights/policy, missing axr and singing/pitch/style coverage remain open. Alpha remains 0/20, U45 held, Beta BLOCKED.

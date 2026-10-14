@@ -18,6 +18,7 @@ namespace seam::voicebank_production {
 // validator admits a workspace created here. Generation is not range
 // qualification: the requested range is always recorded as NOT_ASSESSED.
 inline constexpr std::string_view kDraftInventoryGeneratorVersion{"seam-draft-inventory-2.0.0"};
+inline constexpr std::string_view kEnglishDraftInventoryGeneratorVersion{"seam-draft-inventory-2.1.0-en"};
 inline constexpr std::size_t kDraftInventoryMaximumUnits{16384U};
 
 // Field defaults equal the Python draft profile defaults; only profileId has none.
@@ -37,6 +38,8 @@ struct DraftInventoryProfile final {
   std::int64_t requestedMaxMidi{72};
   std::int64_t alternateTakes{2};
   std::int64_t sessionBlockSize{24};
+  // English only. Empty for legacy Japanese so its document bytes remain unchanged.
+  std::string vocabularyId, vocabularySha256, stressPolicy;
 };
 
 struct DraftInventoryUnit final {
@@ -61,12 +64,14 @@ struct DraftInventory final {
 // Reads a profile object: missing fields take the defaults and unknown fields are
 // refused (a range test or PASS result is not draft authority).
 [[nodiscard]] core::Result<DraftInventoryProfile> parseDraftInventoryProfile(std::string_view json);
-// The inventories Studio offers when a producer creates a workspace. Both are Japanese draft
+// The inventories Studio offers when a producer creates a workspace. Japanese draft
 // profiles that the Python generator produces too. The full draft covers every default kind at
 // three pitch layers. The vowel starter records only the five sustained vowels at two pitch layers
 // (MIDI 60 and 66), so a first voice can be recorded, reviewed, published and sung quickly; it can
 // only sing vowel lyrics, and a full workspace is still needed for a complete bank.
-enum class DraftInventoryPreset { JapaneseFull, JapaneseVowelStarter };
+// EnglishFull records every bare vowel, consonant, pause and CV/VC/VV/release sequence
+// at three requested pitches, with explicit lexical stress folding and no range qualification.
+enum class DraftInventoryPreset { JapaneseFull, JapaneseVowelStarter, EnglishFull };
 [[nodiscard]] DraftInventoryProfile draftInventoryPresetProfile(DraftInventoryPreset preset, std::string profileId);
 // Checks every generator bound before producing anything.
 [[nodiscard]] core::Result<DraftInventory> generateDraftInventory(const DraftInventoryProfile& profile);

@@ -395,7 +395,7 @@ public:
       std::string operatorId, bool requireRegisteredProducer = false);
   [[nodiscard]] core::Result<void> beginOpenProductionProject(std::filesystem::path workspaceRoot,
       std::string expectedInventorySha256, std::string operatorId);
-  // Creates DESTINATION as a new producer folder (generated Japanese draft
+  // Creates DESTINATION as a new producer folder (selected Japanese or English draft
   // inventory, recording script and an initialized producer/) off the UI
   // thread, then opens it as PRODUCER through the same adoption as
   // beginOpenProductionProject. Nothing is approved and the requested range

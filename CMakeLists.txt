@@ -577,7 +577,7 @@ add_library(seam_voicebank_production
 target_include_directories(seam_voicebank_production PUBLIC
   libs/seam-voicebank-production/include)
 target_link_libraries(seam_voicebank_production PUBLIC
-  seam_voicebank seam_formats seam_core seam_voice_design)
+  seam_voicebank seam_formats seam_core seam_voice_design seam_phonemizer)
 seam_apply_compiler_options(seam_voicebank_production)
 
 add_library(seam_distribution

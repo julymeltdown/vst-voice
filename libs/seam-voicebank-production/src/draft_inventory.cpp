@@ -4,6 +4,8 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/phonemizer/english_resource.hpp"
+#include "seam/phonemizer/phonemizer.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 
@@ -104,7 +106,7 @@ std::vector<Sequence> requiredSequences(const DraftInventoryProfile& profile) {
   if (kinds.contains("sustain"))
     for (const auto& vowel : vowels) sequences.push_back({"sustain", {vowel}});
   if (kinds.contains("release"))
-    for (const auto& vowel : vowels) sequences.push_back({"release", {vowel, "R"}});
+    for (const auto& vowel : vowels) sequences.push_back({"release", {vowel, profile.language == "en" ? "pau" : "R"}});
   if (kinds.contains("breath")) sequences.push_back({"breath", {"br"}});
   if (kinds.contains("glottal-attack"))
     for (const auto& vowel : vowels) sequences.push_back({"glottal-attack", {"glottal", vowel}});
@@ -140,14 +142,15 @@ core::Result<void> validateSymbols(std::string_view field, const std::vector<std
 core::Result<std::vector<Sequence>> validateProfile(const DraftInventoryProfile& profile) {
   using Output = std::vector<Sequence>;
   if (!boundedText(profile.profileId)) return invalid<Output>("draft profileId is required and bounded");
-  if (profile.language != "ja")
+  if (profile.language != "ja" && profile.language != "en")
     return invalid<Output>("draft language profile is not implemented; Japanese rules cannot stand in for other languages");
   const std::array<std::pair<std::string_view, const std::vector<std::string>*>, 5U> lists{{
       {"supportedStyles", &profile.supportedStyles}, {"vowels", &profile.vowels},
       {"consonants", &profile.consonants}, {"specialPhones", &profile.specialPhones},
       {"includeKinds", &profile.includeKinds}}};
   for (const auto& [field, values] : lists) {
-    const auto checked = validateSymbols(field, *values, field == "supportedStyles" ? 16U : 64U,
+    const auto checked = validateSymbols(field, *values, field == "supportedStyles" ? 16U :
+        field == "vowels" && profile.language == "en" ? 68U : 64U,
         field == "vowels" || field == "consonants" || field == "specialPhones");
     if (!checked) return core::Result<Output>{checked.error()};
   }
@@ -155,6 +158,32 @@ core::Result<std::vector<Sequence>> validateProfile(const DraftInventoryProfile&
         return std::find(kKinds.begin(), kKinds.end(), kind) == kKinds.end();
       }))
     return invalid<Output>("includeKinds contains unsupported kinds");
+  if (profile.language == "ja" && (!profile.vocabularyId.empty() || !profile.vocabularySha256.empty() || !profile.stressPolicy.empty()))
+    return invalid<Output>("Japanese legacy draft cannot carry an English languageContract");
+  if (profile.language == "en") {
+    if (profile.vocabularyId != phonemizer::kEnglishVocabularyId ||
+        profile.vocabularySha256 != phonemizer::englishVocabularySha256() ||
+        (profile.stressPolicy != "FOLD_LEXICAL_STRESS" && profile.stressPolicy != "DISTINGUISH_LEXICAL_STRESS"))
+      return invalid<Output>("English languageContract must bind the frozen vocabulary and a supported stress policy");
+    const auto vowel = [](const std::string& symbol) {
+      return phonemizer::isEnglishVocabularySymbol(symbol) && phonemizer::isVowelSymbol(symbol);
+    };
+    const auto consonant = [&](const std::string& symbol) {
+      return phonemizer::isEnglishVocabularySymbol(symbol) && symbol != "pau" && !vowel(symbol);
+    };
+    if (!std::all_of(profile.vowels.begin(), profile.vowels.end(), vowel) ||
+        !std::all_of(profile.consonants.begin(), profile.consonants.end(), consonant) ||
+        !std::all_of(profile.specialPhones.begin(), profile.specialPhones.end(), [&](const auto& symbol) {
+          return symbol == "pau" || consonant(symbol);
+        })) return invalid<Output>("English profile phone classes must use the frozen vocabulary");
+    if (profile.stressPolicy == "FOLD_LEXICAL_STRESS" &&
+        std::any_of(profile.vowels.begin(), profile.vowels.end(), [](const auto& symbol) {
+          return symbol.back() == '0' || symbol.back() == '1' || symbol.back() == '2';
+        })) return invalid<Output>("Stress-folded English inventories require bare vowel labels");
+    if (std::find(profile.includeKinds.begin(), profile.includeKinds.end(), "breath") != profile.includeKinds.end() ||
+        std::find(profile.includeKinds.begin(), profile.includeKinds.end(), "glottal-attack") != profile.includeKinds.end())
+      return invalid<Output>("English inventory kinds cannot use Japanese breath or glottal tokens");
+  }
   const auto& layers = profile.pitchLayers;
   if ((layers.size() != 2U && layers.size() != 3U) ||
       std::any_of(layers.begin(), layers.end(), [](auto layer) { return layer < 24 || layer > 96; }) ||
@@ -193,13 +222,16 @@ J stringArray(const std::vector<std::string>& values) {
 J profileObject(const DraftInventoryProfile& profile) {
   J::Array layers;
   for (const auto layer : profile.pitchLayers) layers.emplace_back(layer);
-  return J{J::Object{
+  J::Object result{
       {"profileId", profile.profileId}, {"language", profile.language},
       {"supportedStyles", stringArray(profile.supportedStyles)}, {"vowels", stringArray(profile.vowels)},
       {"consonants", stringArray(profile.consonants)}, {"specialPhones", stringArray(profile.specialPhones)},
       {"includeKinds", stringArray(profile.includeKinds)}, {"pitchLayers", J{std::move(layers)}},
       {"requestedRange", J{J::Object{{"minMidi", profile.requestedMinMidi}, {"maxMidi", profile.requestedMaxMidi}}}},
-      {"alternateTakes", profile.alternateTakes}, {"sessionBlockSize", profile.sessionBlockSize}}};
+      {"alternateTakes", profile.alternateTakes}, {"sessionBlockSize", profile.sessionBlockSize}};
+  if (profile.language == "en") result.emplace("languageContract", J::Object{
+      {"vocabularyId", profile.vocabularyId}, {"vocabularySha256", profile.vocabularySha256}, {"stressPolicy", profile.stressPolicy}});
+  return J{std::move(result)};
 }
 
 std::string padded(std::size_t value, std::size_t width) {
@@ -268,7 +300,7 @@ core::Result<DraftInventoryProfile> readProfile(const J::Object& object, bool re
   using Output = DraftInventoryProfile;
   for (const auto& [key, value] : object) {
     static_cast<void>(value);
-    if (std::find(kProfileFields.begin(), kProfileFields.end(), key) == kProfileFields.end())
+    if (key != "languageContract" && std::find(kProfileFields.begin(), kProfileFields.end(), key) == kProfileFields.end())
       return invalid<Output>("draft profile contains unknown fields; rangeTest/PASS is not draft authority");
   }
   if (requireEveryField)
@@ -291,6 +323,18 @@ core::Result<DraftInventoryProfile> readProfile(const J::Object& object, bool re
     if (!read) return core::Result<Output>{read.error()};
     profile.language = std::move(read.value());
   }
+  if (profile.language == "en") profile = draftInventoryPresetProfile(DraftInventoryPreset::EnglishFull, std::move(profile.profileId));
+  if (const auto* value = field("languageContract")) {
+    if (profile.language != "en" || !value->isObject() || value->asObject().size() != 3U)
+      return invalid<Output>("Invalid English languageContract");
+    const auto& contract = value->asObject();
+    for (const auto& [name, target] : std::array<std::pair<std::string_view, std::string*>, 3U>{{
+         {"vocabularyId", &profile.vocabularyId}, {"vocabularySha256", &profile.vocabularySha256}, {"stressPolicy", &profile.stressPolicy}}}) {
+      const auto found = contract.find(name);
+      if (found == contract.end() || !found->second.isString()) return invalid<Output>("Invalid English languageContract");
+      *target = found->second.asString();
+    }
+  } else if (requireEveryField && profile.language == "en") return invalid<Output>("Missing English languageContract");
   const std::array<std::pair<std::string_view, std::vector<std::string>*>, 5U> lists{{
       {"supportedStyles", &profile.supportedStyles}, {"vowels", &profile.vowels},
       {"consonants", &profile.consonants}, {"specialPhones", &profile.specialPhones},
@@ -387,7 +431,7 @@ core::Result<Generated> generate(const DraftInventoryProfile& profile) {
   }
   auto payload = profileObject(profile).asObject();
   payload.emplace("schemaVersion", std::int64_t{2});
-  payload.emplace("generatorVersion", std::string{kDraftInventoryGeneratorVersion});
+  payload.emplace("generatorVersion", std::string{profile.language == "en" ? kEnglishDraftInventoryGeneratorVersion : kDraftInventoryGeneratorVersion});
   payload.emplace("rangeAssessment", J{J::Object{{"status", "NOT_ASSESSED"}}});
   payload.emplace("requiredCoverage", J{std::move(coverage)});
   payload.emplace("units", J{std::move(units)});
@@ -456,6 +500,22 @@ DraftInventoryProfile draftInventoryPresetProfile(DraftInventoryPreset preset, s
     profile.includeKinds = {"sustain"};
     profile.pitchLayers = {60, 66};
   }
+  if (preset == DraftInventoryPreset::EnglishFull) {
+    profile.language = "en";
+    profile.vowels.clear(); profile.consonants.clear();
+    for (const auto symbol : phonemizer::englishVocabulary()) {
+      if (symbol == "pau") continue;
+      if (phonemizer::isVowelSymbol(symbol)) {
+        if (symbol.back() != '0' && symbol.back() != '1' && symbol.back() != '2') profile.vowels.emplace_back(symbol);
+      } else profile.consonants.emplace_back(symbol);
+    }
+    profile.specialPhones = profile.consonants;
+    profile.specialPhones.emplace_back("pau");
+    profile.includeKinds = {"sustain", "release", "special", "cv", "vc", "vv"};
+    profile.vocabularyId = phonemizer::kEnglishVocabularyId;
+    profile.vocabularySha256 = phonemizer::englishVocabularySha256();
+    profile.stressPolicy = "FOLD_LEXICAL_STRESS";
+  }
   return profile;
 }
 
@@ -476,6 +536,7 @@ core::Result<DraftInventory> loadDraftInventory(std::string_view documentJson) {
     if (found == object.end()) return invalid<Output>("invalid draft profile: missing " + std::string{field});
     profileFields.emplace(std::string{field}, found->second);
   }
+  if (const auto contract = object.find("languageContract"); contract != object.end()) profileFields.emplace("languageContract", contract->second);
   const auto profile = readProfile(profileFields, true);
   if (!profile) return invalid<Output>("invalid draft profile: " + profile.error().message);
   auto expected = generate(profile.value());

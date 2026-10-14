@@ -105,9 +105,9 @@ public:
     }
   };
   struct NewProducerWorkspaceInput final {
-    // The recording inventory to generate: the full Japanese draft, or the vowel starter (five
-    // sustained vowels at two pitches) that reaches a singing test bank quickly.
-    enum class Inventory { JapaneseFull, JapaneseVowelStarter };
+    // The recording inventory to generate: full Japanese, Japanese vowel starter,
+    // or full English with explicit lexical stress folding. No range is qualified.
+    enum class Inventory { JapaneseFull, JapaneseVowelStarter, EnglishFull };
     std::filesystem::path destination;
     std::string projectId, producerId;
     Inventory inventory{Inventory::JapaneseFull};

@@ -108,7 +108,7 @@ public:
       NSString* folderName=panel.URL.lastPathComponent;
       NSAlert* alert=[[NSAlert alloc] init];
       alert.messageText=@"Name the voice and its producer";
-      alert.informativeText=@"The project ID also names the generated Japanese draft inventory. Your producer ID becomes this workspace's only PRODUCER; register reviewers later in Sample Review (Q, then V). The requested range stays not assessed.";
+      alert.informativeText=@"The project ID also names the selected recording inventory. Your producer ID becomes this workspace's only PRODUCER; register reviewers later in Sample Review (Q, then V). The requested range stays not assessed.";
       [alert addButtonWithTitle:@"Create Workspace"]; [alert addButtonWithTitle:@"Cancel"];
       NSView* fields=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,102)];
       NSTextField* project=[[NSTextField alloc] initWithFrame:NSMakeRect(0,72,480,26)];
@@ -118,7 +118,8 @@ public:
       producer.placeholderString=@"Your producer ID"; [producer setAccessibilityLabel:@"Producer ID"];
       NSPopUpButton* inventory=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,0,480,28) pullsDown:NO];
       [inventory addItemsWithTitles:@[@"Full Japanese draft: 1026 takes at three pitches",
-          @"Vowel starter: 10 takes, five vowels at two pitches (vowel lyrics only)"]];
+          @"Vowel starter: 10 takes, five vowels at two pitches (vowel lyrics only)",
+          @"Full English draft: vowels, consonants and transitions at three pitches (stress folded)"]];
       [inventory setAccessibilityLabel:@"Recording inventory"];
       [fields addSubview:project]; [fields addSubview:producer]; [fields addSubview:inventory]; alert.accessoryView=fields;
       if (runModalRestoringFocus(alert)!=NSAlertFirstButtonReturn) return Output{};
@@ -128,6 +129,7 @@ public:
         return core::failure<Output>(core::ErrorCode::InvalidArgument,"Project or producer ID is not valid text");
       NewProducerWorkspaceInput input{destination,projectText,producerText};
       if (inventory.indexOfSelectedItem==1) input.inventory=NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter;
+      if (inventory.indexOfSelectedItem==2) input.inventory=NewProducerWorkspaceInput::Inventory::EnglishFull;
       const auto valid=input.validate(); if (!valid) return core::Result<Output>{valid.error()};
       return Output{std::move(input)};
     }

@@ -120,3 +120,8 @@ Neither grants production/source/personality/actor/listening acceptance. Alpha
 remains 0/20 recorded passes, U45 held, Beta BLOCKED, full goal ACTIVE. `.github`,
 README Windows TODO, original sources, earlier frozen evidence and stash remain
 preserved.
+
+
+### Later English producer-entry implementation
+
+The Japanese-only entry gap above is addressed by [English producer workspace](ENGLISH_PRODUCER_WORKSPACE_2026-10-15.md): explicit English inventory/contract, native/Python parity and normal Studio/CLI creation/reopen. This does not import or approve these donor cuts; actual actors, source policy, downstream bank contract integration and singing coverage remain open.

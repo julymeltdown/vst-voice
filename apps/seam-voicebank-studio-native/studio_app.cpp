@@ -1295,11 +1295,14 @@ public:
         producerEpoch!=controller_.productionSessionEpoch() || designer_.busy() || controller_.proceduralImportBusy() ||
         !canCreateProducerWorkspace())
       return seam::core::failure(seam::core::ErrorCode::Conflict,"Workspace creation context changed while the dialog was open");
+    auto preset=seam::voicebank_production::DraftInventoryPreset::JapaneseFull;
+    if (input.value()->inventory==seam::platform::IFileDialog::NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter)
+      preset=seam::voicebank_production::DraftInventoryPreset::JapaneseVowelStarter;
+    else if (input.value()->inventory==seam::platform::IFileDialog::NewProducerWorkspaceInput::Inventory::EnglishFull)
+      preset=seam::voicebank_production::DraftInventoryPreset::EnglishFull;
     const auto started=controller_.beginCreateProductionProject(input.value()->destination,input.value()->projectId,
         input.value()->producerId,{},
-        input.value()->inventory==seam::platform::IFileDialog::NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter
-            ?seam::voicebank_production::DraftInventoryPreset::JapaneseVowelStarter
-            :seam::voicebank_production::DraftInventoryPreset::JapaneseFull);
+        preset);
     if (started) designerView_=false;
     return started;
   }
@@ -1330,7 +1333,7 @@ public:
       root.children.push_back({.id = prefix + "create-producer", .role = SemanticRole::Button, .name = "Create producer workspace",
           .bounds = designerEntryBounds(3U,width), .enabled = enabled,
           .actions = enabled ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{},
-          .description = "Cmd/Ctrl-Shift-D. Creates a new folder with a generated Japanese draft inventory, its recording script and an initialized producer workspace. Nothing is recorded or approved."});
+          .description = "Cmd/Ctrl-Shift-D. Creates a new folder with the selected Japanese or English recording inventory, its script and an initialized producer workspace. Nothing is recorded or approved."});
     }
     if (designer_.model()) {
       const auto seed = std::to_string(designer_.model()->recipe().seed);

@@ -3,6 +3,7 @@
 
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/repository.hpp"
 
@@ -141,6 +142,8 @@ TEST_CASE("draft inventory profiles keep the generator's bounds") {
   profile = defaultProfile(); profile.profileId = std::string{"\xC0\xAF"};
   refused(profile, "profileId");
   profile = defaultProfile(); profile.language = "en";
+  refused(profile, "languageContract");
+  profile = defaultProfile(); profile.language = "ko";
   refused(profile, "Japanese rules");
   profile = defaultProfile(); profile.vowels = {"a", "a"};
   refused(profile, "duplicate");
@@ -283,4 +286,75 @@ TEST_CASE("named inventory presets are the full default draft and the Python vow
   const auto reloaded = production::loadDraftInventory(starter.value().documentJson);
   CHECK(reloaded);
   if (reloaded) CHECK(reloaded.value().inventorySha256 == kStarterInventorySha256);
+}
+
+TEST_CASE("English full inventory binds the phonemizer vocabulary and matches Python") {
+  const auto profile = production::draftInventoryPresetProfile(production::DraftInventoryPreset::EnglishFull, "english-full");
+  CHECK(profile.language == "en");
+  CHECK(profile.vocabularyId == seam::phonemizer::kEnglishVocabularyId);
+  CHECK(profile.vocabularySha256 == seam::phonemizer::englishVocabularySha256());
+  CHECK(profile.stressPolicy == "FOLD_LEXICAL_STRESS");
+  const auto generated = production::generateDraftInventory(profile);
+  CHECK(generated); if (!generated) return;
+  const auto& inventory = generated.value();
+  CHECK(inventory.inventorySha256 == "50612c318eba505e0e1611c0162987aab10880fd8c611262c40659272f35c6ee");
+  CHECK(inventory.scriptSha256 == "6e5585339a5a3736c5b92ffcdbb3a5002516175dc2819a55c7512445a2607b46");
+  CHECK(inventory.units.size() == 6882U);
+  CHECK(inventory.requiredCoverage.size() == 1147U);
+  CHECK(std::find(inventory.requiredCoverage.begin(),inventory.requiredCoverage.end(),"sustain:axr") != inventory.requiredCoverage.end());
+  CHECK(std::find(inventory.requiredCoverage.begin(),inventory.requiredCoverage.end(),"special:j") != inventory.requiredCoverage.end());
+  CHECK(std::find(inventory.requiredCoverage.begin(),inventory.requiredCoverage.end(),"release:iy:pau") != inventory.requiredCoverage.end());
+  CHECK(std::all_of(inventory.units.begin(),inventory.units.end(),[](const auto& unit) {
+    return std::all_of(unit.phones.begin(),unit.phones.end(),seam::phonemizer::isEnglishVocabularySymbol);
+  }));
+  const auto loaded = production::loadDraftInventory(inventory.documentJson);
+  CHECK(loaded); if (loaded) CHECK(loaded.value().inventorySha256 == inventory.inventorySha256);
+  CHECK(!production::loadDraftInventory(replaceFirst(inventory.documentJson,"FOLD_LEXICAL_STRESS","DISTINGUISH_LEXICAL_STRESS")));
+}
+
+TEST_CASE("English custom stress inventory matches Python and refuses wrong phone classes") {
+  auto profile = production::draftInventoryPresetProfile(production::DraftInventoryPreset::EnglishFull,"english-small");
+  profile.vowels={"iy1","aa0"}; profile.consonants={"s","t"}; profile.specialPhones={"pau"};
+  profile.includeKinds={"sustain","cv","vc","release","special"};
+  profile.alternateTakes=1; profile.pitchLayers={60,66}; profile.stressPolicy="DISTINGUISH_LEXICAL_STRESS";
+  const auto generated=production::generateDraftInventory(profile);
+  CHECK(generated); if (!generated) return;
+  CHECK(generated.value().units.size()==26U);
+  CHECK(generated.value().inventorySha256=="3a292a62747efc713bf1b2f4251e8af4049b5032f3ad5cc11dad4167ec455972");
+  CHECK(generated.value().scriptSha256=="fa703bbca4a2eccdd6f194d9fd1da330ca9b2caf9f429e5cd3b158256d0052c3");
+  const auto refused=[](production::DraftInventoryProfile p,std::string_view text) {
+    const auto result=production::generateDraftInventory(p); CHECK(!result);
+    if (!result) CHECK(result.error().message.find(text)!=std::string::npos);
+  };
+  auto invalid=profile; invalid.stressPolicy="FOLD_LEXICAL_STRESS"; refused(invalid,"bare vowel");
+  invalid=profile; invalid.vocabularySha256=std::string(64,'0'); refused(invalid,"languageContract");
+  invalid=profile; invalid.vocabularyId="other"; refused(invalid,"languageContract");
+  invalid=profile; invalid.stressPolicy="PASS"; refused(invalid,"languageContract");
+  invalid=profile; invalid.vowels={"a"}; refused(invalid,"phone classes");
+  invalid=profile; invalid.consonants={"jh"}; refused(invalid,"phone classes");
+  invalid=profile; invalid.specialPhones={"br"}; refused(invalid,"phone classes");
+  invalid=profile; invalid.includeKinds={"breath"}; refused(invalid,"Japanese breath");
+  invalid=profile; invalid.language="ja"; refused(invalid,"English languageContract");
+}
+
+TEST_CASE("English profile defaults create and reopen an empty producer workspace") {
+  const auto parent=seam::test::support::temporaryDirectory("english-draft-producer");
+  struct Cleanup {std::filesystem::path path; ~Cleanup(){std::error_code e;std::filesystem::remove_all(path,e);}} cleanup{parent};
+  const auto profile=production::parseDraftInventoryProfile(R"({"profileId":"english-workspace","language":"en"})");
+  CHECK(profile); if (!profile) return;
+  const auto created=production::createDraftProducerWorkspace(parent/"voice",profile.value(),"voice","engineering-fixture-producer","2026-10-15T00:00:00Z");
+  CHECK(created); if (!created) return;
+  CHECK(created.value().units==6882U); CHECK(created.value().assignments==3441U);
+  const auto read=production::readDraftProducerWorkspaceInventory(parent/"voice");
+  CHECK(read); if (read) CHECK(read.value().inventory.profile.language=="en");
+  const auto recovered=production::ProductionProjectRepository{created.value().producerRoot}.recover();
+  CHECK(recovered); if (!recovered) return;
+  const auto& project=recovered.value();
+  CHECK(project.language=="en"); CHECK(project.lifecycle==production::ProductionLifecycle::Draft);
+  CHECK(project.takes.empty()); CHECK(project.sourceBindings.empty()); CHECK(project.reviews.empty());
+  CHECK(project.sourceStrategies.empty()); CHECK(project.sourceQualityAssessments.empty());
+  CHECK(project.operators.size()==1U); CHECK(project.operators.front().role=="PRODUCER");
+  CHECK(std::all_of(project.unitAssignments.begin(),project.unitAssignments.end(),[](const auto& row){
+    return row.state==production::UnitQueueState::Missing && row.takeId.empty() && !row.markerReviewed && !row.pitchReviewed;
+  }));
 }

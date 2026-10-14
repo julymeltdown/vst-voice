@@ -13,8 +13,10 @@ import re
 from typing import Any
 
 from .profile import DEFAULT_PROFILE, base_key, required_sequences
+from .english_profile import DEFAULTS as ENGLISH_DEFAULTS, validate_english_profile
 
 VERSION = "seam-draft-inventory-2.0.0"
+ENGLISH_VERSION = "seam-draft-inventory-2.1.0-en"
 PROFILE_FIELDS = (
     "profileId", "language", "supportedStyles", "vowels", "consonants",
     "specialPhones", "includeKinds", "pitchLayers", "requestedRange",
@@ -42,20 +44,24 @@ def _text(value: Any) -> bool:
 
 
 def normalize_draft_profile(profile: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(profile, dict) or set(profile) - set(PROFILE_FIELDS):
+    if not isinstance(profile, dict) or set(profile) - set(PROFILE_FIELDS) - {"languageContract"}:
         raise ValueError("draft profile contains unknown fields; rangeTest/PASS is not draft authority")
     result = {key: json.loads(_json(DEFAULT_PROFILE[key])) for key in PROFILE_FIELDS
               if key in DEFAULT_PROFILE and key not in {"profileId", "pitchLayers"}}
     result.update({"supportedStyles": ["neutral"], "pitchLayers": [60, 66, 72],
                    "requestedRange": {"minMidi": 60, "maxMidi": 72}})
+    if profile.get("language") == "en":
+        result.update(json.loads(_json(ENGLISH_DEFAULTS)))
     result.update(profile)
     if not _text(result.get("profileId")):
         raise ValueError("draft profileId is required and bounded")
-    if result.get("language") != "ja":
+    if result.get("language") not in ("ja", "en"):
         raise ValueError("draft language profile is not implemented; Japanese rules cannot stand in for other languages")
+    if result["language"] == "ja" and "languageContract" in result:
+        raise ValueError("Japanese legacy draft cannot carry an English languageContract")
     for field in ("supportedStyles", "vowels", "consonants", "specialPhones", "includeKinds"):
         values = result.get(field)
-        limit = 16 if field == "supportedStyles" else 64
+        limit = 16 if field == "supportedStyles" else 68 if field == "vowels" and result["language"] == "en" else 64
         if not isinstance(values, list) or not 1 <= len(values) <= limit or not all(_text(v) for v in values):
             raise ValueError(f"{field} must contain bounded nonempty symbols")
         if len(set(values)) != len(values):
@@ -66,6 +72,8 @@ def normalize_draft_profile(profile: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"{field} contains an unsupported phonetic symbol")
     if set(result["includeKinds"]) - set(DEFAULT_PROFILE["includeKinds"]):
         raise ValueError("includeKinds contains unsupported kinds")
+    if result["language"] == "en":
+        validate_english_profile(result)
     layers = result.get("pitchLayers")
     if not isinstance(layers, list) or len(layers) not in (2, 3) or any(
         type(value) is not int or not 24 <= value <= 96 for value in layers
@@ -112,7 +120,7 @@ def _payload(profile: dict[str, Any]) -> dict[str, Any]:
                         "retakeGroup": f"rt-{identity}", "filename": f"takes/s{style_key}/p{layer}/{take}.wav",
                         "coverageKey": coverage, "assignmentId": identity,
                     })
-    return {"schemaVersion": 2, "generatorVersion": VERSION, **profile,
+    return {"schemaVersion": 2, "generatorVersion": ENGLISH_VERSION if profile["language"] == "en" else VERSION, **profile,
             "rangeAssessment": {"status": "NOT_ASSESSED"},
             "requiredCoverage": [base_key(s) for s in sequences], "units": units}
 
@@ -138,7 +146,10 @@ def validate_draft_inventory(inventory: Any) -> list[str]:
     if not isinstance(inventory.get("units"), list) or len(inventory["units"]) > MAXIMUM_UNITS:
         return ["draft inventory units exceed bounds or are not a list"]
     try:
-        expected = generate_draft_inventory({key: inventory[key] for key in PROFILE_FIELDS})
+        profile = {key: inventory[key] for key in PROFILE_FIELDS}
+        if inventory.get("language") == "en":
+            profile["languageContract"] = inventory["languageContract"]
+        expected = generate_draft_inventory(profile)
         actual_json = _json(inventory)
     except (KeyError, ValueError, TypeError, OverflowError, UnicodeError, RecursionError) as error:
         return [f"invalid draft profile: {error}"]
