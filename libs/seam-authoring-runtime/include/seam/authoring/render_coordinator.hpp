@@ -170,6 +170,11 @@ struct RenderCoordinatorHooks final {
   // Test-only barrier after the worker's early currency check and immediately
   // before publication admission. Runs outside coordinator locks and may block.
   std::function<void(std::uint64_t)> beforePublishAdmission;
+  // Test-only outcome barrier after physical publication (or its failure/retained-audio
+  // decision), before counters and the terminal report. Runs under the admission
+  // mutex: it must not re-enter the coordinator and must be released before test exit.
+  // User progress/completion callbacks still run outside every coordinator lock.
+  std::function<void(std::uint64_t)> beforeOutcomeReport;
   // Test-only debounce observation. These callbacks run with the coordinator
   // mutex held: they must not block or re-enter the coordinator. A longer test
   // interval lets cancellation be synchronized inside the actual timed wait.

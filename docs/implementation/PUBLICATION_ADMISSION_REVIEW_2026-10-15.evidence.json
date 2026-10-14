@@ -61,7 +61,17 @@
     "localSupplementExecution": "Read-only verdict/Git/source binding audit only, no new native build/test.",
     "approvalScope": "Exact c27d1d6f engineering unit only. Not current HEAD, other later units or human/source/rights/production-QC/Beta approval.",
     "releaseEligible": false,
-    "beta": "BLOCKED"
+    "beta": "BLOCKED",
+    "localFollowUp": {
+      "dossier": "docs/implementation/PUBLICATION_OUTCOME_ADMISSION_2026-10-15.md",
+      "state": "ADDRESSED_LOCALLY_REVIEW_PENDING",
+      "manifest": {
+        "path": "out/evidence/publication-progress-2026-10-15/manifest.json",
+        "sizeBytes": 12298,
+        "sha256": "42d1cca6e39a876a93eeced8c375fde8e40bb053fffe5c1514902093191926f4"
+      },
+      "extendsExactC27Approval": false
+    }
   },
   "verdict": {
     "path": "out/evidence/publication-admission-review-2026-10-15/review-c27d1d6f.txt",

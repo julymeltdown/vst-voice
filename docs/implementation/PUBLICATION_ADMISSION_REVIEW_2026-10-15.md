@@ -50,3 +50,15 @@ original singer/classical/neural/R9 resources, source permissions/actors/coverag
 and canonical acoustic criteria/tolerance ownership remain. Alpha stays **0/20 recorded
 passes**, U45 held, Beta **BLOCKED**, full goal ACTIVE. `.github`, README Windows TODO,
 canonical gates, source recordings, historical evidence and the stash are preserved.
+
+## Later local implementation of the two P3s
+
+The separate [outcome-admission unit](PUBLICATION_OUTCOME_ADMISSION_2026-10-15.md)
+addresses both findings locally: publication and its terminal counter/report share
+admission, and a new held-reset control fails when only that lock is removed while
+the four older late controls still pass. Four outcome-ordering controls fail on the
+observed parent and pass after repair; reentrant notification also passes. Full
+Release build, eight focused entries (253 native cases/11 Python methods), nine
+additional runtime cases and Debug TSan (48 coordinator cases) pass. This follow-up
+has its own 69-artifact/nine-input root and awaits independent review. It does not
+retroactively extend the exact c27 approval or change this frozen review root.

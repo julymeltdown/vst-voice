@@ -557,9 +557,28 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       stale_.fetch_add(1U, std::memory_order_relaxed);
       continue;
     }
-    if (audio->state == RenderState::Failed) {
+    const auto state = audio->state;
+    const auto completedPhrases = audio->result.phraseCount;
+    const auto diagnostic = audio->diagnostic;
+    const auto failure = audio->failure;
+    const auto activeVoicebankId = audio->activeVoicebankId;
+    const auto activeVoicebankVersion = audio->activeVoicebankVersion;
+    const auto activeRenderer = audio->activeRenderer;
+    if (hooks_.beforePublishAdmission) hooks_.beforePublishAdmission(request.revision);
+    {
+      // Admission and revocation use this same lock. The early check above
+      // cannot authorize a later publish after a replacement, cancel or reset.
+      // Commit the terminal report and counter before releasing admission too:
+      // cancel must see a finished attempt, and submit must inherit its published
+      // revision. Lock order is mutex_ -> progressMutex_; notification is outside.
+      std::lock_guard lock(mutex_);
+      if (request.requestId != latestSubmittedRequestId_.load(std::memory_order_acquire)) {
+        stale_.fetch_add(1U, std::memory_order_relaxed);
+        continue;
+      }
       const auto previous = publication_.acquire();
-      if (previous && previous->state == RenderState::Ready) {
+      if (state == RenderState::Failed && previous && previous->state == RenderState::Ready) {
+        if (hooks_.beforeOutcomeReport) hooks_.beforeOutcomeReport(request.revision);
         failed_.fetch_add(1U, std::memory_order_relaxed);
         static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
             .state = RenderState::Failed,
@@ -571,78 +590,58 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
             .totalPhrases = totalPhrases,
             .fraction = 0.0,
             .audibleAudioStale = true,
-            .diagnostic = audio->diagnostic,
-            .activeVoicebankId = audio->activeVoicebankId,
-            .activeVoicebankVersion = audio->activeVoicebankVersion,
-            .activeRenderer = audio->activeRenderer,
-            .failure = audio->failure,
+            .diagnostic = diagnostic,
+            .activeVoicebankId = activeVoicebankId,
+            .activeVoicebankVersion = activeVoicebankVersion,
+            .activeRenderer = activeRenderer,
+            .failure = failure,
         }));
-        notifyCompletion();
-        continue;
+      } else {
+        const bool published = publication_.publish(std::move(*audio));
+        if (hooks_.beforeOutcomeReport) hooks_.beforeOutcomeReport(request.revision);
+        if (!published) {
+          const auto current = progress();
+          failed_.fetch_add(1U, std::memory_order_relaxed);
+          static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
+              .state = RenderState::Failed,
+              .requestedRevision = request.revision,
+              .publishedRevision = current.publishedRevision,
+              .requestedQuality = request.quality,
+              .publishedQuality = current.publishedQuality,
+              .completedPhrases = 0U,
+              .totalPhrases = totalPhrases,
+              .fraction = 0.0,
+              .audibleAudioStale = current.audibleAudioStale,
+              .diagnostic = "Realtime render publication has no free slot",
+              .activeVoicebankId = activeVoicebankId,
+              .activeVoicebankVersion = activeVoicebankVersion,
+              .activeRenderer = activeRenderer,
+              .failure = RenderFailureKind::PublicationBusy,
+          }));
+        } else {
+          if (state == RenderState::Ready) {
+            completed_.fetch_add(1U, std::memory_order_relaxed);
+          } else {
+            failed_.fetch_add(1U, std::memory_order_relaxed);
+          }
+          static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
+              .state = state,
+              .requestedRevision = request.revision,
+              .publishedRevision = request.revision,
+              .requestedQuality = request.quality,
+              .publishedQuality = request.quality,
+              .completedPhrases = completedPhrases,
+              .totalPhrases = totalPhrases,
+              .fraction = state == RenderState::Ready ? 1.0 : 0.0,
+              .diagnostic = diagnostic,
+              .activeVoicebankId = activeVoicebankId,
+              .activeVoicebankVersion = activeVoicebankVersion,
+              .activeRenderer = activeRenderer,
+              .failure = failure,
+          }));
+        }
       }
     }
-    const auto state = audio->state;
-    const auto completedPhrases = audio->result.phraseCount;
-    const auto diagnostic = audio->diagnostic;
-    const auto failure = audio->failure;
-    const auto activeVoicebankId = audio->activeVoicebankId;
-    const auto activeVoicebankVersion = audio->activeVoicebankVersion;
-    const auto activeRenderer = audio->activeRenderer;
-    if (hooks_.beforePublishAdmission) hooks_.beforePublishAdmission(request.revision);
-    bool published = false;
-    {
-      // Admission and revocation use this same lock. The early check above
-      // cannot authorize a later publish after a replacement, cancel or reset.
-      // No progress/completion callback runs while admission is locked.
-      std::lock_guard lock(mutex_);
-      if (request.requestId != latestSubmittedRequestId_.load(std::memory_order_acquire)) {
-        stale_.fetch_add(1U, std::memory_order_relaxed);
-        continue;
-      }
-      published = publication_.publish(std::move(*audio));
-    }
-    if (!published) {
-      failed_.fetch_add(1U, std::memory_order_relaxed);
-      static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
-          .state = RenderState::Failed,
-          .requestedRevision = request.revision,
-          .publishedRevision = progress().publishedRevision,
-          .requestedQuality = request.quality,
-          .publishedQuality = progress().publishedQuality,
-          .completedPhrases = 0U,
-          .totalPhrases = totalPhrases,
-          .fraction = 0.0,
-          .audibleAudioStale = progress().audibleAudioStale,
-          .diagnostic = "Realtime render publication has no free slot",
-          .activeVoicebankId = activeVoicebankId,
-          .activeVoicebankVersion = activeVoicebankVersion,
-          .activeRenderer = activeRenderer,
-          .failure = RenderFailureKind::PublicationBusy,
-      }));
-      notifyCompletion();
-      continue;
-    }
-
-    if (state == RenderState::Ready) {
-      completed_.fetch_add(1U, std::memory_order_relaxed);
-    } else {
-      failed_.fetch_add(1U, std::memory_order_relaxed);
-    }
-    static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
-        .state = state,
-        .requestedRevision = request.revision,
-        .publishedRevision = request.revision,
-        .requestedQuality = request.quality,
-        .publishedQuality = request.quality,
-        .completedPhrases = completedPhrases,
-        .totalPhrases = totalPhrases,
-        .fraction = state == RenderState::Ready ? 1.0 : 0.0,
-        .diagnostic = diagnostic,
-        .activeVoicebankId = activeVoicebankId,
-        .activeVoicebankVersion = activeVoicebankVersion,
-        .activeRenderer = activeRenderer,
-        .failure = failure,
-    }));
     notifyCompletion();
   }
 }

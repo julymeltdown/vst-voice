@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "unit": "publication-outcome-admission",
+  "sourceBaseCommit": "45c8b2603b133243be4fdbdf48bf020583565964",
+  "manifest": {
+    "path": "out/evidence/publication-progress-2026-10-15/manifest.json",
+    "sizeBytes": 12298,
+    "sha256": "42d1cca6e39a876a93eeced8c375fde8e40bb053fffe5c1514902093191926f4"
+  },
+  "retainedArtifacts": 69,
+  "preservedBindings": 9,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/publication-progress-2026-10-15/verification.log",
+      "sizeBytes": 352,
+      "sha256": "52eb2bc4951cdf9ff6276848611f9eac78f0d91e2fe28d2d03ccaf5631039b7d"
+    },
+    "scope": "Read-only retained bytes, immutable parent Git, exact mutations, source/executable bindings, counts and canonical state; no retained code execution."
+  },
+  "review": {
+    "status": "PENDING",
+    "priorReviewedCommit": "c27d1d6f5b9a883b48ea8c11c170998b68ac7a04",
+    "priorVerdict": "APPROVE engineering only",
+    "followUpsAddressedLocally": [
+      "Dynamic mutex exclusion control",
+      "Terminal outcome commitment under admission"
+    ],
+    "extendsPriorApproval": false
+  },
+  "controls": {
+    "newNativeCases": 6,
+    "baselinePassed": 2,
+    "baselineFailed": 4,
+    "lockRemovedHeldResetFailed": 1,
+    "oldLateControlsPassingWithoutLock": 4,
+    "repairedPassed": 6,
+    "observationMilliseconds": 150,
+    "countsNotAdditive": true
+  },
+  "execution": {
+    "baseline-build": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/baseline-build.json",
+        "sizeBytes": 4440,
+        "sha256": "715dffed73f632a176aea8488a7c0764040119f880fcab999fe80312597ceb55"
+      },
+      "elapsedSeconds": 94.10376108399942,
+      "exitCode": 0
+    },
+    "baseline-regressions": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/baseline-regressions.json",
+        "sizeBytes": 4471,
+        "sha256": "886923ef13295b9bdd6a5e496b284edc4204b25928aad4f2eb481e16c1156883"
+      },
+      "elapsedSeconds": 1.3611892079934478,
+      "exitCode": 1
+    },
+    "lock-removed-build": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/lock-removed-build.json",
+        "sizeBytes": 4443,
+        "sha256": "fd9ec323a5fdb147403b03fcd7b00bd03164a8ad3c2104e73604763fac6749dc"
+      },
+      "elapsedSeconds": 5.2399349579936825,
+      "exitCode": 0
+    },
+    "lock-removed-regression": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/lock-removed-regression.json",
+        "sizeBytes": 4483,
+        "sha256": "4dd366f4ce19312cb341a7e06f3ea87bc76923a6e1222eef3b83c76c739f4b58"
+      },
+      "elapsedSeconds": 0.5808692090213299,
+      "exitCode": 1
+    },
+    "lock-removed-old-controls": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/lock-removed-old-controls.json",
+        "sizeBytes": 4469,
+        "sha256": "b11558264d472c1bac6e7f95af60c538ba2077c4e41b5501bbe81b6cd7ac30ec"
+      },
+      "elapsedSeconds": 0.1325718330044765,
+      "exitCode": 0
+    },
+    "final-build": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/final-build.json",
+        "sizeBytes": 4442,
+        "sha256": "9a3d9eba8b6672b89dd2afb7fd95d2d6367aaa3fc0a2719ef91ff2da944994f5"
+      },
+      "elapsedSeconds": 4.947415167000145,
+      "exitCode": 0
+    },
+    "repaired-regressions": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/repaired-regressions.json",
+        "sizeBytes": 4471,
+        "sha256": "faa73f3ebbe88cce024970ec008331ae68f339828dca49c51647936e15b3178d"
+      },
+      "elapsedSeconds": 1.3929709160001948,
+      "exitCode": 0
+    },
+    "focused-tests": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/focused-tests.json",
+        "sizeBytes": 4779,
+        "sha256": "0ed1dad5aa0b69b6e257120c52ba868588e26550e4966a119685477a3969483e"
+      },
+      "elapsedSeconds": 43.951600000000326,
+      "exitCode": 0
+    },
+    "owner-runtime-tests": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/owner-runtime-tests.json",
+        "sizeBytes": 4439,
+        "sha256": "46dad9bba95fec59bc56e7135f17bdc298a7bff2cc3eb31fb110a7ec96fd9ad2"
+      },
+      "elapsedSeconds": 0.8992377500107978,
+      "exitCode": 0
+    },
+    "tsan-build": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/tsan-build.json",
+        "sizeBytes": 4512,
+        "sha256": "d7572016aec13072e0db67205c50c86be1d35d2713973f8eb572ca49e089882d"
+      },
+      "elapsedSeconds": 6.017042332998244,
+      "exitCode": 0
+    },
+    "tsan-tests": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/tsan-tests.json",
+        "sizeBytes": 4498,
+        "sha256": "e46291fd403b680857a7a3e041c8e38334c86261cd1dcc34daa873b1b237c0dd"
+      },
+      "elapsedSeconds": 82.97706104200915,
+      "exitCode": 0
+    },
+    "focused-tests-bound": {
+      "receipt": {
+        "path": "out/evidence/publication-progress-2026-10-15/focused-tests-bound.json",
+        "sizeBytes": 7255,
+        "sha256": "8681821556f11455ac90f09d3c4c725258e5d876a7a2105451802bac7cee40a2"
+      },
+      "elapsedSeconds": 39.75038954199408,
+      "exitCode": 0
+    }
+  },
+  "finalFocused": {
+    "entries": 8,
+    "nativeCounts": [
+      12,
+      18,
+      48,
+      121,
+      13,
+      7,
+      34
+    ],
+    "nativeCases": 253,
+    "pythonMethods": 11,
+    "existingHostMethods": 8,
+    "mockedOwnershipMethodsFromPreviousUnit": 3,
+    "boundRun": "focused-tests-bound",
+    "separateRuntimeCases": 9
+  },
+  "tsan": {
+    "buildType": "Debug",
+    "cases": 48,
+    "diagnostics": false,
+    "options": "halt_on_error=1",
+    "scope": "Coordinator target and dependencies rebuilt; no other TSan target claimed."
+  },
+  "evidenceBoundary": {
+    "authenticatedBuildLineage": false,
+    "atomicCrossReaderSnapshot": false,
+    "initialChildBindingGap": "Preserved first wrapper names absent runtime/song executables and unused generic host/plugin. Actual editor host/plugin/native CTest entries are bound by repeated run.bound.py execution.",
+    "downloadsThisUnit": 0
+  },
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

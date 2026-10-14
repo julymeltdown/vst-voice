@@ -1733,3 +1733,170 @@ TEST_CASE("late_publication_preserves_accepted_audio_after_idle_reset") {
 TEST_CASE("late_publication_preserves_accepted_audio_after_debounced_intent_invalidation") {
   checkLatePublicationRevocation("invalidate");
 }
+
+TEST_CASE("publication_outcome_worker_waits_for_reset_with_its_token_still_current") {
+  auto fixture = makeRenderFixture();
+  HookBarrier late;
+  HookBarrier reset;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforePublishAdmission = [&](std::uint64_t revision) {
+    if (revision == 902U) late.pass();
+  };
+  // Reset owns admission here, but has not revoked request 902 yet. A currency
+  // recheck alone therefore cannot prevent publication while this gate is held.
+  hooks.duringReset = [&] { reset.pass(); };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-held-reset"), std::move(hooks)};
+  std::jthread resetter;
+  ReleaseOnExit releaseLate{late};
+  ReleaseOnExit releaseReset{reset};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     901U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 901U).state == seam::authoring::RenderState::Ready);
+  const auto accepted = coordinator.acquire();
+  CHECK(accepted);
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     902U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(late.waitEntered());
+  resetter = std::jthread{[&] { coordinator.resetToIdle(); }};
+  CHECK(reset.waitEntered());
+  late.release();
+  // Bounded negative observation, not proof that the OS scheduled the worker.
+  // A controlled lock-removal mutation must fail this check with the recheck kept.
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(coordinator.stats().completed == 1U);
+  const auto retained = coordinator.acquire();
+  CHECK(retained);
+  CHECK(retained->requestId == accepted->requestId);
+  CHECK(retained->result.interleaved.storageIdentity() ==
+        accepted->result.interleaved.storageIdentity());
+  reset.release();
+  resetter.join();
+  CHECK(waitForCondition([&] { return coordinator.stats().stale == 1U; }));
+  CHECK(coordinator.stats().completed == 1U);
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Idle);
+  CHECK(!coordinator.acquireCurrent());
+}
+
+namespace {
+
+void checkPublicationOutcome(std::string_view outcome, bool replace) {
+  auto fixture = makeRenderFixture();
+  HookBarrier report;
+  HookBarrier replacement;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforeOutcomeReport = [&](std::uint64_t revision) {
+    if (revision == 1003U) report.pass();
+  };
+  hooks.afterAdmission = [&](std::uint64_t revision, std::stop_token) {
+    if (revision == 1004U) replacement.pass();
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-outcome-report"), std::move(hooks)};
+  std::atomic<bool> controlStarted{false};
+  std::atomic<bool> controlReturned{false};
+  std::jthread control;
+  ReleaseOnExit releaseReport{report};
+  ReleaseOnExit releaseReplacement{replacement};
+  std::vector<seam::authoring::RealtimeProjectAudioPublication::ReadHandle> readers;
+  const bool busy = outcome == "busy";
+  const bool failure = outcome == "failure";
+  if (busy) readers.push_back(coordinator.acquire());  // Pin the initial idle slot.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     1001U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 1001U).state == seam::authoring::RenderState::Ready);
+  readers.push_back(coordinator.acquire());
+  if (busy) {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                       1002U, 48000U, seam::rendering::RenderQuality::Preview, true);
+    CHECK(waitForTerminal(coordinator, 1002U).state == seam::authoring::RenderState::Ready);
+    readers.push_back(coordinator.acquire());  // All three physical slots are pinned.
+  }
+  const auto priorCompleted = coordinator.stats().completed;
+  coordinator.submit(fixture.project,
+                     failure ? std::vector<seam::rendering::TrackVoicebankSource>{}
+                             : std::vector<seam::rendering::TrackVoicebankSource>{fixture.source},
+                     fixture.trackId, fixture.regionId, 1003U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(report.waitEntered());
+  const auto physical = coordinator.acquire();
+  CHECK(physical);
+  const auto expectedPublished = busy ? 1002U : failure ? 1001U : 1003U;
+  CHECK(physical->projectRevision == expectedPublished);
+  // The outcome has been selected; neither its count nor its report is committed yet.
+  CHECK(coordinator.stats().completed == priorCompleted);
+  CHECK(coordinator.stats().failed == 0U);
+  control = std::jthread{[&] {
+    controlStarted.store(true, std::memory_order_release);
+    if (replace) {
+      coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                         1004U, 48000U, seam::rendering::RenderQuality::Preview, true);
+    } else {
+      coordinator.cancel();
+    }
+    controlReturned.store(true, std::memory_order_release);
+  }};
+  CHECK(waitForCondition([&] { return controlStarted.load(std::memory_order_acquire); }));
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(!controlReturned.load(std::memory_order_acquire));
+  report.release();
+  control.join();
+  if (replace) CHECK(replacement.waitEntered());
+  const auto progress = coordinator.progress();
+  CHECK(progress.publishedRevision == expectedPublished);
+  CHECK(coordinator.stats().completed == priorCompleted + ((!busy && !failure) ? 1U : 0U));
+  CHECK(coordinator.stats().failed == ((busy || failure) ? 1U : 0U));
+  if (replace) {
+    CHECK(progress.state == seam::authoring::RenderState::Queued);
+    CHECK(progress.requestedRevision == 1004U);
+    replacement.release();
+    CHECK(waitForTerminal(coordinator, 1004U).state == seam::authoring::RenderState::Ready);
+  } else {
+    CHECK(progress.state == ((busy || failure) ? seam::authoring::RenderState::Failed
+                                               : seam::authoring::RenderState::Ready));
+    CHECK(progress.requestedRevision == 1003U);
+    CHECK(progress.failure == (busy ? seam::authoring::RenderFailureKind::PublicationBusy
+                                   : failure ? seam::authoring::RenderFailureKind::VoicebankMissing
+                                             : seam::authoring::RenderFailureKind::None));
+    CHECK(!coordinator.acquireCurrent());  // Cancel still revokes accepted audio.
+  }
+}
+
+}  // namespace
+
+TEST_CASE("publication_outcome_cancel_after_ready_keeps_the_completed_report") {
+  checkPublicationOutcome("ready", false);
+}
+
+TEST_CASE("publication_outcome_replacement_carries_the_newly_published_revision") {
+  checkPublicationOutcome("ready", true);
+}
+
+TEST_CASE("publication_outcome_cancel_after_failure_keeps_retained_audio_context") {
+  checkPublicationOutcome("failure", false);
+}
+
+TEST_CASE("publication_outcome_cancel_after_slot_exhaustion_keeps_failed_context") {
+  checkPublicationOutcome("busy", false);
+}
+
+TEST_CASE("publication_outcome_completion_callback_can_reenter_cancel") {
+  auto fixture = makeRenderFixture();
+  std::atomic<bool> callbackReturned{false};
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reentrant-completion")};
+  coordinator.setCompletionCallback([&] {
+    // cancel() needs admission; this deadlocks if notification moves inside it.
+    if (coordinator.progress().state != seam::authoring::RenderState::Ready) return;
+    coordinator.cancel();
+    callbackReturned.store(true, std::memory_order_release);
+  });
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     1101U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForCondition([&] { return callbackReturned.load(std::memory_order_acquire); }));
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Ready);
+  CHECK(coordinator.progress().publishedRevision == 1101U);
+  CHECK(coordinator.stats().completed == 1U);
+  CHECK(!coordinator.acquireCurrent());
+}
