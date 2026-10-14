@@ -1,7 +1,7 @@
 # Native pitch reports bind their geometry to the held WAV
 
 Date: 2026-10-15, Asia/Seoul. Base: `06803bb56de422626b731b921113d9183ba4b3e6`.
-Local verification passes; independent review of this new unit is **PENDING**.
+Local verification passes. Independent review **APPROVES exact `a30f7969a71297e525baa40541e3536198f1803d`**, engineering scope only, with no findings or required changes.
 
 The peer's exact **APPROVE c111cbac5ba183dee822441d637a516836a52a2f** covers the
 previous scorer's engineering scope, with three P3 findings and no required changes.
@@ -9,7 +9,7 @@ Its full verdict is retained: **18,179 bytes**, SHA-256
 `22c5398186dd3385742a86e7536bdc71a8ab1389a6844d478a009d7a6c137fea`.
 The peer independently recomputed placement/membership/report statistics and replayed
 the direct estimator from held PCM; it ran no build, tests, native binary or retained
-script. That approval does not extend to this follow-up or production qualification.
+script. That older approval is separate from the later exact a30f7969 approval; neither grants production qualification.
 
 ## Code change
 
@@ -116,3 +116,8 @@ rights/public-license disposition, genuine producer/distinct reviewer, coverage,
 failed-QC policy and listening before bank admission. Alpha remains **0/20 recorded
 passes**, U45 held, Beta **BLOCKED**, full goal ACTIVE. Canonical files, original
 recordings, `.github`, README Windows TODO, prior evidence and the stash are preserved.
+
+
+## Exact independent follow-up review
+
+The peer closes all three c111 P3s for exact a30f7969: held WAV metadata validation, discriminating offset tests and honest lost-input/capture disclosure. Its own code recomputes stereo, mono and wrong-offset reports. The reviewer runs only read-only Git/source/retained-byte/receipt and numerical checks; no builds, tests, native binaries or retained runtime scripts. The full verdict is 16,997 bytes, SHA-256 `339aa7bfddcf00aa5c5d8a27c8f48d9eadf7d45ee6f08512a5a4e5e60007eb8b`, retained under `out/evidence/note-pitch-wav-binding-review-2026-10-15`. A separate read-only audit checks three immutable/current source bindings and seven preserved gate/manifest inputs. No new runtime execution for this metadata record. This approval does not extend to bank diagnostic, source intake, donor preparation or full-scope Beta acceptance. Source census is now 1,429 original WAVs after the separate SLT intake; 312 donor proposals are derivatives, not new acquisitions or qualified bank units.

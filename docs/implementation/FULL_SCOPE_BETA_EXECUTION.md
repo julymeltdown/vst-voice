@@ -9228,3 +9228,8 @@ The [CMU ARCTIC SLT intake](FEMALE_ARCTIC_SLT_INTAKE_2026-10-15.md) downloads 1,
 ### 2026-10-15 — unassigned English phone donor preparation
 
 The [phone donor unit](FEMALE_PHONE_DONOR_PREPARATION_2026-10-15.md) adds hash-bound automatic-label interval extraction with exact PCM preservation and unreviewed annotations. Registered CTest passes 31 methods (16 new/15 prior) after full Release build/current-target check. Four SLT originals yield 312 byte-deterministic proposals (159 single/153 adjacent pairs), all 312 native-reader checks pass; 36.9125 summed seconds represent 12.825 unique seconds, not new recordings or bank coverage. Raw `jh`, missing `axr`/stress, speech suitability and human/rights/actor holds remain. The next production gap is explicit English workspace inventory generation: native/Python paths still reject non-Japanese profiles. Independent implementation review pending; separate source-intake review active; exact a30f7969 APPROVE captured for separate integration. Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.
+
+
+### 2026-10-15 — exact WAV-bound scorer independent approval
+
+Independent peer review APPROVES `a30f7969a71297e525baa40541e3536198f1803d` for engineering only, with zero findings/required changes; all three c111 P3s close. Full verdict and separate read-only Git/source/gate/manifest audit are retained under `out/evidence/note-pitch-wav-binding-review-2026-10-15`; no new build/test/native run for the record. Later bank, source-intake and phone-donor units are not approved by this verdict. Native/Python English producer inventory creation remains the next production gap. Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.

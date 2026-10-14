@@ -33,8 +33,31 @@
       "sizeBytes": 18179,
       "sha256": "22c5398186dd3385742a86e7536bdc71a8ab1389a6844d478a009d7a6c137fea"
     },
-    "newFollowUpStatus": "PENDING",
-    "extendsPriorApproval": false
+    "newFollowUpStatus": "APPROVE_EXACT_A30_ENGINEERING_ONLY",
+    "extendsPriorApproval": false,
+    "followUp": {
+      "reviewedCommit": "a30f7969a71297e525baa40541e3536198f1803d",
+      "status": "APPROVE",
+      "findings": 0,
+      "requiredChanges": 0,
+      "closesPriorP3s": 3,
+      "manifest": {
+        "path": "out/evidence/note-pitch-wav-binding-review-2026-10-15/manifest.json",
+        "sizeBytes": 1964,
+        "sha256": "63d665e1b3b012c338ac98f97744fe3cbc6d49b20a04859587cff26926251f4c"
+      },
+      "verdict": {
+        "path": "out/evidence/note-pitch-wav-binding-review-2026-10-15/review-a30f7969.txt",
+        "sizeBytes": 16997,
+        "sha256": "339aa7bfddcf00aa5c5d8a27c8f48d9eadf7d45ee6f08512a5a4e5e60007eb8b"
+      },
+      "verification": {
+        "path": "out/evidence/note-pitch-wav-binding-review-2026-10-15/verification.log",
+        "sizeBytes": 140,
+        "sha256": "8e9b83320fc50b47d05b67591f96f1238fe7e182daf26b15cd9709a68a56ef8d"
+      },
+      "extendsOtherUnitApproval": false
+    }
   },
   "changes": {
     "metadata": "Hash and parse same WAV bytes; native rate/channels/extent must match actual RIFF geometry. Mono protocol requires one channel and matching frameCount.",
