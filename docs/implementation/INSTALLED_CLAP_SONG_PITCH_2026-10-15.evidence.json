@@ -1,0 +1,41 @@
+{
+  "formatId": "com.project-seam.note-pitch-evidence-index",
+  "schemaVersion": 1,
+  "status": "ENGINEERING_DIAGNOSTIC_VERIFIED",
+  "sourceBaseCommit": "c27d1d6f5b9a883b48ea8c11c170998b68ac7a04",
+  "manifest": {
+    "path": "out/evidence/installed-clap-song-pitch-2026-10-15/manifest.json",
+    "sizeBytes": 12722,
+    "sha256": "b37eea0671dfa79922af47aed095efc281fe863859bedbc990827ba407f25aee",
+    "artifactCount": 71,
+    "preservedInputCount": 8
+  },
+  "report": "out/evidence/installed-clap-song-pitch-2026-10-15/melody-confirmed.json",
+  "summary": {
+    "noteCount": 48,
+    "measuredNoteCount": 48,
+    "passedNoteCount": 48,
+    "selectedFrameCount": 2530,
+    "medianAbsoluteFrameCents": 0.3091230823295145,
+    "framesWithin50Cents": 2530,
+    "maximumAbsoluteFrameCents": 2.6204765876699123,
+    "maximumAbsoluteNoteMedianCents": 0.6804533036967991
+  },
+  "scorerMethods": 29,
+  "baselineMethods": 12,
+  "baselineFailures": 5,
+  "broaderSuite": {
+    "ctestEntries": 1,
+    "methods": 181,
+    "failures": 1,
+    "skips": 19,
+    "status": "FAILED",
+    "failure": "unchanged demo-bank root-pitch classification: -38.5799 cents vs >500 required"
+  },
+  "nativeAnalyzerRebuiltThisUnit": false,
+  "authenticatedExecution": false,
+  "independentReview": "PENDING_AFTER_LIVE_CCBB39D6_REVIEW",
+  "beta": "BLOCKED",
+  "humanListening": "NOT_RUN",
+  "productionBankQualification": "NOT_QUALIFIED"
+}

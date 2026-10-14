@@ -190,3 +190,19 @@ SEAM_LISTENER_PACKET_PROJECT=/absolute/seed/project.seam \
 SEAM_VOICEBANK_CLI=/absolute/build/seam_voicebank_cli \
 ctest --test-dir build/release -R '^seam_singing_quality_contract_tests$' --output-on-failure
 ```
+
+
+## Written-note pitch diagnostic
+
+`score_rendered_notes.py` scores every region through document tempo and FixedAudio
+host placement. Use `--audio-dir` plus `--cli` for mono stems, mapped in sorted file
+order to exactly the same number of vocal tracks. Use `--audio` plus
+`--analysis-json` for retained native `seam_voicebank_cli analyze` output from a
+single-voice master without backing audio. `--sample-rate` asserts agreement with
+native metadata; `--render-offset-ticks` explicitly shifts regions before tempo
+projection. FollowHost requires its captured map and is refused. `--report` creates
+a new source-bound JSON file and never overwrites existing files.
+
+This middle-third note-median check is an engineering diagnostic. It does not
+replace phonetic steady-span or listening acceptance. See the
+[48-note execution and known broader-suite failure](../../docs/implementation/INSTALLED_CLAP_SONG_PITCH_2026-10-15.md).
