@@ -41,6 +41,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1123,6 +1124,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
     CHECK(written.hasValue());
   }
   stage("session-teardown");
+  std::cout << "INSTALLED_HOST_SONG_PROJECT " << projectPath.string() << '\n';
 }
 
 // The voice-creation half of the milestone: can the creator change the intended voice, keep that change

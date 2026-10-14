@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -85,6 +86,12 @@ class ClapOfflineHostTests(unittest.TestCase):
             region["notes"] = [dict(original_note, id=format(10000 + index, "x"),
                                     startTick=index, durationTick=1) for index in range(257)]
             crowded_project.write_text(json.dumps(crowded_data))
+            overflow_project = root / "probe-placement-overflow.seam"
+            overflow_data = json.loads(project.read_text())
+            overflow_region = overflow_data["vocalTracks"][0]["regions"][0]
+            # The original region end is domain-valid; the probe's added rest is not.
+            overflow_region["startTick"] = (1 << 63) - 1 - overflow_region["durationTick"]
+            overflow_project.write_text(json.dumps(overflow_data))
             trials = [
                 (1, "Pinned project digest does not match", ["--project", project, "--project-sha256", "0" * 64]),
                 (1, "Pinned project decode failed", ["--project", invalid, "--project-sha256",
@@ -99,6 +106,8 @@ class ClapOfflineHostTests(unittest.TestCase):
                     "--project-sha256", hashlib.sha256(long_project.read_bytes()).hexdigest()]),
                 (1, "Pinned project exceeds offline probe budget", ["--project", crowded_project,
                     "--project-sha256", hashlib.sha256(crowded_project.read_bytes()).hexdigest()]),
+                (1, "Pinned project exceeds offline probe budget", ["--project", overflow_project,
+                    "--project-sha256", hashlib.sha256(overflow_project.read_bytes()).hexdigest()]),
             ]
             if os.name != "nt":
                 link = root / "linked.seam"
@@ -130,6 +139,57 @@ class ClapOfflineHostTests(unittest.TestCase):
                 self.assertEqual(1, result.returncode, result.stdout + result.stderr)
                 self.assertIn("Pinned project output would replace input", result.stderr)
                 self.assertEqual(digest, hashlib.sha256(project.read_bytes()).hexdigest())
+
+    def test_tuned_installed_lyric_song_bounces_after_producer_source_is_removed(self):
+        result = subprocess.run(
+            [str(ARGS.song_journey_runner),
+             "Tuning an installed singer survives undo, save, reopen and export"],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        paths = [line.removeprefix("INSTALLED_HOST_SONG_PROJECT ")
+                 for line in result.stdout.splitlines()
+                 if line.startswith("INSTALLED_HOST_SONG_PROJECT ")]
+        self.assertEqual(1, len(paths))
+        project = Path(paths[0])
+        data = json.loads(project.read_text())
+        regions = [region for track in data["vocalTracks"] for region in track["regions"]]
+        self.assertEqual(48, sum(len(region["notes"]) for region in regions))
+        self.assertEqual(78720, regions[0]["durationTick"])  # 41 seconds at 120 BPM.
+        self.assertEqual(2, len(regions[0]["formantAutomation"]))
+        self.assertGreater(len({lyric["surface"] for lyric in regions[0]["lyrics"]}), 20)
+        # Real saved exports carry provenance; it must not change the sound identity.
+        self.assertGreater(data["settings"]["renderedCompilerRevision"], 0)
+        self.assertTrue(data["settings"]["renderedRenderAbi"])
+        self.assertIsNotNone(data["vocalTracks"][0]["proceduralRecipe"]["installation"])
+        self.assertTrue(Path(data["vocalTracks"][0]["proceduralRecipe"]["path"]).is_file())
+        # These are this native invocation's temporary producer files, after its
+        # tuning/undo/redo/cancellation/save/reopen/export checks have passed.
+        shutil.rmtree(project.parent / "producer-source")
+        (project.parent / "song-01.seamsinger").unlink()
+        self.assertFalse((project.parent / "producer-source").exists())
+        self.assertFalse((project.parent / "song-01.seamsinger").exists())
+        digest = hashlib.sha256(project.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = self.run_host(root, "--project", project, "--project-sha256", digest,
+                                   "--audio", root / "song.wav")
+            self.assertEqual("PASS", report["result"])
+            self.assertEqual(digest, report["inputProjectSha256"])
+            self.assertEqual(96, report["noteWindows"])  # All 48 notes at both rates.
+            for key in ("inputProjectLoaded", "inputProjectStateRoundTripMatched",
+                        "completeScoreBounce", "rateChangeReprepared", "failedFinalRejected",
+                        "missingFinalRejected", "beatsOnlyRejected", "eventOverflowFailClosed",
+                        "realtimeOverflowKeepsAdvancing", "followHostOffsetBounce",
+                        "followHostStaleRejected", "followHostTransportEventRejected"):
+                self.assertIs(True, report[key], key)
+            self.assertEqual(0, report["noteEventsSent"])
+            self.assertFalse(report["releaseEligible"])
+            audio = (root / "song.wav").read_bytes()
+            self.assertEqual(3, struct.unpack_from("<H", audio, 20)[0])
+            self.assertEqual(48000, struct.unpack_from("<I", audio, 24)[0])
+            channels = struct.unpack_from("<H", audio, 22)[0]
+            self.assertEqual(2004000 * channels * 4, len(audio) - 44)
 
     def test_cold_complete_score_bounce_and_negative_final_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -180,5 +240,6 @@ if __name__ == "__main__":
     parser.add_argument("--plugin", type=Path, required=True)
     parser.add_argument("--bank", type=Path, required=True)
     parser.add_argument("--journey-runner", type=Path, required=True)
+    parser.add_argument("--song-journey-runner", type=Path, required=True)
     ARGS = parser.parse_args()
     unittest.main(argv=[__file__])

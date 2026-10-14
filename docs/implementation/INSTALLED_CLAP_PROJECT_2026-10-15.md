@@ -1,5 +1,9 @@
 # Saved installed project through the loaded CLAP editor
 
+Later checkpoint: [the full installed lyric-song unit](INSTALLED_CLAP_SONG_2026-10-15.md)
+extends this dated one-note evidence and repairs saved-export provenance in Final preparation.
+The 30-second bound and counts below describe this earlier unit.
+
 Date: 2026-10-15, Asia/Seoul. **Locally verified internal host capability; Beta remains blocked.** Fetch and fast-forward pull completed first. Integrating base: `1c6a585151f8d13ead6afe0252d04335f9d4ab51`. The exact four-file change, binaries and base-embedded generated header are retained. No authenticated clean-build lineage or historical execution is claimed.
 
 ## Capability and source path

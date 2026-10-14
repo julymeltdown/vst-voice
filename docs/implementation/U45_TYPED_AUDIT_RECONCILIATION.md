@@ -373,3 +373,20 @@ self-contained relocated replay, acoustic F0/phase, physical-device/DAW/Windows
 or human acceptance is claimed. Canonical integration/tolerance and full-scope
 resource/continuity/publication/30–60-second-song requirements remain open.
 U45hold/Alpha0of20/BetaBLOCKED/full goalACTIVE are unchanged.
+
+### Loaded CLAP full-song prerequisite (2026-10-15)
+
+The [full-song dossier](INSTALLED_CLAP_SONG_2026-10-15.md) connects the existing
+48-note/41-second tuned, saved/reopened installed song to cold loaded-plugin
+execution after producer/package deletion. Baseline host limits reject it;
+extending them exposes a real Final source-digest mismatch between identity
+encoding without renderer provenance and publication encoding with provenance.
+Matching both encodings repairs the refusal while preserving other guards.
+Full untargeted rebuild4.369s and eight focused entries in33.337s pass:
+five Python methods,73 native cases and the phase12b program. Direct execution
+retains2,004,000 stereo48k frames;3,845,175 sums both rates, not one WAV extent.
+The read-only audit binds79 artifacts/10 inputs and derives finite PCM/counts.
+The297 internet originals remain unchanged and unqualified. Independent review
+is pending; legacy procedural fixtures and full-song signal do not grant human,
+resource or canonical integration acceptance. U45hold/Alpha0of20/BetaBLOCKED
+and the full goalACTIVE remain unchanged.

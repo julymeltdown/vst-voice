@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -290,17 +291,32 @@ bool outputReplacesInput(const std::filesystem::path& input,
   return error || source == destination;
 }
 
+// Finite engineering-probe limits: allow the 30–60-second song fixture plus
+// placement/rest time. The FollowHost control has a separate captured-beat bound.
+constexpr double kMaximumOfflineEndSeconds = 65.0;
+constexpr std::size_t kMaximumOfflineNotes = 256U;
+constexpr std::int64_t kMaximumFollowHostBeat = 128;
+constexpr seam::time::Tick kProbeLeadingRest{960};
+
 bool withinOfflineProbeBudget(const seam::domain::Project& project) {
   std::size_t notes = 0U;
   const auto offset = project.tempoMap().secondsAt(project.settings().hostStartOffsetTick);
   for (const auto& track : project.vocalTracks()) {
     for (const auto& region : track.regions) {
-      if (region.notes.size() > 256U - notes) return false;
+      if (region.notes.size() > kMaximumOfflineNotes - notes) return false;
       notes += region.notes.size();
+      // The domain already checked the original region end. Leave room for
+      // probeOffline's leading rest, FollowHost's extra beat and its two-beat
+      // host placement before any of those Tick additions can overflow.
+      const auto padding = kProbeLeadingRest.value() +
+          3 * static_cast<std::int64_t>(project.tempoMap().ppq());
+      const auto regionEnd = region.startTick + region.durationTick;
+      if (regionEnd.value() > std::numeric_limits<std::int64_t>::max() - padding)
+        return false;
       // probeOffline inserts this leading rest before it asks the loaded plugin for Final.
       const auto end = project.tempoMap().secondsAt(
-          region.startTick + region.durationTick + seam::time::Tick{960}) + offset;
-      if (!std::isfinite(end) || end > 30.0) return false;
+          regionEnd + kProbeLeadingRest) + offset;
+      if (!std::isfinite(end) || end > kMaximumOfflineEndSeconds) return false;
     }
   }
   return notes > 0U;
@@ -400,14 +416,15 @@ bool completeScoreBounce(ProbePlugin& probe, const seam::domain::Project& projec
     if (track.muted) continue;
     for (const auto& region : track.regions) {
       for (const auto& note : region.notes) {
-        if (noteWindows.size() >= 256U) return fail();
+        if (noteWindows.size() >= kMaximumOfflineNotes) return fail();
         const auto start=project.tempoMap().secondsAt(region.startTick + note.startTick) + offset;
         const auto finish=project.tempoMap().secondsAt(region.startTick + note.startTick + note.durationTick) + offset;
         noteWindows.emplace_back(start, finish); end=std::max(end, finish);
       }
     }
   }
-  if (noteWindows.empty() || end <= 0.0 || end > 30.0) return fail();
+  if (noteWindows.empty() || !std::isfinite(end) || end <= 0.0 ||
+      end > kMaximumOfflineEndSeconds) return fail();
   const auto count=static_cast<std::uint64_t>(std::ceil((end + 0.25) * rate));
   if (rate==48000U) {
     evidence.scorePcm48k.clear();
@@ -624,7 +641,7 @@ bool followHostOffsetBounce(const clap_plugin_factory_t* factory,
   if (scoreEndTicks <= 0 || firstNoteSeconds >= 1e9) return false;
   const auto scoreEndBeats = static_cast<double>(scoreEndTicks) / ppq;
   const auto lastHostBeat = static_cast<std::int64_t>(std::ceil(2.0 + scoreEndBeats));
-  if (lastHostBeat > 64) return false;
+  if (lastHostBeat > kMaximumFollowHostBeat) return false;
 
   ProbePlugin probe{factory, host, id};
   evidence.followHostStage = "load";
@@ -740,7 +757,7 @@ OfflineChecks probeOffline(const clap_plugin_factory_t* factory, const clap_host
   if (!missingOnly) {
     // Force a leading rest so SLEEP cannot hide a subsequent vocal entrance.
     for (auto& track : project.vocalTracks())
-      for (auto& region : track.regions) region.startTick += seam::time::Tick{960};
+      for (auto& region : track.regions) region.startTick += kProbeLeadingRest;
     const auto preparedState=projectState(project);
     probe.load(preparedState);
     if (probe.render->set(probe.plugin,CLAP_RENDER_OFFLINE)) {
@@ -853,7 +870,7 @@ int main(int argc, char** argv) {
       return 1;
     }
     if (!withinOfflineProbeBudget(decoded.value())) {
-      std::cerr << "Pinned project exceeds offline probe budget (256 notes, 30 seconds)\n";
+      std::cerr << "Pinned project exceeds offline probe budget (256 notes, 65 seconds including placement/rest)\n";
       return 1;
     }
     if (outputReplacesInput(inputProjectPath, audioPath) ||

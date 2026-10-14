@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-clap-song",
+  "sourceBaseCommit": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
+  "sourceState": "Five retained source files and executed binaries; no authenticated clean-build lineage",
+  "manifest": {
+    "path": "out/evidence/installed-clap-song-2026-10-15/manifest.json",
+    "sizeBytes": 13420,
+    "sha256": "f7e340a648ad5887900dcbf94db0176bf0572a376949890647ae1370f5a59081"
+  },
+  "verification": {
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-clap-song-2026-10-15/verify.py"
+    ],
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/installed-clap-song-2026-10-15/verification.log",
+      "sizeBytes": 287,
+      "sha256": "38c64e1eb24f0922e5e2bf542625c8df401f5617c89fa6b12797349c50c007f3"
+    },
+    "scope": "Read-only exact hashes, original inputs, optional Git source, receipts/counts and raw PCM geometry; loads no plugin"
+  },
+  "artifacts": 79,
+  "preservedInputs": 10,
+  "build": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1792004571.71094,
+    "elapsedSeconds": 4.368715290998807,
+    "pid": 87524,
+    "exitCode": 0,
+    "stdoutSha256": "c1262b89ca47dba8136ad0cbcab7467999063883857acd5bf4e0bd1720252fba",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "tests": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-V",
+      "-R",
+      "^(seam_clap_offline_host_tests|seam_original_singer_song_journey_tests|seam_procedural_install_journey_tests|seam_phase12b_tests|seam_host_tempo_map_tests|seam_host_timeline_capture_tests|seam_final_render_completeness_tests|seam_offline_render_session_tests)$"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1792004624.066911,
+    "elapsedSeconds": 33.3366635000275,
+    "pid": 89035,
+    "exitCode": 0,
+    "stdoutSha256": "601660147e6fd047494fc83e821ffb97cf337342868a591f541ae894e77cf67b",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "counts": {
+    "ctestEntries": 8,
+    "pythonMethods": 5,
+    "nativeCases": 73,
+    "phase12bProgram": 1,
+    "newPythonMethods": 1,
+    "newAdmissionSubtrials": 1,
+    "macOSAdmissionTrials": 14
+  },
+  "direct": {
+    "receipt": {
+      "path": "out/evidence/installed-clap-song-2026-10-15/direct-final.json",
+      "sizeBytes": 912,
+      "sha256": "5375b6773d0ceb29ff55b41c3e19a378a1a96630c28e3d33b5d8dbecab49a3e8"
+    },
+    "summary": {
+      "path": "out/evidence/installed-clap-song-2026-10-15/final-summary.json",
+      "sizeBytes": 1096,
+      "sha256": "da58a8ee10be4b07b2e12a38ca0b1f34cea6d7e0ff938544ec0a46c3fd10a8da"
+    },
+    "audio": {
+      "path": "out/evidence/installed-clap-song-2026-10-15/song.wav",
+      "sizeBytes": 16032044,
+      "sha256": "581d9404098f8965c9d961653f28051adb50d0650b76786c6401a5b2445ae9a9"
+    },
+    "metrics": {
+      "formatTag": 3,
+      "channels": 2,
+      "sampleRate": 48000,
+      "frames": 2004000,
+      "seconds": 41.75,
+      "nonzeroWords": 3849312,
+      "peak": 0.10547714680433273,
+      "sumSquares": 948.1579043252086,
+      "sumAbsolute": 37601.500351037,
+      "retainedRate": 48000,
+      "otherRatePcmRetained": false,
+      "combinedEnergyReproduced": false,
+      "acousticListeningVerdict": "NOT_REVIEWED"
+    },
+    "notes": 48,
+    "windowsAcrossRates": 96,
+    "framesAcrossRates": 3845175,
+    "frames48k": 2004000,
+    "sourcePackageDeleted": true,
+    "releasedResource": false
+  },
+  "internetSources": {
+    "originalWavs": 297,
+    "newAudioDownloads": 0,
+    "originalsUnchanged": true,
+    "verification": {
+      "path": "out/evidence/installed-clap-song-2026-10-15/female-source-check.json",
+      "sizeBytes": 467,
+      "sha256": "95edeca917f26efa40b974f8830ea6c4465f0d8f72c67b435b3d7d5f5a720887"
+    }
+  },
+  "independentReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "previousReviewCommit": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
+    "previousReviewStatus": "ACTIVE",
+    "thisUnitReview": "Not yet completed; wait for preceding review before dispatch"
+  },
+  "acceptance": {
+    "alphaRecordedPasses": 0,
+    "alphaRequirements": 20,
+    "beta": "BLOCKED",
+    "u45": "HELD",
+    "goal": "ACTIVE",
+    "authorizesRelease": false
+  }
+}

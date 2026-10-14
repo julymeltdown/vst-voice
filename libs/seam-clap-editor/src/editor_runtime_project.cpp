@@ -384,7 +384,8 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
       bool sourceDigestMatches = false;
       if (latest && latest->sourceProject != nullptr) {
         const auto encoded = formats::ProjectJsonCodec{}.encode(
-            *latest->sourceProject);
+            *latest->sourceProject,
+            formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
         sourceDigestMatches = encoded &&
                               core::sha256Hex(encoded.value()) ==
                                   identity.projectContentHash;
