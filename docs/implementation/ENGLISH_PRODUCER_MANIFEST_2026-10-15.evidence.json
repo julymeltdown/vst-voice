@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-producer-manifest-propagation",
+  "sourceBaseCommit": "97d8feb10d638dfa3956a9b66e5b14962fbd6637",
+  "manifest": {
+    "path": "out/evidence/english-producer-manifest-2026-10-15/manifest.json",
+    "sizeBytes": 9480,
+    "sha256": "7d16ed145b581bf885b1afcf3291686841cd31af0a28fdbef8d8f470105431c8"
+  },
+  "retainedArtifacts": 48,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS",
+    "sourceTree": "9a89baeb565d502479e27ce50a07eabca853538e",
+    "log": {
+      "path": "out/evidence/english-producer-manifest-2026-10-15/verification.log",
+      "sizeBytes": 172,
+      "sha256": "d5606a86fa40f185bf980982e518f38e4ff1bb44642c49cf0b4a73dad1f520a4"
+    },
+    "scope": "Read-only retained hashes, immutable source blobs and run receipts; no native or captured replay"
+  },
+  "execution": {
+    "fullDependentReleaseRebuild": "PASS before focused checks and after each test-only repair",
+    "effectiveFocusedCtestLanes": 6,
+    "effectiveNativeCases": 142,
+    "newNativeCases": 5,
+    "passingNativeCounts": {
+      "productionDraft": 23,
+      "productionReview": 24,
+      "studioSampleReview": 14,
+      "manifestDraft": 15,
+      "studioManifestDraft": 38,
+      "sampleReviewCli": 28
+    },
+    "initialFailures": "Invalid one-layer/non-increasing-range shared fixture; range-only repair still failed one-layer bound; final CLI oracle expected 1 instead of operational refusal 2",
+    "productionCodeChangedForFailures": false,
+    "changedCodeAndTestFilesBound": 6,
+    "testBinaryHashBindings": 7,
+    "retainedExecutables": 4,
+    "priorFailedExecutablesRetained": false,
+    "temporarySyntheticOutputRetained": false,
+    "hermeticOrAuthenticatedBuildProof": false,
+    "fullSuiteOrPhysicalAcceptance": false
+  },
+  "contractPropagation": "PASS for generated style-owned English inventory/producer layout; legacy exact matching preserved",
+  "sampleRateImplementation": "Pre-existing actual-rate detection and mixed-rate refusal; confirmed at 16 kHz, no new resampling feature",
+  "independentTechnicalReview": "PENDING",
+  "sourceApproval": false,
+  "qualifiedBank": false,
+  "newOriginalFemaleWavs": 0,
+  "originalFemaleWavCensus": 1429,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "u45": "HELD",
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

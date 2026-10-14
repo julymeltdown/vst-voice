@@ -121,10 +121,18 @@ identity. Legacy exact banks must remain usable.
 
 Real source work still requires the owner policy, a genuine producer, a distinct
 reviewer, explicit `jh` mapping, the missing `axr`, stable singing spans and
-musical pitch/style coverage. The 16 kHz speech route also needs explicit sample
-rate handling; a 48 kHz manifest must not misrepresent unconverted source audio.
+musical pitch/style coverage. Draft creation already sets the manifest rate from
+decoded audio and rejects mixed rates; the initial 48 kHz member value is only a
+placeholder before inspection. The 16 kHz speech source does not require a new
+conversion feature to be represented accurately, although production musical
+quality and any deliberate conversion still require their own evidence.
 Classical/neural and multilingual resources, the no-recording original singer,
 R9, acoustic tolerances, human listening and target-host evidence remain open.
 
 No canonical gate changes. Usable Alpha remains **0/20**, U45 remains held and
 External Beta **BLOCKED**. Independent review of this exact unit is pending.
+
+
+## 2026-10-15 — English producer-to-manifest contract integration
+
+[The code-level dossier](ENGLISH_PRODUCER_MANIFEST_2026-10-15.md) closes normal generated English producer-to-editable-manifest policy propagation through shared CLI/Studio code. Exact inventory identity/digest/language, regular file and assignment keys are checked before creation and before commit; missing or changed authority is refused, legacy remains exact. Full dependent rebuilds pass. Effective six focused CTest lanes pass 142 native cases across retained runs; initial invalid fixture and wrong CLI-exit expectations are retained and repaired only in tests. Six code/test source bindings, seven binary bindings, four retained executables; 48 artifacts / seven pins. Prior sample-rate-gap wording is corrected: actual-rate detection/mixed-rate refusal already existed and is confirmed at 16 kHz. No new original audio or production admission. Exact review pending; singing resources, owner/actor policy and full Beta acceptance remain open. Female census 1,429; Alpha 0/20, U45 held, Beta BLOCKED.

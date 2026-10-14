@@ -1,4 +1,5 @@
 #include "seam/voicebank_production/manifest_draft.hpp"
+#include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/operations.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
@@ -17,6 +18,7 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <tuple>
 
 namespace seam::voicebank_production {
 namespace {
@@ -38,6 +40,37 @@ struct Cleanup final {
   DirectoryIdentity parentIdentity, stageIdentity;
   ~Cleanup() { cleanupOwnedDirectory(path, parentIdentity, stageIdentity); }
 };
+core::Result<std::optional<voicebank::Manifest::EnglishPhoneContract>> englishInventoryContract(
+    const std::filesystem::path& workspace, const VoicebankProductionProject& project) {
+  using Output = std::optional<voicebank::Manifest::EnglishPhoneContract>;
+  // Legacy projects have no policy authority and retain exact resource matching.
+  if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en") return Output{};
+  if (workspace.filename() != kDraftProducerWorkspaceDirectory)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English style-owned drafts require their generated inventory/producer workspace");
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(workspace.parent_path() / kDraftProducerInventoryFile, error);
+  if (error || !std::filesystem::is_regular_file(status))
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English draft inventory must be a retained regular file, not missing or linked");
+  const auto loaded = readDraftProducerWorkspaceInventory(workspace.parent_path());
+  if (!loaded) return core::Result<Output>{loaded.error()};
+  const auto& inventory = loaded.value().inventory;
+  const auto& profile = inventory.profile;
+  if (loaded.value().producerRoot != workspace || profile.language != "en" ||
+      profile.profileId != project.inventoryId || inventory.inventorySha256 != project.inventorySha256)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English draft inventory identity, language and digest must match its producer");
+  std::set<std::tuple<std::string, std::string, std::int64_t>> planned;
+  for (const auto& row : inventory.units) planned.emplace(row.style, row.coverageKey, row.pitchLayer);
+  for (const auto& row : project.unitAssignments) {
+    if (!planned.contains({row.style, row.coverageKey, row.pitchLayer}))
+      return core::failure<Output>(core::ErrorCode::Conflict,
+          "English draft assignment is outside its bound inventory", row.coverageKey);
+  }
+  return Output{voicebank::Manifest::EnglishPhoneContract{
+      profile.vocabularyId, profile.vocabularySha256, profile.stressPolicy}};
+}
 core::Result<voicebank::Unit> unitFromAssignment(const UnitAssignment& assignment,
     const VoicebankProductionProject& project, const SampleManifestDraftIdentity& identity) {
   const auto separator = assignment.coverageKey.find(':');
@@ -158,6 +191,8 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
   checked = workspaceLock.acquire(workspace.value() / ".writer.lock"); if (!checked) return core::Result<Output>{checked.error()};
   ProductionProjectRepository repository{workspace.value()};
   checked = repository.verify(project); if (!checked) return core::Result<Output>{checked.error()};
+  const auto contract = englishInventoryContract(workspace.value(), project);
+  if (!contract) return core::Result<Output>{contract.error()};
   checked = outputLock.acquire(parent.value() / ".seam-manifest-draft-writer.lock"); if (!checked) return core::Result<Output>{checked.error()};
   const auto parentIdentity = captureDirectoryIdentity(parent.value());
   if (!parentIdentity) return core::Result<Output>{parentIdentity.error()};
@@ -168,6 +203,9 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
   voicebank::Manifest manifest{.id = identity.id, .version = identity.version, .displayName = identity.displayName,
       .characterId = {}, .characterVersion = {}, .language = identity.language, .expectedSampleRate = 48000U,
       .styles = {identity.style}, .units = {}};
+  manifest.languageContract = contract.value();
+  if (manifest.languageContract) result.diagnostics.push_back(
+      "English resource matching retains the inventory's declared stress policy; no coverage or source approval is inferred.");
   if (project.schemaVersion >= kProductionStyleSchemaVersion) {
     std::set<std::string> styles;
     for (const auto& assignment : project.unitAssignments) styles.insert(assignment.style);
@@ -267,6 +305,10 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
   checked = validateDirectoryIdentity(parent.value(), parentIdentity.value()); if (!checked) return core::Result<Output>{checked.error()};
   checked = validateDirectoryIdentity(stage, stageIdentity.value()); if (!checked) return core::Result<Output>{checked.error()};
   checked = repository.verify(project); if (!checked) return core::Result<Output>{checked.error()};
+  const auto currentContract = englishInventoryContract(workspace.value(), project);
+  if (!currentContract) return core::Result<Output>{currentContract.error()};
+  if (currentContract.value() != contract.value())
+    return core::failure<Output>(core::ErrorCode::Conflict, "English draft inventory policy changed before commit");
   const auto reopened = voicebank::ManifestJsonCodec{}.load(stage / "manifest.json");
   const auto manifestHash = core::sha256File(stage / "manifest.json");
   const auto draftHash = core::sha256File(stage / "draft.json");

@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "english_manifest_draft_fixture.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/core/file_io.hpp"
@@ -141,6 +142,22 @@ struct VisualSnapshot final {
   }
 };
 } // namespace
+
+TEST_CASE("Studio English generated producer draft retains stress contract through creation save and reopen") {
+  test::support::EnglishManifestDraftFixture fixture;
+  Controller controller;
+  CHECK(controller.openProductionProject(fixture.producerRoot, fixture.project.inventorySha256, "producer"));
+  const auto context = controller.captureSampleReviewContext(); CHECK(context);
+  CHECK(controller.beginSampleManifestDraftCreation(context.value(), fixture.identity, fixture.root / "editable"));
+  CHECK(collectDraft(controller)); CHECK(controller.createdSampleManifestDraft());
+  CHECK(controller.manifest().languageContract); CHECK(controller.manifest().expectedSampleRate == 16000U);
+  CHECK(controller.manifest().matchedPhone("iy1") == "iy");
+  const auto original = controller.manifest();
+  CHECK(controller.save());
+  Controller reopened; CHECK(reopened.openManifest(controller.manifestPath()));
+  CHECK(reopened.manifest() == original); CHECK(reopened.manifest().matchedPhone("iy2") == "iy");
+  CHECK(fixture.repository.recover().value().reviews.empty());
+}
 
 TEST_CASE("Studio interactive workspace opening requires the expected inventory and registered producer") {
   Fixture f;

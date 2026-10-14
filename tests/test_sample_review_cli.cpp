@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "english_manifest_draft_fixture.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/export_service.hpp"
 #include "seam/authoring/helper_process.hpp"
@@ -64,6 +65,28 @@ TEST_CASE("observed CLI refusal oracle rejects signals wrong streams and sanitiz
     result.output = {"", std::string{marker} + " expected reason"};
     CHECK(!expectedCliRefusal(result, 1U, "expected reason"));
   }
+}
+
+TEST_CASE("CLI English generated producer draft carries inventory contract and refuses lost authority") {
+#if defined(SEAM_TEST_VOICEBANK_CLI)
+  using namespace seam;
+  test::support::EnglishManifestDraftFixture fixture;
+  const auto destination = fixture.root / "cli-draft";
+  std::vector<std::string> arguments{"create-sample-draft", fixture.producerRoot.string(), fixture.identity.id,
+      fixture.identity.version, fixture.identity.displayName, "en", fixture.identity.style, destination.string()};
+  const auto run = authoring::runBoundedHelperProcess({.executable = SEAM_TEST_VOICEBANK_CLI, .arguments = arguments}); CHECK(run);
+  const auto report = formats::parseJson(run.value().standardOutput); CHECK(report);
+  CHECK(report.value().find("result")->asString() == "EditableDraftCommitted");
+  CHECK(!report.value().find("releaseEligible")->asBool());
+  const auto manifest = voicebank::ManifestJsonCodec{}.load(destination / "manifest.json"); CHECK(manifest);
+  CHECK(manifest.value().languageContract); CHECK(manifest.value().matchedPhone("iy1") == "iy");
+  CHECK(manifest.value().expectedSampleRate == 16000U);
+  CHECK(report.value().find("manifestSha256")->asString() == core::sha256File(destination / "manifest.json").value());
+  std::filesystem::rename(fixture.root / "workspace" / "inventory.json", fixture.root / "inventory-backup.json");
+  arguments.back() = (fixture.root / "missing-authority").string();
+  requireCliRefusal(arguments, 2U, "English draft inventory must be a retained regular file");
+  CHECK(!std::filesystem::exists(fixture.root / "missing-authority")); CHECK(fixture.repository.recover().value().reviews.empty());
+#endif
 }
 
 TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution") {

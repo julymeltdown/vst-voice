@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "english_manifest_draft_fixture.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
@@ -56,6 +57,71 @@ std::filesystem::path privateStage(const std::filesystem::path& parent, std::str
   throw test::Failure{"Expected a private publication stage"};
 }
 } // namespace
+
+TEST_CASE("English generated producer drafts preserve declared folding or exact stress and actual audio rate") {
+  for (const bool distinguish : {false, true}) {
+    test::support::EnglishManifestDraftFixture fixture{distinguish};
+    const auto before = production::encodeProductionProject(fixture.project);
+    const auto created = fixture.create("editable"); CHECK(created);
+    const auto loaded = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(loaded);
+    const auto& manifest = loaded.value(); CHECK(manifest.languageContract);
+    CHECK(manifest.languageContract->vocabularyId == fixture.profile.vocabularyId);
+    CHECK(manifest.languageContract->vocabularySha256 == fixture.profile.vocabularySha256);
+    CHECK(manifest.languageContract->stressPolicy == fixture.profile.stressPolicy);
+    CHECK(manifest.expectedSampleRate == 16000U); CHECK(manifest.units.size() == 1U);
+    CHECK(manifest.units.front().phones.front() == (distinguish ? "iy1" : "iy"));
+    CHECK(manifest.matchedPhone("iy1") == (distinguish ? "iy1" : "iy"));
+    CHECK(manifest.matchedPhone("iy2") == (distinguish ? "iy2" : "iy"));
+    CHECK(core::sha256File(created.value().root / manifest.units.front().audioPath).value() == fixture.project.takes.front().rawAssetSha256);
+    CHECK(production::encodeProductionProject(fixture.repository.recover().value()) == before);
+    CHECK(fixture.project.reviews.empty()); CHECK(!created.value().releaseEligible);
+    CHECK(!production::requireTakeSourceQualification(fixture.project, fixture.project.takes.front().takeId));
+  }
+  Fixture legacy;
+  legacy.identity.language = domain::Language::English;
+  const auto created = legacy.create(); CHECK(created);
+  const auto manifest = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(manifest);
+  CHECK(!manifest.value().languageContract); CHECK(manifest.value().matchedPhone("iy1") == "iy1");
+}
+
+TEST_CASE("English producer drafts refuse absent tampered mismatched linked or out of inventory authority") {
+  test::support::EnglishManifestDraftFixture fixture;
+  const auto inventory = fixture.root / "workspace" / "inventory.json";
+  const auto original = core::readTextFileLimited(inventory, 1024U * 1024U); CHECK(original);
+  const auto backup = fixture.root / "inventory-backup.json";
+  std::filesystem::rename(inventory, backup);
+  CHECK(!fixture.create("missing")); CHECK(!std::filesystem::exists(fixture.root / "missing"));
+  std::error_code error; std::filesystem::create_symlink(backup, inventory, error);
+  if (!error) { CHECK(!fixture.create("linked")); CHECK(!std::filesystem::exists(fixture.root / "linked")); std::filesystem::remove(inventory); }
+  std::filesystem::rename(backup, inventory);
+  auto document = formats::parseJson(original.value()); CHECK(document);
+  document.value().asObject()["profileId"] = "foreign-inventory";
+  CHECK(core::durableAtomicWriteText(inventory, formats::stringifyJson(document.value(), true)));
+  CHECK(!fixture.create("tampered")); CHECK(!std::filesystem::exists(fixture.root / "tampered"));
+  auto other = fixture.profile; other.profileId = "foreign-inventory";
+  const auto regenerated = production::generateDraftInventory(other); CHECK(regenerated);
+  CHECK(core::durableAtomicWriteText(inventory, regenerated.value().documentJson));
+  CHECK(!fixture.create("mismatched")); CHECK(!std::filesystem::exists(fixture.root / "mismatched"));
+  CHECK(core::durableAtomicWriteText(inventory, original.value()));
+  fixture.project.unitAssignments.push_back({.coverageKey = "sustain:aa", .pitchLayer = 69,
+      .promptId = "outside", .plannedTakeId = "outside", .style = "neutral"});
+  CHECK(fixture.repository.save(fixture.project, {"save", "outside", "producer", "2026-10-15T00:03:00Z"}));
+  CHECK(!fixture.create("outside")); CHECK(!std::filesystem::exists(fixture.root / "outside"));
+}
+
+TEST_CASE("English producer inventory replacement during draft staging prevents publication") {
+  test::support::EnglishManifestDraftFixture fixture;
+  auto changed = fixture.profile; changed.stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
+  const auto regenerated = production::generateDraftInventory(changed); CHECK(regenerated);
+  const auto before = production::encodeProductionProject(fixture.project);
+  const auto result = fixture.create("changed", {.faultInjector = [&](production::ManifestDraftStage stage) {
+    if (stage == production::ManifestDraftStage::BeforeCommit)
+      CHECK(core::durableAtomicWriteText(fixture.root / "workspace" / "inventory.json", regenerated.value().documentJson));
+    return core::success();
+  }});
+  CHECK(!result); CHECK(!std::filesystem::exists(fixture.root / "changed"));
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value()) == before);
+}
 
 TEST_CASE("style-owned manifest drafts preserve all styles and distinguish missing assignments") {
   Fixture fixture{false, true};

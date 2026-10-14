@@ -40,6 +40,9 @@ struct CreatedSampleManifestDraft final {
 // remain listed as missing, never substituted. All output uses create-new
 // publication outside the producer. A returned value always means committed,
 // even when its parent-directory durability could not be confirmed.
+// Style-owned English projects require the generated inventory.json beside
+// producer/, bound by project identity/digest. Its explicit phone contract is
+// preserved; missing/mismatched authority is refused. Legacy projects remain exact.
 [[nodiscard]] core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
     const std::filesystem::path& repositoryRoot,
     const VoicebankProductionProject& project,
