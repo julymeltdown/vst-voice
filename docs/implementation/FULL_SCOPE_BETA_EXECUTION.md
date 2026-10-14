@@ -9218,3 +9218,8 @@ The [WAV-binding dossier](NOTE_PITCH_WAV_BINDING_2026-10-15.md) retains exact c1
 ### 2026-10-15 — exact publication-outcome review recorded
 
 Independent peer review APPROVES `06803bb56de422626b731b921113d9183ba4b3e6` for engineering only, closing both c27 P3s. One P3 documentation finding is addressed by disclosing the first focused CTest/TSan-build overlap and nested owner-runtime filter; separate TSan and bound focused receipts remain stable, counts are not additive. Full verdict, immutable source bindings, eight pins and receipt overlap checks are retained under `out/evidence/publication-outcome-review-2026-10-15`. No new native build/test; no later-unit, source, human or Beta approval. Exact a30f7969 review is dispatched and pending. Alpha 0/20, U45 held, Beta BLOCKED; full goal ACTIVE.
+
+
+### 2026-10-15 — additional female English phonetic donor source
+
+The [CMU ARCTIC SLT intake](FEMALE_ARCTIC_SLT_INTAKE_2026-10-15.md) downloads 1,132 additional unchanged female speech WAVs (3,395.5589375 seconds, mono PCM16/16 kHz), with matching transcripts and automatic phone labels and the voice-specific commercial/copy/modify grant. Actual native reader checks pass 1,132/1,132 with no reported clipping; three illustrative Direct-v3 analyses are bound, not full pitch qualification. The final read-only audit preserves the earlier 297 original WAVs: combined census 1,429 distinct originals. Forty-one raw symbols/1,327 adjacent pair types are automatic annotations, not qualified coverage: `jh` needs an explicit proposed `j` alias, `axr` and 51 stress forms are absent. No rights flag, actor, bank assignment/import, human listening or AE1/R9 acceptance is supplied. Independent intake review pending; Alpha 0/20, U45 held, Beta BLOCKED, full goal ACTIVE.

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-arctic-slt-original-intake",
+  "sourceBaseCommit": "89d7cf1eee593c834feae0654bbacd3a844c4a3e",
+  "manifest": {
+    "path": "out/evidence/female-arctic-slt-2026-10-15/manifest.json",
+    "sizeBytes": 466295,
+    "sha256": "c97f3ba4eb4b2bb6ff17eb2d82704b1ef69fb9cfc7dc04a07f27961c282253f2"
+  },
+  "retainedArtifacts": 2320,
+  "preservedBindings": 304,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/female-arctic-slt-2026-10-15/verification.log",
+      "sizeBytes": 272,
+      "sha256": "53bf8887b02f2116c405536c210e54dbed015f60c38a343aa872fed530fb8bb7"
+    },
+    "command": "python3 out/evidence/female-arctic-slt-2026-10-15/verify.py",
+    "scope": "Read-only archive/member/PCM/transcript/automatic-label/native-receipt/static-vocabulary/immutable-Git and prior-original/canonical audit; verify.py itself executed, no captured acquisition/runtime script or native binary executed."
+  },
+  "acquisition": {
+    "publisherId": "CMU ARCTIC SLT 0.95",
+    "publisherFemale": true,
+    "type": "US English read speech",
+    "archive": {
+      "path": "out/evidence/female-arctic-slt-2026-10-15/cmu_us_slt_arctic-0.95-release.tar.bz2",
+      "sizeBytes": 119914432,
+      "sha256": "9fddec16fbfbfb7d4989dff0fe77ccbe31f80b07b57be49d09994aa7a67d6dba"
+    },
+    "originalWavs": 1132,
+    "uniqueOriginalHashes": 1132,
+    "sampleRate": 16000,
+    "channels": 1,
+    "bitsPerSample": 16,
+    "frames": 54328943,
+    "durationSeconds": 3395.5589375,
+    "selectedUnmodifiedMembers": 2268,
+    "copyrightGrant": "Voice-specific CMU permission: commercial use, copying, modification and licensing; retain notices/authors and mark modifications.",
+    "license": {
+      "path": "out/evidence/female-arctic-slt-2026-10-15/originals/COPYING",
+      "sizeBytes": 2285,
+      "sha256": "469adc0262e10d84fb9658fa6181c883586415b5692f6bfbc2fde65dfc63f5c5"
+    },
+    "archiveLicenseMatchesPublisherBytes": true,
+    "sourceTransport": "HTTP, locally hashed; not authenticated publisher provenance",
+    "publisherChecksumVerified": false,
+    "urls": [
+      "http://festvox.org/cmu_arctic/",
+      "http://festvox.org/cmu_arctic/dbs_slt.html",
+      "http://festvox.org/cmu_arctic/cmu_arctic/cmu_us_slt_arctic/COPYING",
+      "http://festvox.org/cmu_arctic/cmu_arctic/packed/cmu_us_slt_arctic-0.95-release.tar.bz2"
+    ]
+  },
+  "execution": {
+    "nativeReader": {
+      "command": "seam_voicebank_cli inspect-wav",
+      "passed": 1132,
+      "failed": 0,
+      "elapsedSeconds": 7.388150082988432,
+      "receipt": {
+        "path": "out/evidence/female-arctic-slt-2026-10-15/native-inspections.receipt.json",
+        "sizeBytes": 3117,
+        "sha256": "ca8200290594809c63cc9c3f4913ef69d22962b75586d3ad76d21f40a0aa1bd3"
+      },
+      "allFiniteNonSilent": true,
+      "reportedClippedSamples": 0
+    },
+    "illustrativeAnalyses": {
+      "count": 3,
+      "method": "direct-autocorrelation-v3",
+      "receipt": {
+        "path": "out/evidence/female-arctic-slt-2026-10-15/analysis-selection.receipt.json",
+        "sizeBytes": 3958,
+        "sha256": "d8a5a412552f55994b11a4abde1efdbc7a54a13b0b3c2ed7d86782710362ee1d"
+      },
+      "wholeCorpusPitchQualified": false
+    },
+    "newNativeBuild": false
+  },
+  "codeSuitability": {
+    "vocabularyId": "seam-en-arpabet-v1",
+    "declaredSymbols": 93,
+    "rawPublisherSymbols": 41,
+    "rawUnsupportedSymbols": [
+      "jh"
+    ],
+    "proposedAliasOnly": {
+      "jh": "j"
+    },
+    "missingAfterAlias": 52,
+    "missingBareSymbols": [
+      "axr"
+    ],
+    "explicitLexicalStressFormsAbsent": 51,
+    "rawAdjacentPairTypes": 1327,
+    "automaticallyLabelled": true,
+    "manuallyReviewed": false,
+    "comparison": {
+      "path": "out/evidence/female-arctic-slt-2026-10-15/symbol-comparison.json",
+      "sizeBytes": 2614,
+      "sha256": "07e90992982c010c027b82b4d2e579c7702b5fca9d5b1835a313af56a715eb46"
+    }
+  },
+  "combinedOriginalFemaleWavCensus": 1429,
+  "earlierOriginalWavsPreserved": 297,
+  "holds": {
+    "sourcePersonalityRights": "NOT_ESTABLISHED",
+    "ownerRightsPolicy": "PENDING",
+    "producer": "NOT_REGISTERED",
+    "distinctReviewer": "NOT_REGISTERED",
+    "nativeProductionImport": "NOT_RUN",
+    "humanListening": "NOT_RUN",
+    "qualifiedBankCoverage": false,
+    "AE1": "NOT_SATISFIED",
+    "independentTechnicalReview": "PENDING"
+  },
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}
