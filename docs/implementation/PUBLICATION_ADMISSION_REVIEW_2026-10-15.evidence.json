@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "unit": "publication-admission-independent-review",
+  "manifest": {
+    "path": "out/evidence/publication-admission-review-2026-10-15/manifest.json",
+    "sizeBytes": 2149,
+    "sha256": "ee399163751ea4f4fdedbc87dd9781e309ef7686ffb33ee4b3f06718e38b835b"
+  },
+  "retainedArtifacts": 3,
+  "preservedBindings": 8,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/publication-admission-review-2026-10-15/verification.log",
+      "sizeBytes": 127,
+      "sha256": "bfa023df6132463482d18be0aeb7ef970c9671b19f2b86b4488cc18347ed03b7"
+    },
+    "scope": "Read-only exact verdict, preserved hashes and three immutable Git source bindings; no new build/test/native execution."
+  },
+  "review": {
+    "reviewedSourceCommit": "c27d1d6f5b9a883b48ea8c11c170998b68ac7a04",
+    "integratingBaseCommit": "e3ee6f00f1e784e21af524e4aa1e52808afce380",
+    "status": "APPROVE",
+    "verdictBytes": 17040,
+    "verdictSha256": "f193fde9e623f0b74543ab91e015a1b0811d22eb9ddcfc50a5023c5fa6e182f1",
+    "findings": [
+      {
+        "priority": "P3",
+        "topic": "Dynamic lock control",
+        "state": "PENDING",
+        "detail": "Existing four late-window tests prove final currency recheck; actual admission mutex exclusion is verified by source reading, not those controls."
+      },
+      {
+        "priority": "P3",
+        "topic": "Outcome report atomicity",
+        "state": "PENDING",
+        "detail": "Physical publication is serialized, but counts/outcome report run after lock release. Cancellation/replacement in that gap can observe older publication fields; current playback refuses revoked identities."
+      }
+    ],
+    "sourceBindings": [
+      {
+        "path": "libs/seam-authoring-runtime/src/render_coordinator.cpp",
+        "sizeBytes": 40547,
+        "sha256": "8a4d7696c06d8866cd97cb43f36728a26a0fd2063d80892bee4b2d99300baf1e",
+        "unchangedAtIntegratingBase": true
+      },
+      {
+        "path": "libs/seam-authoring-runtime/include/seam/authoring/render_coordinator.hpp",
+        "sizeBytes": 14880,
+        "sha256": "77a830d487f4aa44f3f65cc7ab764729f16eabf176d614679e6596ba93a6726d",
+        "unchangedAtIntegratingBase": true
+      },
+      {
+        "path": "tests/test_authoring_render_coordinator.cpp",
+        "sizeBytes": 82979,
+        "sha256": "22cd5f538f298a9cb355b5710752fbc3e4beb285018bd87e9eec015db7aab8b1",
+        "unchangedAtIntegratingBase": true
+      }
+    ],
+    "reviewExecution": "Independent read-only Git/code/retained-byte/timestamp/receipt and native PCM review; no builds/tests/native executables/captured scripts.",
+    "localSupplementExecution": "Read-only verdict/Git/source binding audit only, no new native build/test.",
+    "approvalScope": "Exact c27d1d6f engineering unit only. Not current HEAD, other later units or human/source/rights/production-QC/Beta approval.",
+    "releaseEligible": false,
+    "beta": "BLOCKED"
+  },
+  "verdict": {
+    "path": "out/evidence/publication-admission-review-2026-10-15/review-c27d1d6f.txt",
+    "sizeBytes": 17040,
+    "sha256": "f193fde9e623f0b74543ab91e015a1b0811d22eb9ddcfc50a5023c5fa6e182f1"
+  },
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

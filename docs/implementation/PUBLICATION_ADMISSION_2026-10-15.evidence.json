@@ -163,10 +163,30 @@
     "diagnostics": "NONE"
   },
   "independentReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
+    "sourceCommit": "c27d1d6f5b9a883b48ea8c11c170998b68ac7a04",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "previousLiveReview": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
-    "remainingReviewScope": "Saved-song fe340737 and this unit remain unreviewed pending previous completion"
+    "verdict": {
+      "path": "out/evidence/publication-admission-review-2026-10-15/review-c27d1d6f.txt",
+      "sizeBytes": 17040,
+      "sha256": "f193fde9e623f0b74543ab91e015a1b0811d22eb9ddcfc50a5023c5fa6e182f1"
+    },
+    "scope": "Exact c27d1d6f engineering unit only. Not current HEAD, other later units or human/source/rights/production-QC/Beta approval.",
+    "findings": [
+      {
+        "priority": "P3",
+        "topic": "Dynamic lock control",
+        "state": "PENDING",
+        "detail": "Existing four late-window tests prove final currency recheck; actual admission mutex exclusion is verified by source reading, not those controls."
+      },
+      {
+        "priority": "P3",
+        "topic": "Outcome report atomicity",
+        "state": "PENDING",
+        "detail": "Physical publication is serialized, but counts/outcome report run after lock release. Cancellation/replacement in that gap can observe older publication fields; current playback refuses revoked identities."
+      }
+    ],
+    "supplement": "docs/implementation/PUBLICATION_ADMISSION_REVIEW_2026-10-15.evidence.json"
   },
   "acceptance": {
     "alphaRecordedPasses": 0,

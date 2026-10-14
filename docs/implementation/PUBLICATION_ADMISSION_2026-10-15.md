@@ -79,11 +79,15 @@ independently recapture PCM. Native assertions prove retained allocation and
 request identity; no acoustic continuity or listening conclusion is drawn.
 No authenticated clean-build or historical execution lineage is asserted.
 
-Independent review of the preceding `ccbb39d6` host unit remains live in
-**Review in English**. The saved-song `fe340737` and this publication unit
-remain independently unreviewed pending that completion; the live review is
-not interrupted to dispatch another one. The prior frozen evidence roots and
-canonical files are preserved.
+**Review update:** **Review in English** now independently APPROVEs exact
+`c27d1d6f5b9a883b48ea8c11c170998b68ac7a04`, with two P3 findings and no required
+changes. Its [retained verdict and scope](PUBLICATION_ADMISSION_REVIEW_2026-10-15.md)
+confirm physical publication/revocation serialization and lock ordering. The
+existing late controls pin the currency recheck, while mutex exclusion is verified
+by source reading. Outcome reports still follow lock release and can expose older
+published fields to cancellation/replacement. Both follow-ups remain pending.
+`ccbb39d6` and `fe340737` also have separate engineering approvals; this does not
+approve later units or Beta. Earlier frozen roots and canonical files are preserved.
 
 The contract's R15 case still requires all released resources, languages,
 targets and review evidence. This selected development fixture does not close
