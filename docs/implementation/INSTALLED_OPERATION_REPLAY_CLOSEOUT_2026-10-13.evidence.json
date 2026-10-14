@@ -22,7 +22,7 @@
     }
   },
   "technicalReview": {
-    "status": "APPROVE_IMPLEMENTATION_ONLY",
+    "status": "APPROVE_PER_COMMIT_SCOPE",
     "sourceCommits": [
       "168467a41966dcb84a2c64b74d9e1119a3a90117",
       "2dc07921c71c2e9bfac7ca1e52d17cae8677e84e"
@@ -33,7 +33,17 @@
       "sizeBytes": 9250,
       "sha256": "fbacffcc71861a8e697af1a689bf1ec5a6eaf4f71c5495382de92a57a419312a"
     },
-    "execution": "Read-only independent Git/hash/JSON/WAV/method-count audit; no project execution"
+    "execution": "Read-only independent Git/hash/JSON/WAV/method-count audit; no project execution",
+    "commitScopes": [
+      {
+        "commit": "168467a41966dcb84a2c64b74d9e1119a3a90117",
+        "scope": "LOCAL_REPLAY_IMPLEMENTATION_ENGINEERING_ONLY"
+      },
+      {
+        "commit": "2dc07921c71c2e9bfac7ca1e52d17cae8677e84e",
+        "scope": "APPROVAL_BOOKKEEPING_ONLY"
+      }
+    ]
   },
   "committedReaderReplay": {
     "status": "ENGINEERING_PASS",
@@ -54,7 +64,17 @@
   },
   "focusedCasesReusedFromOriginalUnit": 499,
   "newCTest": "NOT_RUN_NOT_NEEDED_NO_PRODUCT_CODE_CHANGE",
-  "supplementIndependentReview": "NOT_RUN",
+  "supplementIndependentReview": {
+    "status": "APPROVE_BOOKKEEPING_AND_EVIDENCE_ONLY",
+    "sourceCommit": "edc5f90115733bd2381af8f701492dc489532eea",
+    "verdict": {
+      "path": "out/evidence/installed-continuity-plan-review-2026-10-15/review-edc5f901-and-continuity-plan.txt",
+      "sizeBytes": 16818,
+      "sha256": "5cc76417ff4d79dc7df599f74212cb930a7124cf224415c4411bd9fe7421a8d3"
+    },
+    "forcedChunkPlan": "REVISE_BEFORE_IMPLEMENTATION",
+    "execution": "Independent read-only Git/hash/source/contract inspection; no build, native, CTest or repository verifier execution"
+  },
   "humanAcceptance": "NOT_RUN",
   "rightsApproval": "NOT_GRANTED",
   "alphaRecordedPasses": [
