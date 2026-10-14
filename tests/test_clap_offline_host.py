@@ -4,16 +4,49 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ARGS = None
 
 
+def owned_fixture_project(path, root, label, filename):
+    project = Path(path)
+    # The child receives this canonical private root as TMPDIR/TMP/TEMP. Its
+    # output is data, not authority to read or recursively delete another tree.
+    if (not project.is_absolute() or project.name != filename or
+            project.parent.parent != root or
+            not re.fullmatch(r"project-seam-" + re.escape(label) + r"-\d+-\d+",
+                             project.parent.name) or
+            project.is_symlink() or project.parent.is_symlink() or
+            project.resolve() != project or not project.is_file()):
+        raise ValueError("Native fixture project is outside its owned temporary root")
+    return project
+
+
 class ClapOfflineHostTests(unittest.TestCase):
+    def run_fixture(self, runner, case, marker, label, filename, timeout):
+        temporary = tempfile.TemporaryDirectory(prefix="seam-clap-native-fixture-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        environment = dict(os.environ, TMPDIR=str(root), TMP=str(root), TEMP=str(root))
+        # This launcher owns disposable fixtures; optional standalone retention
+        # overrides must not write elsewhere during a host regression run.
+        for variable in ("SEAM_SONG_ARTIFACT_ROOT", "SEAM_SONG_FIXTURE_OUT"):
+            environment.pop(variable, None)
+        result = subprocess.run([str(runner), case], env=environment,
+                                capture_output=True, text=True, timeout=timeout, check=False)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        paths = [line.removeprefix(marker) for line in result.stdout.splitlines()
+                 if line.startswith(marker)]
+        self.assertEqual(1, len(paths), result.stdout)
+        return owned_fixture_project(paths[0], root, label, filename)
+
     def run_host(self, root, *arguments):
         result = subprocess.run(
             [str(ARGS.runner), "--plugin", str(ARGS.plugin), "--offline-only",
@@ -24,23 +57,113 @@ class ClapOfflineHostTests(unittest.TestCase):
         return json.loads((root / "summary.json").read_text())
 
     def installed_project(self):
-        result = subprocess.run(
-            [str(ARGS.journey_runner),
-             "An installed procedural singer sings a tuned phrase after the producer source is gone"],
-            capture_output=True, text=True, timeout=60, check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        paths = [line.removeprefix("INSTALLED_HOST_PROJECT ")
-                 for line in result.stdout.splitlines() if line.startswith("INSTALLED_HOST_PROJECT ")]
-        self.assertEqual(1, len(paths))
-        project = Path(paths[0])
-        self.assertTrue(project.is_file())
+        project = self.run_fixture(
+            ARGS.journey_runner,
+            "An installed procedural singer sings a tuned phrase after the producer source is gone",
+            "INSTALLED_HOST_PROJECT ", "procedural-install-journey", "installed-song.seam", 60)
         self.assertFalse((project.parent / "producer-source").exists())
         self.assertFalse((project.parent / "authored.seamsinger").exists())
         recipe = json.loads(project.read_text())["vocalTracks"][0]["proceduralRecipe"]
         self.assertIsNotNone(recipe["installation"])
         self.assertTrue(Path(recipe["path"]).is_file())
+        self.assertTrue(Path(recipe["path"]).resolve().is_relative_to(project.parent))
         return project
+
+    def test_native_fixture_uses_private_root_and_cleans_after_success(self):
+        owner = type(self)()
+        self.addCleanup(owner.doCleanups)
+        with tempfile.TemporaryDirectory() as directory:
+            control = Path(directory).resolve()
+            observed = {}
+
+            def child(command, **kwargs):
+                environment = kwargs.get("env", {})
+                root = Path(environment.get("TMPDIR", str(control)))
+                observed.update(root=root, environment=environment)
+                fixture = root / "project-seam-procedural-install-journey-123-0"
+                fixture.mkdir()
+                recipe = fixture / "recipe.json"
+                recipe.write_text("{}")
+                project = fixture / "installed-song.seam"
+                project.write_text(json.dumps({"vocalTracks": [{"proceduralRecipe": {
+                    "installation": {}, "path": str(recipe)}}]}))
+                return subprocess.CompletedProcess(command, 0, f"INSTALLED_HOST_PROJECT {project}\n", "")
+
+            with patch.dict(os.environ, {"SEAM_SONG_ARTIFACT_ROOT": str(control),
+                                        "SEAM_SONG_FIXTURE_OUT": str(control)}), \
+                    patch.object(subprocess, "run", side_effect=child):
+                project = owner.installed_project()
+            self.assertNotEqual(control, observed["root"])
+            for variable in ("TMPDIR", "TMP", "TEMP"):
+                self.assertEqual(str(observed["root"]), observed["environment"][variable])
+            for variable in ("SEAM_SONG_ARTIFACT_ROOT", "SEAM_SONG_FIXTURE_OUT"):
+                self.assertNotIn(variable, observed["environment"])
+            self.assertTrue(project.is_file())
+            owner.doCleanups()
+            self.assertFalse(observed["root"].exists())
+            self.assertTrue(control.exists())
+
+    def test_native_fixture_failure_and_timeout_clean_only_owned_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = Path(directory).resolve()
+            sentinel = control / "preserve.bin"
+            sentinel.write_bytes(b"Keep this unrelated input")
+            for timeout in (False, True):
+                with self.subTest(timeout=timeout):
+                    owner = type(self)()
+                    self.addCleanup(owner.doCleanups)
+                    observed = {}
+
+                    def child(command, **kwargs):
+                        root = Path(kwargs.get("env", {}).get("TMPDIR", str(control)))
+                        observed["root"] = root
+                        (root / "partial-fixture.bin").write_bytes(b"incomplete")
+                        if timeout:
+                            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+                        return subprocess.CompletedProcess(command, 1, "", "injected fixture failure")
+
+                    with patch.object(subprocess, "run", side_effect=child):
+                        with self.assertRaises(subprocess.TimeoutExpired if timeout else AssertionError):
+                            owner.installed_project()
+                    owner.doCleanups()
+                    self.assertFalse(observed["root"].exists())
+                    self.assertEqual(b"Keep this unrelated input", sentinel.read_bytes())
+
+    def test_native_fixture_stdout_cannot_select_foreign_or_symlinked_project(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = Path(directory).resolve()
+            foreign = control / "project-seam-procedural-install-journey-123-0"
+            foreign.mkdir()
+            recipe = foreign / "recipe.json"
+            recipe.write_text("{}")
+            project = foreign / "installed-song.seam"
+            data = json.dumps({"vocalTracks": [{"proceduralRecipe": {
+                "installation": {}, "path": str(recipe)}}]})
+            project.write_text(data)
+            for linked in ((False, True) if os.name != "nt" else (False,)):
+                with self.subTest(linked=linked):
+                    owner = type(self)()
+                    self.addCleanup(owner.doCleanups)
+                    observed = {}
+
+                    def child(command, **kwargs):
+                        root = Path(kwargs.get("env", {}).get("TMPDIR", str(control)))
+                        observed["root"] = root
+                        selected = project
+                        if linked:
+                            fixture = root / "project-seam-procedural-install-journey-456-0"
+                            fixture.mkdir()
+                            selected = fixture / "installed-song.seam"
+                            selected.symlink_to(project)
+                        return subprocess.CompletedProcess(command, 0, f"INSTALLED_HOST_PROJECT {selected}\n", "")
+
+                    with patch.object(subprocess, "run", side_effect=child):
+                        with self.assertRaisesRegex(ValueError, "owned temporary root"):
+                            owner.installed_project()
+                    owner.doCleanups()
+                    self.assertFalse(observed["root"].exists())
+                    self.assertEqual(data, project.read_text())
+                    self.assertEqual("{}", recipe.read_text())
 
     def test_pinned_installed_project_loads_and_bounces_in_cold_plugin(self):
         project = self.installed_project()
@@ -247,17 +370,10 @@ class ClapOfflineHostTests(unittest.TestCase):
             self.assertEqual(digest, hashlib.sha256(project.read_bytes()).hexdigest())
 
     def test_tuned_installed_lyric_song_bounces_after_producer_source_is_removed(self):
-        result = subprocess.run(
-            [str(ARGS.song_journey_runner),
-             "Tuning an installed singer survives undo, save, reopen and export"],
-            capture_output=True, text=True, timeout=120, check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        paths = [line.removeprefix("INSTALLED_HOST_SONG_PROJECT ")
-                 for line in result.stdout.splitlines()
-                 if line.startswith("INSTALLED_HOST_SONG_PROJECT ")]
-        self.assertEqual(1, len(paths))
-        project = Path(paths[0])
+        project = self.run_fixture(
+            ARGS.song_journey_runner,
+            "Tuning an installed singer survives undo, save, reopen and export",
+            "INSTALLED_HOST_SONG_PROJECT ", "song-journey-tuning", "song-01.seam", 120)
         data = json.loads(project.read_text())
         regions = [region for track in data["vocalTracks"] for region in track["regions"]]
         self.assertEqual(48, sum(len(region["notes"]) for region in regions))
@@ -269,10 +385,16 @@ class ClapOfflineHostTests(unittest.TestCase):
         self.assertTrue(data["settings"]["renderedRenderAbi"])
         self.assertIsNotNone(data["vocalTracks"][0]["proceduralRecipe"]["installation"])
         self.assertTrue(Path(data["vocalTracks"][0]["proceduralRecipe"]["path"]).is_file())
+        self.assertTrue(Path(data["vocalTracks"][0]["proceduralRecipe"]["path"]).resolve()
+                        .is_relative_to(project.parent))
         # These are this native invocation's temporary producer files, after its
         # tuning/undo/redo/cancellation/save/reopen/export checks have passed.
-        shutil.rmtree(project.parent / "producer-source")
-        (project.parent / "song-01.seamsinger").unlink()
+        producer = project.parent / "producer-source"
+        package = project.parent / "song-01.seamsinger"
+        self.assertTrue(producer.is_dir() and not producer.is_symlink())
+        self.assertTrue(package.is_file() and not package.is_symlink())
+        shutil.rmtree(producer)
+        package.unlink()
         self.assertFalse((project.parent / "producer-source").exists())
         self.assertFalse((project.parent / "song-01.seamsinger").exists())
         digest = hashlib.sha256(project.read_bytes()).hexdigest()

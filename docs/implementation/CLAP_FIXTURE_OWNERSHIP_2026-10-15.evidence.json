@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "unit": "clap-fixture-ownership",
+  "sourceBaseCommit": "a19a8dc938188b0e2c2f0bbf9e5c6628554b3380",
+  "manifest": {
+    "path": "out/evidence/clap-fixture-ownership-2026-10-15/manifest.json",
+    "sizeBytes": 7959,
+    "sha256": "5b0612233d3fef1b2e3ced7532fc647c975ed5f512dec56ec3074d569dde4ba5"
+  },
+  "retainedArtifacts": 38,
+  "preservedBindings": 8,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/clap-fixture-ownership-2026-10-15/verification.log",
+      "sizeBytes": 128,
+      "sha256": "51344cee019160fa7d683d0d6c22d69bf813339e52b554320af781b584d2c03c"
+    },
+    "scope": "Read-only Git, retained hashes, pre/post source/binary bindings, receipt streams and cleanup inventory observations. No native runtime or retained launcher script execution."
+  },
+  "runs": {
+    "parent-ownership": {
+      "receipt": {
+        "path": "out/evidence/clap-fixture-ownership-2026-10-15/parent-ownership.receipt.json",
+        "sizeBytes": 4269,
+        "sha256": "96a85f905f1d4edfe26d81252b4fafa75842733486c13aba1b82029cfde52c27"
+      },
+      "exitCode": 1,
+      "durationSeconds": 0.07991400000173599
+    },
+    "repaired-ownership": {
+      "receipt": {
+        "path": "out/evidence/clap-fixture-ownership-2026-10-15/repaired-ownership.receipt.json",
+        "sizeBytes": 3721,
+        "sha256": "42ce56aade5a34704dbc5e16b89f5e3201ce3b504bb0cb3f933dd4345e73bcca"
+      },
+      "exitCode": 0,
+      "durationSeconds": 0.08646162500372157
+    },
+    "parent-isolated-suite": {
+      "receipt": {
+        "path": "out/evidence/clap-fixture-ownership-2026-10-15/parent-isolated-suite.receipt.json",
+        "sizeBytes": 4268,
+        "sha256": "4042d6e0a906dd4e1d28afa547ff85d6d793ea4da6326f5be284de3077f0ad2c"
+      },
+      "exitCode": 0,
+      "durationSeconds": 9.922074875008548
+    },
+    "repaired-isolated-suite": {
+      "receipt": {
+        "path": "out/evidence/clap-fixture-ownership-2026-10-15/repaired-isolated-suite.receipt.json",
+        "sizeBytes": 3722,
+        "sha256": "df523566d44ab2d392e295d0f290db04b2bf9a5df9f1d49a6cd9cfed4898abfe"
+      },
+      "exitCode": 0,
+      "durationSeconds": 10.252852792007616
+    },
+    "focused-ctest": {
+      "receipt": {
+        "path": "out/evidence/clap-fixture-ownership-2026-10-15/focused-ctest.receipt.json",
+        "sizeBytes": 3685,
+        "sha256": "70b197321d6891bfd139a0586f2f52d93d8ad8e72047732cfc6b16ed84c1d51a"
+      },
+      "exitCode": 0,
+      "durationSeconds": 10.210167999990517
+    }
+  },
+  "parentInventory": {
+    "label": "parent",
+    "argv": [
+      "/usr/local/bin/python3",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/clap-fixture-ownership-2026-10-15/parent-tests.py",
+      "--runner",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_clap_editor_host",
+      "--plugin",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+      "--bank",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank",
+      "--journey-runner",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_procedural_install_journey_tests",
+      "--song-journey-runner",
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_original_singer_song_journey_tests"
+    ],
+    "exitCode": 0,
+    "ownedRoot": "/private/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-host-ownership-observation-zfba0dom",
+    "remainingTopLevel": [
+      "project-seam-procedural-install-journey-62323-0",
+      "project-seam-procedural-install-journey-62328-0",
+      "project-seam-procedural-install-journey-62335-0",
+      "project-seam-procedural-install-journey-62337-0",
+      "project-seam-song-journey-tuning-62352-0"
+    ],
+    "remainingFiles": 51,
+    "remainingFileBytes": 83912602,
+    "historicalRootsTouched": false,
+    "disposableRootCleanup": "TemporaryDirectory context deletes only this newly created observation root after inventory."
+  },
+  "finalInventory": {
+    "label": "final",
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^seam_clap_offline_host_tests$",
+      "-V",
+      "--output-on-failure"
+    ],
+    "exitCode": 0,
+    "ownedRoot": "/private/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-host-ownership-observation-py64fu9a",
+    "remainingTopLevel": [],
+    "remainingFiles": 0,
+    "remainingFileBytes": 0,
+    "historicalRootsTouched": false,
+    "disposableRootCleanup": "TemporaryDirectory context deletes only this newly created observation root after inventory."
+  },
+  "methodCounts": {
+    "parentHostMethods": 8,
+    "finalHostMethods": 11,
+    "newMockedOwnershipMethods": 3,
+    "parentMockedOwnershipFailures": 5,
+    "nativeFixtureInvocationsInHostSuite": 5,
+    "overlap": "Three focused mock methods and intermediate host suites overlap the final eleven-method CTest; child native invocations repeat existing cases."
+  },
+  "nativeBuild": "NOT_PERFORMED_PYTHON_ONLY_CHANGE_FOUR_RUNTIME_BINARIES_UNCHANGED_AND_RETAINED",
+  "technicalReview": "PENDING",
+  "sourceWrapperReconstruction": "Initial observation wrapper reconstructed by two literal reversals and byte hash matches both earlier receipt snapshots; not contemporaneous capture.",
+  "ownershipScope": "Only launcher-owned private roots and newly created disposable observation roots are cleaned. Shared historical temporary fixture roots are not swept.",
+  "optionalArtifactOverrides": "SEAM_SONG_ARTIFACT_ROOT and SEAM_SONG_FIXTURE_OUT removed from this launcher child environment; standalone CLI support unchanged.",
+  "durableHistoricalReplay": "NOT_REPAIRED",
+  "signingOrRightsAcceptance": false,
+  "humanAcceptance": false,
+  "releaseEligible": false,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED"
+}
