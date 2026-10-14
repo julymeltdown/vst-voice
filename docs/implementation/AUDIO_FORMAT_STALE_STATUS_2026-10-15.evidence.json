@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "unit": "audio-format-stale-status",
+  "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+  "sourceState": "Base plus retained library and test changes; generated header embeds base; no authenticated clean-build lineage",
+  "scope": "ENGINEERING_ONLY_AUTHORING_SAMPLE_RATE_STATUS",
+  "manifest": {
+    "path": "out/evidence/audio-format-stale-status-2026-10-15/manifest.json",
+    "sizeBytes": 14149,
+    "sha256": "1e16947db05046b6df555b7c8cdc57349bfb754556a64fb49b826436bf2fc34f"
+  },
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/verification.log",
+      "sizeBytes": 201,
+      "sha256": "e8478357ad9ede811bebf448b7702f446e6636c24b33e32ef17e9e20d820b187"
+    },
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/audio-format-stale-status-2026-10-15/verify.py"
+    ],
+    "scope": "Read-only artifact/input hashes, immutable baseline source, unchanged regression sources across repair, exact library delta, receipts and focused counts; no native execution",
+    "preservationAudit": {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/verification.receipt.json",
+      "sizeBytes": 532,
+      "sha256": "45bb3f7188d2a78806d72c4904d76369d68df2b8d304a934cdd401609416d945"
+    }
+  },
+  "retainedArtifacts": 56,
+  "preservedBindings": 6,
+  "baselineCoordinatorFailure": {
+    "label": "baseline-coordinator",
+    "argv": [
+      "build/release/seam_authoring_render_coordinator_tests",
+      "same-revision sample-rate replacement"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+    "startedUnix": 1792000654.55887,
+    "durationSeconds": 0.5138808329938911,
+    "exitCode": 1,
+    "executable": {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_authoring_render_coordinator_tests",
+      "bytes": 7169048,
+      "sha256": "bdea8948bb2987d6efe9985f7bec480c285879ae52aab8e3af5e5f55056d40f3",
+      "mtimeNs": 1792000621074260141
+    },
+    "stdout": {
+      "bytes": 211,
+      "sha256": "6e4171dd2b57ef6db6fb56f81223fa2e35ce9c9da333f4242170761c895e4beb"
+    },
+    "stderr": {
+      "bytes": 224,
+      "sha256": "39fcbb564fc39a37218205a975857199677088930a2d8f17b500ce51d5a19874"
+    }
+  },
+  "baselineRuntimeFailure": {
+    "label": "baseline-runtime-final",
+    "argv": [
+      "build/release/seam_authoring_performance_tests",
+      "does not try to hand back old-format audio"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+    "startedUnix": 1792000752.06971,
+    "durationSeconds": 0.5220195000001695,
+    "exitCode": 1,
+    "executable": {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_authoring_performance_tests",
+      "bytes": 7988560,
+      "sha256": "8aa6bbc339aaa902fa85bb084171a461af36491c5159492167d3fe87cc420e5e",
+      "mtimeNs": 1792000711986108398
+    },
+    "stdout": {
+      "bytes": 128,
+      "sha256": "0f21f2b29b6a1d12ea06aad55b7c141b9f18169dad3370a2f90ea7b4e12a104b"
+    },
+    "stderr": {
+      "bytes": 238,
+      "sha256": "d08fed6f1aee37d6c8c09ff7fe363606201ef55d93b21464903275d85500c208"
+    }
+  },
+  "setupFailures": {
+    "compile": {
+      "label": "baseline-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+      "startedUnix": 1792000524.119145,
+      "durationSeconds": 38.281984832981834,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 26284,
+        "sha256": "229b1463604f9c0e9586af86c2824b0dc995546acaa2d578ef92540250c570e4"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "runtimeWaitAssumption": {
+      "label": "baseline-runtime",
+      "argv": [
+        "build/release/seam_authoring_performance_tests",
+        "does not try to hand back old-format audio"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+      "startedUnix": 1792000655.158507,
+      "durationSeconds": 20.322823624999728,
+      "exitCode": 1,
+      "executable": {
+        "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_authoring_performance_tests",
+        "bytes": 7988560,
+        "sha256": "6c515e36d02283ae2a72a61239c8fcccaa0b762839dee8b003aaab1516be8f60",
+        "mtimeNs": 1792000618039246632
+      },
+      "stdout": {
+        "bytes": 128,
+        "sha256": "0f21f2b29b6a1d12ea06aad55b7c141b9f18169dad3370a2f90ea7b4e12a104b"
+      },
+      "stderr": {
+        "bytes": 284,
+        "sha256": "626f566aec4cfd84c65de218ca9d1a0fe2b43cce4b146fe08d491829afecd267"
+      }
+    },
+    "description": "Test-only mistakes: comparing shared_ptr to realtime ReadHandle; then waiting for a canonical render after a non-audible proposal command without explicitly requesting one. Both corrected before genuine runtime stale-flag reproduction. Failed sources/logs/binaries retained."
+  },
+  "originalRuntimeCase": {
+    "status": "PASS_BEFORE_NEW_ASSERTIONS",
+    "receipt": {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/baseline-existing-case.receipt.json",
+      "sizeBytes": 371,
+      "sha256": "edf89458ee1598010e90ec28e3d09170b977d30efb9dae0680fcf6f6fa5f6c36"
+    },
+    "doesNotDisproveNewStatusBug": true
+  },
+  "fullBuild": {
+    "label": "repaired-build",
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+    "startedUnix": 1792000767.7262342,
+    "durationSeconds": 10.304462083004182,
+    "exitCode": 0,
+    "stdout": {
+      "bytes": 17746,
+      "sha256": "c635207acc855b471fcdb61fcfedad59db01b9e815e6bd3b6540a126e50ae1ae"
+    },
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "focusedCTest": {
+    "label": "repaired-ctest",
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^(seam_authoring_render_coordinator_tests|seam_authoring_performance_tests|seam_procedural_install_journey_tests|seam_original_singer_song_journey_tests)$",
+      "-V",
+      "--output-on-failure"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+    "startedUnix": 1792000801.2059362,
+    "durationSeconds": 32.417020082997624,
+    "exitCode": 0,
+    "stdout": {
+      "bytes": 29674,
+      "sha256": "1c4f1bd5be285c3a9e8296a5d9bf4f4d80865a1d29aed7282ce159d3852127e9"
+    },
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "focusedCases": {
+    "seam_authoring_performance_tests": 56,
+    "seam_authoring_render_coordinator_tests": 38,
+    "seam_original_singer_song_journey_tests": 7,
+    "seam_procedural_install_journey_tests": 34
+  },
+  "totalFocusedCases": 135,
+  "newCaseCount": 1,
+  "existingRuntimeCaseStrengthened": 1,
+  "repairedBinaries": [
+    {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/repaired-binaries/seam_authoring_performance_tests",
+      "sizeBytes": 7988560,
+      "sha256": "f1c723d5b59f2acc80d56d9e56260676b59210e5b0f7d1831d067599438844be"
+    },
+    {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/repaired-binaries/seam_authoring_render_coordinator_tests",
+      "sizeBytes": 7169048,
+      "sha256": "53fe3ca06ba8415343db26b8498db7490c5a7ca1dd4c86f89947e8583d7e1c1e"
+    },
+    {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/repaired-binaries/seam_original_singer_song_journey_tests",
+      "sizeBytes": 13997640,
+      "sha256": "bf33ec084effeec8494e43b73d24037c3059c759079c38061d0b54e9e804ab81"
+    },
+    {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/repaired-binaries/seam_procedural_install_journey_tests",
+      "sizeBytes": 12519384,
+      "sha256": "8e90992017bc620c76061a3e96b1c3842e21aedc3495e2519098a705ad3f4af8"
+    }
+  ],
+  "generatedBuildHeader": {
+    "path": "out/evidence/audio-format-stale-status-2026-10-15/version.hpp",
+    "sizeBytes": 985,
+    "sha256": "d04769b8681d5b1c8a9275270bfaaf203efa4a2bfe688335997ad853cc3995ce"
+  },
+  "productionBehaviorChanged": "Retained Ready audio is stale when its sample rate differs from the queued request, even when revision and quality match. Matching new publication clears the flag.",
+  "existingCurrentPublicationSafety": "acquireCurrent already refused superseded audio; unchanged",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "This library/test/evidence unit only"
+  },
+  "previousUnitTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
+    "verdict": {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/review-667c8a19.txt",
+      "sizeBytes": 12616,
+      "sha256": "5e9c698b1c41c0eafea31f73a34fe05e2e6929bfcf9ebaa2b9766ae52c3e45e4"
+    },
+    "scope": "Prior scheduler test/evidence/docs only; no approval of this repair or Beta",
+    "execution": "Read-only Git/live remote/hash/raw PCM/cache checksum/phone/JSON/Mach-O/timestamp audit; no writes/build/CTest/native/retained scripts"
+  },
+  "canonicalIntegration": "NOT_PERFORMED",
+  "canonicalTolerance": "UNRESOLVED",
+  "qualification": "NOT_PERFORMED",
+  "productionInternetBankImported": false,
+  "humanListening": "NOT_RUN",
+  "physicalAudioDevicePlayback": "NOT_RUN",
+  "realDAWExecution": "NOT_RUN",
+  "windowsExecution": "NOT_RUN",
+  "fullSuite": "NOT_RERUN",
+  "alphaRecordedPasses": 0,
+  "alphaCheckCount": 20,
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "authorizesRelease": false
+}

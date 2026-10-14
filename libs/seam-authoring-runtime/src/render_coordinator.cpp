@@ -295,9 +295,11 @@ void AuthoringRenderCoordinator::submitWithSources(
     // takes them the other way round, and no callback or hook runs while they are held.
     const auto previous = progress();
     const auto audible = publication_.acquire();
+    // Changing the audio sample rate does not change the document revision.
     const auto audibleAudioStale =
         audible && audible->state == RenderState::Ready &&
-        (audible->projectRevision != revision || audible->quality != quality);
+        (audible->projectRevision != revision || audible->quality != quality ||
+         audible->result.sampleRate != sampleRate);
     reported = updateProgressIfCurrent(requestId, RenderProgress{
         .state = RenderState::Queued,
         .requestedRevision = revision,

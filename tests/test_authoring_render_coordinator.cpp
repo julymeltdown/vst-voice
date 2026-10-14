@@ -599,6 +599,44 @@ TEST_CASE("five_minute_stereo_pcm_copies_share_one_allocation") {
   CHECK(second.storageIdentity() == pcm.storageIdentity());
 }
 
+TEST_CASE("same-revision sample-rate replacement marks retained audio stale") {
+  using namespace seam;
+  auto fixture = makeRenderFixture();
+  DebounceObservation observation;
+  authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("coordinator-rate-stale"), observation.hooks()};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+      92U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 92U).state == authoring::RenderState::Ready);
+  const auto first = coordinator.latest();
+  CHECK(first);
+  CHECK(first->result.sampleRate == 48000U);
+  const auto previousRequest = first->requestId;
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+      92U, 44100U, rendering::RenderQuality::Preview, false);
+  CHECK(observation.waitFor(92U, false));
+  const auto queued = coordinator.progress();
+  CHECK(queued.state == authoring::RenderState::Queued);
+  CHECK(queued.requestedRevision == queued.publishedRevision);
+  CHECK(queued.requestedQuality == queued.publishedQuality);
+  CHECK(!coordinator.acquireCurrent());
+  CHECK(coordinator.acquire()->requestId == previousRequest);
+  std::cout << "RATE_STALE_PROBE retainedRate=" << first->result.sampleRate
+      << " requestedRate=44100 requestedRevision=" << queued.requestedRevision
+      << " publishedRevision=" << queued.publishedRevision
+      << " audibleAudioStale=" << queued.audibleAudioStale << '\n';
+  CHECK(queued.audibleAudioStale);
+  // Complete the replacement immediately; a matching new publication clears the warning.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+      92U, 44100U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForCondition([&] {
+    const auto current = coordinator.acquireCurrent();
+    return current && current->result.sampleRate == 44100U;
+  }));
+  CHECK(!coordinator.progress().audibleAudioStale);
+  CHECK(coordinator.acquireCurrent()->requestId != previousRequest);
+}
+
 TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
   auto fixture = makeRenderFixture();
   std::mutex gateMutex;

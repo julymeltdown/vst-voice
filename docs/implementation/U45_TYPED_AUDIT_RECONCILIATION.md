@@ -304,14 +304,37 @@ requirements still need their own evidence and reviewed semantic integration.
 ### Installed scheduler/neighbor API prerequisite (2026-10-15)
 
 The [native scheduler regression](INSTALLED_SCHEDULER_INVALIDATION_2026-10-15.md)
-connects one signed installed fixture to a single adjacent-lyric edit, rebuilt
-pronunciation/performance snapshots, changed chunk identities, actual cold and
-warm scheduling, four stale refusals and unrelated-region cache reuse. Retained
+connects one signed installed fixture to a single adjacent-lyric edit, changed
+pronunciation identity and freshly allocated performance objects, changed chunk
+identities, actual cold and warm scheduling, four submission-time stale refusals
+and unrelated-region cache reuse. Performance pointer inequality alone proves no
+semantic plan change. Retained
 raw bytes show6344 changed words;72000 DSP frames/12 cache hits/4 stale entries.
 Full rebuild and snapshot66/CLI27 pass. The read-only audit binds74 artifacts/five
 inputs; real production actors/resources and canonical evidence are not added.
 Independent APPROVE445b803b closes the prior reader review; its optional metric
-wording P3 is corrected. Scheduler-unit review is pending. Snapshot recreation
+wording P3 is corrected. Independent APPROVE667c8a19 closes this scheduler review,
+engineering scope only. The reviewer decoded all 12 cache payloads and attributed
+window0's 240 changes and 240 of249 in window3 to switched-on 5 ms edge fades.
+Snapshot recreation
 is explicit in the test: production editor dirty/publication callbacks, real
 host blocks, acoustic observations, tolerance ownership and semantic integration
 remain unproven. U45_RECONCILIATION_HOLD/Alpha0of20/BetaBLOCKED remain unchanged.
+
+
+### Connected runtime sample-rate status repair (2026-10-15)
+
+The [sample-rate dossier](AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) reproduces a
+production status defect in both queued coordinator and Rendering runtime paths:
+48 kHz retained audio was not marked stale during a same-revision/quality
+44.1 kHz replacement. Current publication safety already refused it. The
+existing predicate now also compares sample rate. Unchanged regressions fail
+against the rebuilt baseline and pass after the library repair; full untargeted
+Release rebuild (10.304s) plus four focused suites (135 cases, 32.417s) pass. There is
+one new case and one strengthened existing case. Setup compile/wait mistakes
+and genuine failures remain distinguished and retained. The read-only evidence
+audit checks 56 artifacts/six pins; exact APPROVE667c8a19 is for the prior scheduler
+unit only, and this repair's independent review is pending. Production host audio
+blocks, late scheduler completion controls, acoustic/classical/neural/platform/
+resource/human/tolerance work and semantic integration remain. No canonical
+recording or promotion is performed. U45hold/Alpha0of20/BetaBLOCKED remain.

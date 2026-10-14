@@ -121,9 +121,16 @@
   "evidenceScope": "ENGINEERING_ONLY",
   "historicalExecution": "NOT_AUTHENTICATED",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
+    "sourceCommit": "667c8a19f81263d7d8630eab09e282f1e267e370",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "This scheduler regression/evidence only"
+    "scope": "Test-only installed scheduler regression, retained evidence and documents; engineering only, one P3, no required changes",
+    "verdict": {
+      "path": "out/evidence/audio-format-stale-status-2026-10-15/review-667c8a19.txt",
+      "sizeBytes": 12616,
+      "sha256": "5e9c698b1c41c0eafea31f73a34fe05e2e6929bfcf9ebaa2b9766ae52c3e45e4"
+    },
+    "execution": "Read-only Git/live remote/hash/JSON/raw PCM/phone/Mach-O/timestamp/key-material audit and independent decoding of all 12 cache payloads; no writes, build, CTest, native or retained script execution"
   },
   "previousUnitTechnicalReview": {
     "status": "APPROVE",
@@ -156,5 +163,12 @@
   "fullGoal": "ACTIVE",
   "fullSuite": "NOT_RUN",
   "pythonSuiteThisUnit": "NOT_RUN",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "reviewFollowup": {
+    "performancePointerComparison": "Allocation only; no semantic plan change is proved. Existing observation retained unchanged.",
+    "staleAttribution": "Four refusals at submission time, not late worker completions.",
+    "edgeFadeAttribution": "All 240 changed words in window0 and 240 of249 in window3 are the enabled 5 ms phrase edge fades.",
+    "originalEvidenceRoot": "UNCHANGED",
+    "currentPrerequisite": "docs/implementation/AUDIO_FORMAT_STALE_STATUS_2026-10-15.md"
+  }
 }

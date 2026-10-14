@@ -2324,20 +2324,40 @@ TEST_CASE("authoring runtime does not try to hand back old-format audio when a f
       .lanes = {{PerformanceChannel::Attack, {{Tick{0}, 150.0}}}}};
   CHECK(runtime.executePerformanceResult(job.value(),
       std::make_unique<application::AddPerformanceProposalCommand>(region.id, region.performance, proposal)));
+  runtime.requestPreview(true);
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
   const auto accepted = std::vector<AcceptedPerformanceSelection>{
       {proposal.id, PerformanceChannel::Attack, region.notes.front().id, Tick{0}}};
   CHECK(runtime.auditionPerformance(region.id, accepted));
   CHECK(eventually([&] { return runtime.performanceAuditionReady(); }, std::chrono::seconds{10}));
 
   // The new render is held in flight, so the transport is looked at while it is empty.
+  const auto canonical = runtime.renderer().latest();
+  CHECK(canonical);
+  CHECK(canonical->result.sampleRate == 48000U);
+  const auto revision = runtime.document().session().revision();
   gate.arm();
   CHECK(runtime.reconfigureAudio(44100U, 2U, 256U));
   CHECK(gate.waitEntered(std::chrono::seconds{10}));
   CHECK(!runtime.performanceAuditionActive());
+  CHECK(runtime.document().session().revision() == revision);
+  const auto progress = runtime.renderer().progress();
+  CHECK(progress.state == authoring::RenderState::Rendering);
+  CHECK(progress.requestedRevision == progress.publishedRevision);
+  CHECK(progress.requestedQuality == progress.publishedQuality);
+  CHECK(!runtime.renderer().acquireCurrent());
+  const auto audible = runtime.audiblePublication();
+  CHECK(audible.audio);
+  CHECK(audible.audio->requestId == canonical->requestId);
+  CHECK(audible.audio->result.sampleRate == 48000U);
+  CHECK(!audible.performanceAudition);
+  CHECK(audible.stale);
   std::this_thread::sleep_for(std::chrono::milliseconds{200});
   CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
   gate.release();
   CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{20}));
+  CHECK(runtime.renderer().acquireCurrent()->result.sampleRate == 44100U);
+  CHECK(!runtime.audiblePublication().stale);
   CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
 }
 
