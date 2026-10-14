@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-internet-source-refresh",
+  "sourceCommit": "ae90c8e6638f89fd944b358ec21b99cb9c067e97",
+  "manifest": {
+    "path": "out/evidence/female-internet-source-refresh-2026-10-15/manifest.json",
+    "sizeBytes": 74914,
+    "sha256": "9ac0c544bebee6c5d59c3f2630269f5e82d17e53141808055ac1cfe25fe93c38"
+  },
+  "retainedArtifacts": 7,
+  "preservedBindings": 303,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/female-internet-source-refresh-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/female-internet-source-refresh-2026-10-15/verification.log",
+      "sizeBytes": 760,
+      "sha256": "dc33b8564ae3050a9f54917cbe3589bf9ebe5f179cefda81cfd5ab7b73606fff"
+    }
+  },
+  "originalWavs": 297,
+  "distinctDigests": 297,
+  "historicalOriginalDigestsMatch": true,
+  "cleanFemaleOriginalWavs": 25,
+  "femaleGrowlOriginalWavs": 272,
+  "cohorts": {
+    "clean-long-tones": {
+      "wavs": 15,
+      "seconds": 165.44038548752832
+    },
+    "clean-scales-arpeggios": {
+      "wavs": 10,
+      "seconds": 99.73843537414966
+    },
+    "female-growls": {
+      "wavs": 272,
+      "seconds": 338.473401360544
+    }
+  },
+  "freshPrimaryHttpResponses": 4,
+  "vocalsetLicense": "cc-by-4.0",
+  "karoryferLicense": "CC0_PUBLISHER_DECLARATION",
+  "vocalsetArchiveVersionCompatibility": "VocalSet11.zip same advertised size/MD5 in records1.1 and1.2",
+  "fullVocalSetArchiveMd5Verified": false,
+  "newAudioDownloads": 0,
+  "nativeExecution": "NOT_RUN_SOURCE_AND_DOCUMENT_ONLY",
+  "humanListening": "NOT_RUN",
+  "sourcePerformerApproval": "NOT_GRANTED",
+  "productionBankQualification": "NOT_QUALIFIED",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197"
+  },
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "authorizesRelease": false
+}
