@@ -64,3 +64,8 @@ or 312 derived donors. Real actors, owner policy, singing/pitch/style coverage,
 human listening, classical/neural and multilingual resources, R9, physical/DAW
 evidence, acoustic tolerances and full candidate checks remain open. Usable Alpha
 is 0/20 recorded passes, U45 held, External Beta BLOCKED; goal ACTIVE.
+
+
+## 2026-10-15 — Exact fresh SLT attribution review closes packet P2
+
+[The exact attribution verdict](FEMALE_SLT_ATTRIBUTION_REVIEW_2026-10-15.md) APPROVES 4fd8ab42 with no findings or required changes, and closes faf5f420's P2 for the fresh packet only. Original author references, unchanged COPYING/modification notice and all 312 unchanged donors are confirmed by independent read-only checks. The older frozen packet remains inaccurate and must not serve as import/provenance. README source wording is clarified: both names come from archive references; publisher page names Black only. No new runtime, acquisition, performer/owner rights, bank admission or Beta approval. Later code has separate review status; Alpha 0/20, U45 held, Beta BLOCKED.

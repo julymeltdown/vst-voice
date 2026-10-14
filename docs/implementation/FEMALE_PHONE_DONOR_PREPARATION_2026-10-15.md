@@ -135,3 +135,8 @@ Independent review APPROVED exact 2b9db572 for engineering/source-intake accurac
 ## 2026-10-15 — Exact donor and English producer review checkpoint
 
 [The exact review record](DONOR_AND_ENGLISH_REVIEW_2026-10-15.md) retains engineering APPROVE for faf5f420 (one P2 attribution-data finding, no required code changes) and ecee9147 (no findings or required changes). The old frozen donor packet inaccurately claims author retention and must not serve as an import/provenance packet. Fresh 4fd8ab42 output is awaiting exact independent review; P2 closure is pending. No new runtime, acquisition, musical/source admission or Beta acceptance. Original female census 1,429; Alpha 0/20, U45 held, Beta BLOCKED. Producer-to-manifest integration remains open.
+
+
+## 2026-10-15 — Exact fresh SLT attribution review closes packet P2
+
+[The exact attribution verdict](FEMALE_SLT_ATTRIBUTION_REVIEW_2026-10-15.md) APPROVES 4fd8ab42 with no findings or required changes, and closes faf5f420's P2 for the fresh packet only. Original author references, unchanged COPYING/modification notice and all 312 unchanged donors are confirmed by independent read-only checks. The older frozen packet remains inaccurate and must not serve as import/provenance. README source wording is clarified: both names come from archive references; publisher page names Black only. No new runtime, acquisition, performer/owner rights, bank admission or Beta approval. Later code has separate review status; Alpha 0/20, U45 held, Beta BLOCKED.

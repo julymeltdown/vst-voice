@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "unit": "slt-attribution-exact-review",
+  "sourceBaseCommit": "210688b0a254c6069448ad5543aef55315391764",
+  "manifest": {
+    "path": "out/evidence/female-slt-attribution-review-2026-10-15/manifest.json",
+    "sizeBytes": 1538,
+    "sha256": "d636510d21ce937f65be43e11cc1254ff3abe5da417f11d51cfdfc9e663638fa"
+  },
+  "retainedArtifacts": 2,
+  "preservedBindings": 6,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/female-slt-attribution-review-2026-10-15/verification.log",
+      "sizeBytes": 184,
+      "sha256": "d45ce819e9a7fc5bdab9121cf750cddc49f92af1b9646ab85fd96fb14a64fb73"
+    },
+    "scope": "Lead read-only retained hash/Git identity checks; no runtime"
+  },
+  "review": {
+    "commit": "4fd8ab423bbbaef7b5706ef8d2eae2802de71ba1",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13cbd-764b-7d73-a3e1-89fcdcf34f5b",
+    "verdict": "APPROVE",
+    "findings": 0,
+    "requiredChanges": 0,
+    "attributionP2": "CLOSED for fresh packet only; old packet remains invalid as import/provenance",
+    "fullFinal": {
+      "path": "out/evidence/female-slt-attribution-review-2026-10-15/review-4fd8ab42.md",
+      "sizeBytes": 13940,
+      "sha256": "bbf38fb96fd5340f460b756918ccb78945c87c9b3de8a2da58c89c981a6b727e"
+    },
+    "scope": "Read-only independent engineering/copyright-attribution review; no native/build/test/captured-script execution",
+    "grantsPerformerRightsOrBetaApproval": false
+  },
+  "newOriginalAudio": 0,
+  "originalFemaleWavCensus": 1429,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}
