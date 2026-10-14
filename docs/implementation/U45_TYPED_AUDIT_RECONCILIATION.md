@@ -338,3 +338,16 @@ unit only, and this repair's independent review is pending. Production host audi
 blocks, late scheduler completion controls, acoustic/classical/neural/platform/
 resource/human/tolerance work and semantic integration remain. No canonical
 recording or promotion is performed. U45hold/Alpha0of20/BetaBLOCKED remain.
+
+
+### Sample-rate test ordering follow-up (2026-10-15)
+
+Independent APPROVE3a0fa6f1 confirms the production predicate, regression failures
+and retained135 passes. Its P2 test-only ordering finding is corrected: await
+Ready progress with a cleared stale flag as well as the replacement publication,
+and check both replacement handles before dereference. Full untargeted build
+5.031s and runtime56/coordinator38 =94 cases in9.830s pass. No product/library
+change, new counted case, forced-race reproduction or canonical promotion occurs.
+The [dossier](AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) pins exact review and
+separate follow-up evidence. Four host-harness files remain uncommitted in
+progress and are excluded from this unit. U45hold/Alpha0of20/BetaBLOCKED remain.

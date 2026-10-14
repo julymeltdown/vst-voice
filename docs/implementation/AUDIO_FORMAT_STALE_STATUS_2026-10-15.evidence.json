@@ -228,9 +228,16 @@
   "productionBehaviorChanged": "Retained Ready audio is stale when its sample rate differs from the queued request, even when revision and quality match. Matching new publication clears the flag.",
   "existingCurrentPublicationSafety": "acquireCurrent already refused superseded audio; unchanged",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
+    "sourceCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "This library/test/evidence unit only"
+    "verdict": {
+      "path": "out/evidence/audio-format-status-followup-2026-10-15/review-3a0fa6f1.txt",
+      "sizeBytes": 11568,
+      "sha256": "5e57594a8e73f76d42b0a12d1241b66dc29468a0d005292b9fa19a8383c501d2"
+    },
+    "scope": "Sample-rate predicate, two regressions, evidence and bookkeeping; engineering only, no product/evidence changes required, one P2 test assertion follow-up",
+    "execution": "Read-only Git/live remote/source/hash/JSON/Mach-O/timestamp/count audit; no writes/build/CTest/native/retained script execution"
   },
   "previousUnitTechnicalReview": {
     "status": "APPROVE",
@@ -256,5 +263,73 @@
   "alphaCheckCount": 20,
   "betaStatus": "BLOCKED",
   "fullGoal": "ACTIVE",
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "reviewFollowup": {
+    "status": "P2_ASSERTION_ORDERING_CORRECTED",
+    "scope": "Wait for Ready progress with cleared stale flag before final assertions; check both replacement handles",
+    "manifest": {
+      "path": "out/evidence/audio-format-status-followup-2026-10-15/manifest.json",
+      "sizeBytes": 4545,
+      "sha256": "dce3ae8f1cd5efab40ae3f27708d291984f0ba03be74dbf86de8d91970ce1195"
+    },
+    "verification": {
+      "path": "out/evidence/audio-format-status-followup-2026-10-15/verification.log",
+      "sizeBytes": 162,
+      "sha256": "ad5fa68e7d5cea71600684a6c7d52e367389144f14477ff153f5d589dc388759"
+    },
+    "retainedArtifacts": 15,
+    "fullBuild": {
+      "label": "full-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
+      "startedUnix": 1792002293.632951,
+      "durationSeconds": 5.030507417017361,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 1297,
+        "sha256": "df9e1e1d249b59e463be70960ca2cc0c8a4e7d279e6043b045b71c7b48fd8ede"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "focusedCTest": {
+      "label": "focused-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-R",
+        "^(seam_authoring_render_coordinator_tests|seam_authoring_performance_tests)$",
+        "-V",
+        "--output-on-failure"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
+      "startedUnix": 1792002320.928106,
+      "durationSeconds": 9.829987000004621,
+      "exitCode": 0,
+      "stdout": {
+        "bytes": 20605,
+        "sha256": "72af55c3a6b0020f1018922a17bc8405e2b4caadb1fda1cbaba2caef754bd7d0"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "focusedCases": 94,
+    "newCaseCount": 0,
+    "buildIncludesSeparateHostWorkInProgress": true,
+    "forcedRaceReproduction": "NOT_RUN",
+    "productSource": "UNCHANGED",
+    "review": "PENDING_FOLLOWUP"
+  }
 }

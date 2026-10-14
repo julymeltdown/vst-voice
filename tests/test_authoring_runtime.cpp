@@ -2356,7 +2356,9 @@ TEST_CASE("authoring runtime does not try to hand back old-format audio when a f
   CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
   gate.release();
   CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{20}));
-  CHECK(runtime.renderer().acquireCurrent()->result.sampleRate == 44100U);
+  const auto replacement = runtime.renderer().acquireCurrent();
+  CHECK(replacement);
+  CHECK(replacement->result.sampleRate == 44100U);
   CHECK(!runtime.audiblePublication().stale);
   CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
 }

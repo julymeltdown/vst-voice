@@ -631,10 +631,14 @@ TEST_CASE("same-revision sample-rate replacement marks retained audio stale") {
       92U, 44100U, rendering::RenderQuality::Preview, true);
   CHECK(waitForCondition([&] {
     const auto current = coordinator.acquireCurrent();
-    return current && current->result.sampleRate == 44100U;
+    const auto progress = coordinator.progress();
+    return current && current->result.sampleRate == 44100U &&
+           progress.state == authoring::RenderState::Ready && !progress.audibleAudioStale;
   }));
   CHECK(!coordinator.progress().audibleAudioStale);
-  CHECK(coordinator.acquireCurrent()->requestId != previousRequest);
+  const auto replacement = coordinator.acquireCurrent();
+  CHECK(replacement);
+  CHECK(replacement->requestId != previousRequest);
 }
 
 TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
