@@ -390,3 +390,21 @@ The297 internet originals remain unchanged and unqualified. Independent review
 is pending; legacy procedural fixtures and full-song signal do not grant human,
 resource or canonical integration acceptance. U45hold/Alpha0of20/BetaBLOCKED
 and the full goalACTIVE remain unchanged.
+
+
+### Finished-worker publication admission (2026-10-15)
+
+The [publication dossier](PUBLICATION_ADMISSION_2026-10-15.md) closes the late
+request check-to-physical-publication interval. Same-revision replacement,
+cancel, idle reset and owner/debounce invalidation are forced after the early
+check; all four controlled-baseline cases overwrite retained accepted audio,
+and all four pass after publication/revocation share admission locking.
+Playback already had current-token refusal; this repairs retained history.
+Full Release rebuild5.327s, eight focused entries (five Python/246 native)
+in42.720s, nine owner-runtime cases and42 direct Debug TSan cases pass. The
+regressions and TSan repeat the coordinator cases rather than add unique cases.
+Exact parent/observed/final source, binaries/configuration/receipts/counts are
+retained for42 artifacts/six inputs; the observer hook is disclosed and is not
+an unmodified historical binary. No acoustic/human/released-resource/target
+qualification is granted. Independent review is pending after the preceding
+live review; canonical R15/U45hold/Alpha0of20/BetaBLOCKED/full goalACTIVE stay.

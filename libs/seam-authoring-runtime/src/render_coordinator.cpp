@@ -325,6 +325,9 @@ void AuthoringRenderCoordinator::submitWithSources(
 }
 
 void AuthoringRenderCoordinator::invalidateCurrent() noexcept {
+  // Owner/debounce control, outside the audio callback: a finished render must
+  // not publish in the interval after this revocation has returned.
+  std::lock_guard lock(mutex_);
   latestSubmittedRequestId_.store(0U, std::memory_order_release);
 }
 
@@ -585,7 +588,20 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
     const auto activeVoicebankId = audio->activeVoicebankId;
     const auto activeVoicebankVersion = audio->activeVoicebankVersion;
     const auto activeRenderer = audio->activeRenderer;
-    if (!publication_.publish(std::move(*audio))) {
+    if (hooks_.beforePublishAdmission) hooks_.beforePublishAdmission(request.revision);
+    bool published = false;
+    {
+      // Admission and revocation use this same lock. The early check above
+      // cannot authorize a later publish after a replacement, cancel or reset.
+      // No progress/completion callback runs while admission is locked.
+      std::lock_guard lock(mutex_);
+      if (request.requestId != latestSubmittedRequestId_.load(std::memory_order_acquire)) {
+        stale_.fetch_add(1U, std::memory_order_relaxed);
+        continue;
+      }
+      published = publication_.publish(std::move(*audio));
+    }
+    if (!published) {
       failed_.fetch_add(1U, std::memory_order_relaxed);
       static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
           .state = RenderState::Failed,

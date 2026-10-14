@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "unit": "publication-admission",
+  "sourceBaseCommit": "fe340737c0709a45f1d48cdfec8ec0089ea814ce",
+  "sourceState": "Observed baseline includes test-only barrier; final code retained; no authenticated clean-build lineage",
+  "manifest": {
+    "path": "out/evidence/publication-admission-2026-10-15/manifest.json",
+    "sizeBytes": 7522,
+    "sha256": "0a221dee177790871a615f10bf69a052e451e87fe40c7dd73c956b1e79809f47"
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/publication-admission-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/publication-admission-2026-10-15/verification.log",
+      "sizeBytes": 297,
+      "sha256": "228b2d5f2515ce182c355e985e440a965354895d33285ad0c23653669cf40dbf"
+    },
+    "executesNativeCode": false
+  },
+  "artifacts": 42,
+  "preservedInputs": 6,
+  "baseline": {
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005383.742377,
+      "elapsedSeconds": 95.23862158300471,
+      "pid": 14417,
+      "exitCode": 0,
+      "stdoutSha256": "2e284a570c1d4d04e2295ab11e944e9f05f26b070619683cc6aa3e588cb3039e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "regressions": {
+      "argv": [
+        "out/evidence/publication-admission-2026-10-15/baseline/build/release/seam_authoring_render_coordinator_tests",
+        "late_publication_"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005504.8815732,
+      "elapsedSeconds": 0.44060970898135565,
+      "pid": 18073,
+      "exitCode": 1,
+      "stdoutSha256": "cb4dbe8d8e15f67a46ea250ba35cab2aed5758e2bc65c87ce2989f0f41bcfc89",
+      "stderrSha256": "765b877f277b8cf965f64b73215985f9d8ef60b0d4568d8f0abc6bcb8757f40a"
+    },
+    "expectedFailedCases": 4,
+    "scope": "New deterministic barrier/tests; parent worker logic otherwise unchanged"
+  },
+  "repaired": {
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005539.093848,
+      "elapsedSeconds": 5.326931832998525,
+      "pid": 18542,
+      "exitCode": 0,
+      "stdoutSha256": "be090671c094a6d37bf6d846fad2c7a845e26d5d715ddc0599c25368ee1b7839",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "regressions": {
+      "argv": [
+        "build/release/seam_authoring_render_coordinator_tests",
+        "late_publication_"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005588.400152,
+      "elapsedSeconds": 0.4903165409923531,
+      "pid": 21150,
+      "exitCode": 0,
+      "stdoutSha256": "a99087e94eeb3f1562cf749164b68fcef31b83475bfc2fac1471214f9796cb49",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "focused": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-V",
+        "-R",
+        "^(seam_authoring_render_coordinator_tests|seam_authoring_characterization_tests|seam_authoring_transport_tests|seam_clap_offline_host_tests|seam_host_timeline_capture_tests|seam_original_singer_song_journey_tests|seam_procedural_install_journey_tests|seam_final_render_completeness_tests)$"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005619.353614,
+      "elapsedSeconds": 42.7203766250168,
+      "pid": 21417,
+      "exitCode": 0,
+      "stdoutSha256": "a5508733ccc8e7aa8fc12927948fcc69cce47c79e4de404f0dffe7545555dc93",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "ownerRuntime": {
+      "argv": [
+        "build/release/seam_tests",
+        "authoring_runtime"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005782.1646779,
+      "elapsedSeconds": 1.0651228330098093,
+      "pid": 24200,
+      "exitCode": 0,
+      "stdoutSha256": "a788c1ba167ab7bde99f12cded9f4efe8fec0f83ce6e14bc245f43c4e1c07127",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "counts": {
+    "ctestEntries": 8,
+    "pythonMethods": 5,
+    "ctestNativeCases": 246,
+    "ownerRuntimeFilteredCases": 9,
+    "coordinatorCases": 42,
+    "newCoordinatorCases": 4,
+    "tsanCases": 42,
+    "overlap": "Standalone regressions and TSan repeat the coordinator cases; do not add them as distinct cases"
+  },
+  "tsan": {
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/thread-sanitize",
+        "--target",
+        "seam_authoring_render_coordinator_tests",
+        "-j6"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005646.4104278,
+      "elapsedSeconds": 34.52435008401517,
+      "pid": 21612,
+      "exitCode": 0,
+      "stdoutSha256": "a383c79f830b0b8f1c54b06a08fbec630146addca74386322d514cafe77b5434",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tests": {
+      "argv": [
+        "env",
+        "TSAN_OPTIONS=halt_on_error=1",
+        "build/thread-sanitize/seam_authoring_render_coordinator_tests"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "startedUnix": 1792005722.415839,
+      "elapsedSeconds": 73.30209437498706,
+      "pid": 23004,
+      "exitCode": 0,
+      "stdoutSha256": "7f21444003ea3e524ada87fb54a6dfe504d0ce087d626c0116aa7381e96ba710",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scope": "Targeted Debug coordinator rebuild and direct native execution; no other TSan target claim",
+    "diagnostics": "NONE"
+  },
+  "independentReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "previousLiveReview": "ccbb39d64b03bb2c685b801e8f50bf0af5db3d9b",
+    "remainingReviewScope": "Saved-song fe340737 and this unit remain unreviewed pending previous completion"
+  },
+  "acceptance": {
+    "alphaRecordedPasses": 0,
+    "alphaRequirements": 20,
+    "beta": "BLOCKED",
+    "u45": "HELD",
+    "goal": "ACTIVE",
+    "authorizesRelease": false
+  }
+}

@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <string_view>
 #include <vector>
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
@@ -1600,4 +1601,135 @@ TEST_CASE("a request submitted while a reset is settling is admitted after it an
   CHECK(stats.completed == 1U);
   CHECK(stats.stale == 0U);
   CHECK(stats.cancelled == 1U);  // request 802, dropped by the reset
+}
+
+namespace {
+
+void checkLatePublicationRevocation(std::string_view action) {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable gateCondition;
+  bool lateEntered = false;
+  bool releaseLate = false;
+  bool replacementEntered = false;
+  bool releaseReplacement = false;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforePublishAdmission = [&](std::uint64_t revision) {
+    if (revision != 902U) return;
+    std::unique_lock lock(gateMutex);
+    if (lateEntered) return;
+    lateEntered = true;
+    gateCondition.notify_all();
+    // Deliberately ignore cancellation here: the already rendered result is
+    // held after its early currency check until the test releases this window.
+    gateCondition.wait(lock, [&] { return releaseLate; });
+  };
+  hooks.beforeRender = [&](std::uint64_t revision, std::stop_token) {
+    if (revision != 902U) return;
+    std::unique_lock lock(gateMutex);
+    if (!lateEntered) return;  // The first request has not rendered yet.
+    replacementEntered = true;
+    gateCondition.notify_all();
+    gateCondition.wait(lock, [&] { return releaseReplacement; });
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-publication-admission"), std::move(hooks)};
+  // Release both barriers before coordinator destruction even if an assertion
+  // fails, so an observed regression cannot turn into a test-process hang.
+  struct ReleaseBarriers final {
+    std::mutex& mutex;
+    std::condition_variable& condition;
+    bool& late;
+    bool& replacement;
+    ~ReleaseBarriers() {
+      std::lock_guard lock(mutex);
+      late = replacement = true;
+      condition.notify_all();
+    }
+  } release{gateMutex, gateCondition, releaseLate, releaseReplacement};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     901U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 901U).state == seam::authoring::RenderState::Ready);
+  const auto accepted = coordinator.acquire();
+  CHECK(accepted);
+  CHECK(coordinator.stats().completed == 1U);
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     902U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{5}, [&] { return lateEntered; }));
+  }
+  if (action == "submit") {
+    // Quality replacement at the same revision must revoke the old request.
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                       902U, 48000U, seam::rendering::RenderQuality::Final, true);
+  } else if (action == "cancel") {
+    coordinator.cancel();
+  } else if (action == "reset") {
+    coordinator.resetToIdle();
+  } else {
+    CHECK(action == "invalidate");
+    coordinator.invalidateCurrent();
+  }
+  CHECK(!coordinator.acquireCurrent());
+  {
+    std::lock_guard lock(gateMutex);
+    releaseLate = true;
+    gateCondition.notify_all();
+  }
+  if (action == "submit") {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{5},
+                                [&] { return replacementEntered; }));
+  } else {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (coordinator.stats().stale == 0U && coordinator.stats().completed == 1U &&
+           std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  const auto retained = coordinator.acquire();
+  CHECK(retained);
+  CHECK(retained->requestId == accepted->requestId);
+  CHECK(retained->projectRevision == 901U);
+  CHECK(retained->result.interleaved.storageIdentity() ==
+        accepted->result.interleaved.storageIdentity());
+  CHECK(coordinator.stats().completed == 1U);
+  CHECK(coordinator.stats().stale == 1U);
+  CHECK(!coordinator.acquireCurrent());
+  if (action == "cancel")
+    CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+  if (action == "reset")
+    CHECK(coordinator.progress().state == seam::authoring::RenderState::Idle);
+  if (action == "submit") {
+    {
+      std::lock_guard lock(gateMutex);
+      releaseReplacement = true;
+      gateCondition.notify_all();
+    }
+    CHECK(waitForTerminal(coordinator, 902U).state == seam::authoring::RenderState::Ready);
+    const auto current = coordinator.acquireCurrent();
+    CHECK(current);
+    CHECK(current->quality == seam::rendering::RenderQuality::Final);
+    CHECK(current->requestId != accepted->requestId);
+    CHECK(coordinator.stats().completed == 2U);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("late_publication_preserves_accepted_audio_after_same_revision_replacement") {
+  checkLatePublicationRevocation("submit");
+}
+
+TEST_CASE("late_publication_preserves_accepted_audio_after_cancellation") {
+  checkLatePublicationRevocation("cancel");
+}
+
+TEST_CASE("late_publication_preserves_accepted_audio_after_idle_reset") {
+  checkLatePublicationRevocation("reset");
+}
+
+TEST_CASE("late_publication_preserves_accepted_audio_after_debounced_intent_invalidation") {
+  checkLatePublicationRevocation("invalidate");
 }

@@ -167,6 +167,9 @@ struct RenderCoordinatorStats final {
 struct RenderCoordinatorHooks final {
   std::function<void(std::uint64_t, std::stop_token)> beforeRender;
   std::function<void(std::uint64_t, std::stop_token)> beforePublication;
+  // Test-only barrier after the worker's early currency check and immediately
+  // before publication admission. Runs outside coordinator locks and may block.
+  std::function<void(std::uint64_t)> beforePublishAdmission;
   // Test-only debounce observation. These callbacks run with the coordinator
   // mutex held: they must not block or re-enter the coordinator. A longer test
   // interval lets cancellation be synchronized inside the actual timed wait.
