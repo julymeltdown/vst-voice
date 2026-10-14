@@ -101,9 +101,16 @@
   "historicalExecution": "NOT_AUTHENTICATED",
   "evidenceScope": "ENGINEERING_ONLY",
   "technicalReview": {
-    "status": "PENDING",
+    "status": "APPROVE",
+    "sourceCommit": "445b803b91d563b43215d08ca527b33db1429aa5",
     "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
-    "scope": "This reader unit only"
+    "scope": "Closed continuity reader, mocked/real controls and evidence; engineering only, no approval of this scheduler unit or release",
+    "verdict": {
+      "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/review-445b803b.txt",
+      "sizeBytes": 13175,
+      "sha256": "5b8f88ae0915fc0017c48c91f892f79215f04d0fb0a9ea583f777d9db80e549d"
+    },
+    "execution": "Read-only Git/hash/JSON/raw WAV/projection/Mach-O/timestamp/key-material audit and live remote read; no writes, build, CTest, native, reader or retained script execution"
   },
   "previousUnitTechnicalReview": {
     "status": "APPROVE",
@@ -137,5 +144,9 @@
   "humanAcceptance": "NOT_RUN",
   "internetAssetsImported": false,
   "privateKeysCopied": false,
-  "authorizesRelease": false
+  "authorizesRelease": false,
+  "reviewFollowup": {
+    "metricRefusalWordingP3": "CORRECTED_DOCUMENTATION",
+    "schedulerPrerequisite": "docs/implementation/INSTALLED_SCHEDULER_INVALIDATION_2026-10-15.md"
+  }
 }

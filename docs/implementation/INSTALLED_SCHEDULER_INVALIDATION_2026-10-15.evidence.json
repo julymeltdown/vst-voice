@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-scheduler-invalidation",
+  "sourceCommit": "445b803b91d563b43215d08ca527b33db1429aa5",
+  "sourceState": "Base plus final test capture; product/library/CMake source unchanged; no authenticated clean build lineage",
+  "finalSource": {
+    "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/final-source/tests/test_sample_review_cli.cpp",
+    "sizeBytes": 166920,
+    "sha256": "253e26f31cc2fb93d0ee2e6c63db154aca471984fcdca1643a7b47aafeb72a81"
+  },
+  "manifest": {
+    "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/manifest.json",
+    "sizeBytes": 14119,
+    "sha256": "5ef9184b249f0431e1697a502577afda6c45b9831c2cdd57c747d3ea7e0a3c10"
+  },
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/verification.log",
+      "sizeBytes": 344,
+      "sha256": "689a1db26d5bd36503c573b78a9a7daac6b53414d6e2a532110115a5d752c75a"
+    },
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-scheduler-invalidation-2026-10-15/verify.py"
+    ],
+    "scope": "Read-only retained-byte audit, no project/native execution"
+  },
+  "retainedArtifacts": 74,
+  "preservedBindings": 5,
+  "producer": {
+    "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/seam_sample_review_cli_tests",
+    "sizeBytes": 9655680,
+    "sha256": "d68d6ab42797d6f514acccd9ef3b49bb48e462e860d8ee72c5c35a57d4d1376f"
+  },
+  "nativeBindingVerifier": {
+    "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/seam_voicebank_cli",
+    "sizeBytes": 9797712,
+    "sha256": "fb571cfd4b61ecacb75ce5cefa0aa599461c8ab51ee896fd0477b90d6522957c"
+  },
+  "generatedBuildHeader": {
+    "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/generated-version.hpp",
+    "sizeBytes": 985,
+    "sha256": "0ba76fed16723a67f36d6f33a4d5d9d492f7353e17ff4119c3ccc6c144501239"
+  },
+  "fullBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1791998942.1165252,
+    "elapsedSeconds": 10.217682790971594,
+    "exitCode": 0
+  },
+  "firstFailedBuild": {
+    "command": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1791998886.428479,
+    "elapsedSeconds": 25.533210249996046,
+    "exitCode": 1
+  },
+  "focusedCTest": {
+    "command": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^(seam_performance_snapshot_tests|seam_sample_review_cli_tests)$",
+      "--output-on-failure"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "startedUnix": 1791998978.229944,
+    "elapsedSeconds": 25.888771750003798,
+    "exitCode": 0
+  },
+  "focusedCases": {
+    "seam_performance_snapshot_tests": 66,
+    "seam_sample_review_cli_tests": 27
+  },
+  "newCaseCount": 0,
+  "rawFloat32Artifacts": 27,
+  "coldStages": 3,
+  "warmStages": 3,
+  "processedFrames": 72000,
+  "cacheHits": 12,
+  "staleCompletions": 4,
+  "changedFloat32Words": 6344,
+  "changedWordsPerWindow": [
+    240,
+    207,
+    5648,
+    249
+  ],
+  "mutationJsonLeaves": [
+    "/vocalTracks/0/regions/0/lyrics/1/surface"
+  ],
+  "pronunciationPhones": {
+    "base": [
+      "a",
+      "a"
+    ],
+    "edited": [
+      "a",
+      "n",
+      "a"
+    ]
+  },
+  "sourceInstalledAdmission": "CHECKED",
+  "unrelatedRegionCacheReused": true,
+  "oldImmutableCachePreserved": true,
+  "scope": "DIRECT_INSTALLED_SNAPSHOT_SCHEDULER_API",
+  "evidenceScope": "ENGINEERING_ONLY",
+  "historicalExecution": "NOT_AUTHENTICATED",
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "This scheduler regression/evidence only"
+  },
+  "previousUnitTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "445b803b91d563b43215d08ca527b33db1429aa5",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "Closed continuity reader, mocked/real controls and evidence; engineering only, no approval of this scheduler unit or release",
+    "verdict": {
+      "path": "out/evidence/installed-scheduler-invalidation-2026-10-15/review-445b803b.txt",
+      "sizeBytes": 13175,
+      "sha256": "5b8f88ae0915fc0017c48c91f892f79215f04d0fb0a9ea583f777d9db80e549d"
+    },
+    "execution": "Read-only Git/hash/JSON/raw WAV/projection/Mach-O/timestamp/key-material audit and live remote read; no writes, build, CTest, native, reader or retained script execution"
+  },
+  "canonicalIntegration": "NOT_PERFORMED",
+  "canonicalTolerance": "UNRESOLVED",
+  "qualification": "NOT_QUALIFIED",
+  "acousticF0Measurement": "NOT_RUN",
+  "acousticPhaseMeasurement": "NOT_RUN",
+  "productionEditorInvalidation": "NOT_RUN",
+  "standaloneAudioBlocks": "NOT_RUN",
+  "windowsExecution": "NOT_RUN",
+  "humanAcceptance": "NOT_RUN",
+  "internetAssetsImported": false,
+  "privateKeysCopied": false,
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "fullSuite": "NOT_RUN",
+  "pythonSuiteThisUnit": "NOT_RUN",
+  "authorizesRelease": false
+}

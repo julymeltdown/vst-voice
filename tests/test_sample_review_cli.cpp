@@ -12,6 +12,8 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/render_pipeline.hpp"
+#include "seam/rendering/render_scheduler.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
@@ -21,6 +23,7 @@
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include "seam/candidate_packaging/candidate_package.hpp"
 #include <algorithm>
+#include <bit>
 #include <map>
 #include <stop_token>
 
@@ -721,6 +724,145 @@ void checkInstalledContinuityReplay(const formats::JsonValue& record,
   CHECK(treeDigest(output) == before);
 }
 #endif
+void checkInstalledSnapshotInvalidation(const std::vector<std::string>& bindingArguments,
+    const domain::Project& original, domain::RegionId affectedRegion, const std::filesystem::path& root,
+    const rendering::TrackProceduralSource& source) {
+  CHECK(source.admission); CHECK(source.admission->origin() == distribution::ProceduralAdmissionOrigin::Installed);
+  auto base = original; const auto trackId = source.trackId;
+  auto* region = base.findRegion(affectedRegion); CHECK(region); CHECK(region->notes.size() == 1U);
+  region->notes.front().durationTick = time::Tick{480};
+  region->notes.front().articulation = domain::NoteArticulation::Legato;
+  application::ProjectFactory factory{2999999U};
+  auto [neighborLyric, neighbor] = factory.makeNote(time::Tick{480}, time::Tick{480}, 67U, U"あ", domain::Language::Japanese);
+  neighbor.articulation = domain::NoteArticulation::Legato;
+  const auto neighborLyricId = neighborLyric.id;
+  region->lyrics.push_back(neighborLyric); region->notes.push_back(neighbor);
+  const auto unrelatedRegion = factory.addRegion(base, trackId, "Unrelated", time::Tick{3840}, time::Tick{960});
+  auto [otherLyric, otherNote] = factory.makeNote(time::Tick{0}, time::Tick{960}, 64U, U"あ", domain::Language::Japanese);
+  base.findRegion(unrelatedRegion)->lyrics.push_back(otherLyric); base.findRegion(unrelatedRegion)->notes.push_back(otherNote);
+  auto edited = base;
+  auto* editedRegion = edited.findRegion(affectedRegion); CHECK(editedRegion);
+  const auto lyric = std::find_if(editedRegion->lyrics.begin(), editedRegion->lyrics.end(),
+      [&](const auto& value) { return value.id == neighborLyricId; });
+  CHECK(lyric != editedRegion->lyrics.end()); lyric->surface = U"な";
+  const auto output = root / "installed-scheduler-invalidation";
+  CHECK(!std::filesystem::exists(output)); CHECK(std::filesystem::create_directory(output));
+  formats::JsonValue::Array bindings;
+  for (const auto& [name, project] : std::vector<std::pair<std::string, domain::Project>>{{"base", base}, {"edited", edited}}) {
+    const auto path = output / (name + ".seam"); CHECK(formats::ProjectJsonCodec{}.save(project, path));
+    for (const auto id : {affectedRegion, unrelatedRegion}) {
+      auto args = bindingArguments; args[1] = path.string(); args[2] = core::sha256File(path).value(); args[4] = id.toString();
+      bindings.push_back(cliSuccess(args)); // Signed package/installation/project checks precede scheduler access.
+    }
+  }
+  const auto snapshot = [&](const domain::Project& project, domain::RegionId id, std::uint64_t revision) {
+    return rendering::RenderSnapshotFactory{}.createProcedural(project, source.resource, trackId, id,
+        revision, rendering::RenderQuality::Final, 48000U, source.style);
+  };
+  const auto a = snapshot(base, affectedRegion, 1U), b = snapshot(edited, affectedRegion, 2U);
+  const auto u = snapshot(base, unrelatedRegion, 1U), v = snapshot(edited, unrelatedRegion, 2U);
+  CHECK(a); CHECK(b); CHECK(u); CHECK(v);
+  CHECK(a.value().contentHash != b.value().contentHash);
+  CHECK(a.value().pronunciationIdentity->sequenceHash != b.value().pronunciationIdentity->sequenceHash);
+  CHECK(a.value().compiledPerformance != b.value().compiledPerformance);
+  CHECK(u.value().contentHash == v.value().contentHash);
+  CHECK(u.value().pronunciationIdentity == v.value().pronunciationIdentity);
+  const auto context = a.value().compiledPerformance->phoneticContext(); CHECK(context);
+  CHECK(b.value().compiledPerformance->phoneticContext().value() == context.value());
+  const auto partition = [&](const auto& value) {
+    const auto extent = value.compiledPerformance->phoneticContext(); CHECK(extent);
+    return rendering::RenderSnapshotFactory{}.splitOwnedOutput(value, extent.value(), 6103U);
+  };
+  const auto ac = partition(a.value()), bc = partition(b.value()), uc = partition(u.value()), vc = partition(v.value());
+  CHECK(ac); CHECK(bc); CHECK(uc); CHECK(vc); CHECK(ac.value().size() == bc.value().size());
+  CHECK(uc.value().size() == vc.value().size());
+  for (std::size_t i=0; i<ac.value().size(); ++i) CHECK(ac.value()[i].contentHash != bc.value()[i].contentHash);
+  for (std::size_t i=0; i<uc.value().size(); ++i) CHECK(uc.value()[i].contentHash == vc.value()[i].contentHash);
+  rendering::PcmCache cache{output / "cache"}; rendering::BackgroundRenderScheduler scheduler{cache, 1U};
+  formats::JsonValue::Array stages, artifacts;
+  const auto raw = [&](const std::string& name, std::span<const float> samples) {
+    std::vector<std::byte> bytes; bytes.reserve(samples.size()*4U);
+    for (const auto value : samples) {
+      CHECK(std::isfinite(value)); const auto word=std::bit_cast<std::uint32_t>(value);
+      for (unsigned i=0;i<4U;++i) bytes.push_back(static_cast<std::byte>((word>>(8U*i))&255U));
+    }
+    CHECK(core::durableAtomicWriteNew(output/name, bytes));
+    artifacts.emplace_back(formats::JsonValue::Object{{"path", name}, {"sha256", core::sha256File(output/name).value()},
+        {"frames", static_cast<std::int64_t>(samples.size())}, {"encoding", "RAW_FLOAT32_LE"}});
+  };
+  const auto equalWords = [](std::span<const float> left, std::span<const float> right) {
+    return left.size()==right.size() && std::equal(left.begin(),left.end(),right.begin(),
+        [](float x,float y) { return std::bit_cast<std::uint32_t>(x)==std::bit_cast<std::uint32_t>(y); });
+  };
+  const auto wholeA=rendering::PhraseRenderPipeline{}.render(a.value());
+  const auto wholeB=rendering::PhraseRenderPipeline{}.render(b.value());
+  const auto wholeU=rendering::PhraseRenderPipeline{}.render(u.value());
+  CHECK(wholeA); CHECK(wholeB); CHECK(wholeU);
+  CHECK(!equalWords(wholeA.value().rendered.audio.samples,wholeB.value().rendered.audio.samples));
+  raw("base-whole.f32",wholeA.value().rendered.audio.samples); raw("edited-whole.f32",wholeB.value().rendered.audio.samples);
+  raw("unrelated-whole.f32",wholeU.value().rendered.audio.samples);
+  const auto run = [&](const std::string& name, const auto& chunks, const auto& whole,
+                       rendering::RenderCompletionStatus expected) {
+    const auto before=scheduler.stats(); formats::JsonValue::Array records;
+    std::vector<float> joined;
+    for (std::size_t i=0;i<chunks.size();++i) {
+      const auto& chunk=chunks[i]; CHECK(scheduler.submitSnapshot(chunk)); CHECK(scheduler.waitIdle(std::chrono::seconds{20}));
+      const auto delivered=scheduler.drainCompleted(); CHECK(delivered.size()==1U); const auto& item=delivered.front();
+      CHECK(item.status==expected); CHECK(item.pcm); CHECK(item.cacheKey==chunk.contentHash); CHECK(item.revision==chunk.revision);
+      CHECK(item.pcm->startFrame==chunk.ownedFrames->start);
+      CHECK(item.pcm->samples.size()==static_cast<std::size_t>(chunk.ownedFrames->end-chunk.ownedFrames->start));
+      const auto begin=static_cast<std::size_t>(chunk.ownedFrames->start-whole.rendered.audio.startFrame);
+      CHECK(equalWords(item.pcm->samples,std::span<const float>{whole.rendered.audio.samples}.subspan(begin,item.pcm->samples.size())));
+      raw(name+"-"+std::to_string(i)+".f32",item.pcm->samples);
+      joined.insert(joined.end(),item.pcm->samples.begin(),item.pcm->samples.end());
+      formats::JsonValue::Array phones;
+      for (const auto& marker:item.proceduralMarkers) phones.emplace_back(formats::JsonValue::Object{
+          {"key",marker.key.toString()},{"phone",marker.phone},{"startFrame",marker.ownedSpan.start},{"endFrame",marker.ownedSpan.end},
+          {"startClipped",marker.startClipped},{"endClipped",marker.endClipped}});
+      records.emplace_back(formats::JsonValue::Object{{"index",static_cast<std::int64_t>(i)},{"cacheKey",item.cacheKey},
+          {"revision",static_cast<std::int64_t>(item.revision)}, {"status",expected==rendering::RenderCompletionStatus::CacheHit?"CacheHit":"Completed"},
+          {"startFrame",item.pcm->startFrame},{"endFrame",chunk.ownedFrames->end},{"markers",std::move(phones)}});
+    }
+    CHECK(equalWords(joined,whole.rendered.audio.samples));
+    const auto after=scheduler.stats();
+    const auto processed=after.proceduralFrames-before.proceduralFrames;
+    CHECK(processed==(expected==rendering::RenderCompletionStatus::CacheHit?0U:whole.rendered.audio.samples.size()));
+    stages.emplace_back(formats::JsonValue::Object{{"name",name},{"chunks",std::move(records)},
+        {"processedFrames",static_cast<std::int64_t>(processed)},
+        {"cacheHits",static_cast<std::int64_t>(after.cacheHits-before.cacheHits)}});
+  };
+  run("base-cold",ac.value(),wholeA.value(),rendering::RenderCompletionStatus::Completed);
+  run("unrelated-cold",uc.value(),wholeU.value(),rendering::RenderCompletionStatus::Completed);
+  run("base-warm",ac.value(),wholeA.value(),rendering::RenderCompletionStatus::CacheHit);
+  run("unrelated-warm",uc.value(),wholeU.value(),rendering::RenderCompletionStatus::CacheHit);
+  run("edited-cold",bc.value(),wholeB.value(),rendering::RenderCompletionStatus::Completed);
+  run("unrelated-after-edit",vc.value(),wholeU.value(),rendering::RenderCompletionStatus::CacheHit);
+  formats::JsonValue::Array obsolete;
+  const auto framesBeforeStale=scheduler.stats().proceduralFrames;
+  for (const auto& chunk:ac.value()) {
+    CHECK(scheduler.submitSnapshot(chunk)); const auto ready=scheduler.drainCompleted(); CHECK(ready.size()==1U);
+    CHECK(ready.front().status==rendering::RenderCompletionStatus::Stale); CHECK(!ready.front().pcm);
+    CHECK(ready.front().proceduralMarkers.empty()); CHECK(cache.load(chunk.contentHash));
+    obsolete.emplace_back(formats::JsonValue::Object{{"cacheKey",chunk.contentHash},{"status","Stale"},{"pcmDelivered",false}});
+  }
+  CHECK(scheduler.stats().proceduralFrames==framesBeforeStale);
+  const auto final=scheduler.stats();
+  const formats::JsonValue record=formats::JsonValue::Object{{"schemaVersion",std::int64_t{1}},{"recordType","seam.engineering.installed-scheduler-invalidation.v1"},
+      {"host","seam_sample_review_cli_tests"},{"scope","DIRECT_INSTALLED_SNAPSHOT_SCHEDULER_API"},{"evidenceScope","ENGINEERING_ONLY"},
+      {"mutation","SECOND_DISTINCT_LYRIC_A_TO_NA"},{"mutationLyricId",neighborLyricId.toString()},
+      {"affectedRegionId",affectedRegion.toString()},{"unrelatedRegionId",unrelatedRegion.toString()},
+      {"baseContextSha256",a.value().contentHash},{"editedContextSha256",b.value().contentHash},
+      {"basePronunciationSha256",a.value().pronunciationIdentity->sequenceHash},{"editedPronunciationSha256",b.value().pronunciationIdentity->sequenceHash},
+      {"performancePlanRebuilt",a.value().compiledPerformance!=b.value().compiledPerformance},
+      {"unrelatedContextSha256",u.value().contentHash},{"sampleRate",std::int64_t{48000}},{"bindings",std::move(bindings)},
+      {"stages",std::move(stages)},{"obsoleteCompletions",std::move(obsolete)},{"artifacts",std::move(artifacts)},
+      {"totalProcessedFrames",static_cast<std::int64_t>(final.proceduralFrames)},
+      {"cacheHits",static_cast<std::int64_t>(final.cacheHits)},{"stale",static_cast<std::int64_t>(final.stale)},
+      {"canonicalTolerance","UNRESOLVED"},{"acousticF0Measurement","NOT_RUN"},{"acousticPhaseMeasurement","NOT_RUN"},
+      {"standaloneAudioBlocks","NOT_RUN"},{"windowsExecution","NOT_RUN"},{"humanAcceptance","NOT_RUN"},
+      {"qualification","NOT_QUALIFIED"},{"authorizesRelease",false}};
+  CHECK(core::durableAtomicWriteTextNew(output/"observation.json",formats::stringifyJson(record,true)+"\n"));
+}
 void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
     const domain::Project& original, domain::RegionId regionId, const std::filesystem::path& root) {
   const auto installed = std::filesystem::path{bindingArguments[9]};
@@ -931,6 +1073,7 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
     const auto frozen = rendering::captureProceduralSource(*track,
         rendering::TrackRecipeFileSource{trackId, *track->proceduralRecipe, root});
     CHECK(frozen);
+    checkInstalledSnapshotInvalidation(args, project, regionId, root, frozen.value());
     const auto voicedSnapshot = rendering::RenderSnapshotFactory{}.createProcedural(project,
         frozen.value().resource, trackId, regionId, 0U, rendering::RenderQuality::Final, 48000U, "neutral");
     CHECK(voicedSnapshot); CHECK(voicedSnapshot.value().phonemes);

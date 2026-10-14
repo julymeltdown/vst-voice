@@ -299,3 +299,19 @@ not canonical report integration or historical-execution authentication.
 U45_RECONCILIATION_HOLD, UNRESOLVED tolerances, Alpha0of20 and BetaBLOCKED remain.
 Actual scheduler/cache/neighbor, host/platform and released-resource/human
 requirements still need their own evidence and reviewed semantic integration.
+
+
+### Installed scheduler/neighbor API prerequisite (2026-10-15)
+
+The [native scheduler regression](INSTALLED_SCHEDULER_INVALIDATION_2026-10-15.md)
+connects one signed installed fixture to a single adjacent-lyric edit, rebuilt
+pronunciation/performance snapshots, changed chunk identities, actual cold and
+warm scheduling, four stale refusals and unrelated-region cache reuse. Retained
+raw bytes show6344 changed words;72000 DSP frames/12 cache hits/4 stale entries.
+Full rebuild and snapshot66/CLI27 pass. The read-only audit binds74 artifacts/five
+inputs; real production actors/resources and canonical evidence are not added.
+Independent APPROVE445b803b closes the prior reader review; its optional metric
+wording P3 is corrected. Scheduler-unit review is pending. Snapshot recreation
+is explicit in the test: production editor dirty/publication callbacks, real
+host blocks, acoustic observations, tolerance ownership and semantic integration
+remain unproven. U45_RECONCILIATION_HOLD/Alpha0of20/BetaBLOCKED remain unchanged.
