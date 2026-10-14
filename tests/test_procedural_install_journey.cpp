@@ -369,6 +369,8 @@ TEST_CASE("An installed procedural singer sings a tuned phrase after the produce
   CHECK(peak > 1e-4);
   CHECK(energy > 0.0);
   for (const auto sample : master.value().interleaved) CHECK(std::isfinite(sample));
+  // The loaded-plugin host test consumes this saved project through public CLAP state.
+  std::cout << "INSTALLED_HOST_PROJECT " << projectPath.string() << '\n';
 }
 
 // A package the producer never signed by the trusted key must not install, and a resource whose

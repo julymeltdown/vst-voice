@@ -1392,7 +1392,8 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clap_offline_host.py
         --runner $<TARGET_FILE:seam_clap_editor_host>
         --plugin $<TARGET_FILE:seam_clap_editor_plugin>
-        --bank ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank)
+        --bank ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank
+        --journey-runner $<TARGET_FILE:seam_procedural_install_journey_tests>)
     set_tests_properties(seam_clap_offline_host_tests PROPERTIES TIMEOUT 180
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   endif()

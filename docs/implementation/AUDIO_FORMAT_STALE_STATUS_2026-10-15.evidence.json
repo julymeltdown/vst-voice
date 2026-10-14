@@ -330,6 +330,22 @@
     "buildIncludesSeparateHostWorkInProgress": true,
     "forcedRaceReproduction": "NOT_RUN",
     "productSource": "UNCHANGED",
-    "review": "PENDING_FOLLOWUP"
+    "review": "APPROVE",
+    "technicalReview": {
+      "status": "APPROVE",
+      "sourceCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "verdict": {
+        "path": "out/evidence/installed-clap-project-2026-10-15/review-1c6a5851.txt",
+        "sizeBytes": 6748,
+        "sha256": "08800bc06065d117fbe692b21e60ad74220a101ebe5b04ed1f71c495b5ee19ba"
+      },
+      "scope": "Previous test-only ordering follow-up/evidence/bookkeeping; engineering only, no required changes; not approval of this host unit",
+      "execution": "Read-only Git/live remote/source/hash/JSON/Mach-O/timestamp/count audit; no writes/build/CTest/native/retained scripts"
+    },
+    "currentVerifierSupplement": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/verify.py",
+      "scope": "New read-only rehash/Git-source audit of the prior follow-up; not its historical verifier command"
+    }
   }
 }

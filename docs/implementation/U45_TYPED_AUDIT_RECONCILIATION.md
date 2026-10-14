@@ -351,3 +351,25 @@ change, new counted case, forced-race reproduction or canonical promotion occurs
 The [dossier](AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) pins exact review and
 separate follow-up evidence. Four host-harness files remain uncommitted in
 progress and are excluded from this unit. U45hold/Alpha0of20/BetaBLOCKED remain.
+
+
+### Loaded CLAP saved-installed-project prerequisite (2026-10-15)
+
+The [host dossier](INSTALLED_CLAP_PROJECT_2026-10-15.md) adds caller-pinned saved
+project admission and a canonical public CLAP state round trip to the actual
+loaded-module host. The existing signed installed one-note fixture is used after
+producer/package deletion; resource admission rules remain unchanged. Immutable
+baseline binaries fail the final regression source. A test-only short/padded-ID
+assertion error and a verifier-only nested-manifest exclusion error are retained
+separately. Full rebuild27.311s and two focused entries (four Python methods/34
+native cases,2.435s) pass; two child fixture calls overlap the existing native
+case. Direct public-process-buffer execution retains84,000 frames of48k PCM;
+161,175 is the sum across both rates, not one artifact extent. Finite PCM and
+project/recipe/receipt/hash/source/count checks pass for75 artifacts/11 inputs.
+Exact APPROVE1c6a5851 closes the previous assertion follow-up; this host unit's
+review is pending. The resource is a legacy signed procedural test fixture, not
+a qualified singer or imported internet bank. No fresh package-signature check,
+self-contained relocated replay, acoustic F0/phase, physical-device/DAW/Windows
+or human acceptance is claimed. Canonical integration/tolerance and full-scope
+resource/continuity/publication/30–60-second-song requirements remain open.
+U45hold/Alpha0of20/BetaBLOCKED/full goalACTIVE are unchanged.

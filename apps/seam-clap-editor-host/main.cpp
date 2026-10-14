@@ -278,6 +278,34 @@ std::vector<std::byte> projectState(const seam::domain::Project& project) {
   return bytes;
 }
 
+bool outputReplacesInput(const std::filesystem::path& input,
+                         const std::filesystem::path& output) {
+  if (output.empty()) return false;
+  std::error_code error;
+  if (std::filesystem::equivalent(input, output, error) && !error) return true;
+  error.clear();
+  const auto source = std::filesystem::weakly_canonical(input, error);
+  if (error) return true;
+  const auto destination = std::filesystem::weakly_canonical(output, error);
+  return error || source == destination;
+}
+
+bool withinOfflineProbeBudget(const seam::domain::Project& project) {
+  std::size_t notes = 0U;
+  const auto offset = project.tempoMap().secondsAt(project.settings().hostStartOffsetTick);
+  for (const auto& track : project.vocalTracks()) {
+    for (const auto& region : track.regions) {
+      if (region.notes.size() > 256U - notes) return false;
+      notes += region.notes.size();
+      // probeOffline inserts this leading rest before it asks the loaded plugin for Final.
+      const auto end = project.tempoMap().secondsAt(
+          region.startTick + region.durationTick + seam::time::Tick{960}) + offset;
+      if (!std::isfinite(end) || end > 30.0) return false;
+    }
+  }
+  return notes > 0U;
+}
+
 struct OfflineChecks final {
   bool completeScore{false};
   bool rateChange{false};
@@ -724,6 +752,11 @@ OfflineChecks probeOffline(const clap_plugin_factory_t* factory, const clap_host
     auto failed=project;
     bool hasOverride=false;
     for (auto& track : failed.vocalTracks()) {
+      if (track.proceduralRecipe) {
+        track.proceduralRecipe->style = "offline-probe.required-style-does-not-exist";
+        hasOverride = true;
+        continue;
+      }
       for (auto& region : track.regions) {
         if (!region.unitSelectionOverrides.empty()) {
           region.unitSelectionOverrides.front().unitId="offline-probe.required-unit-does-not-exist";
@@ -750,9 +783,12 @@ int main(int argc, char** argv) {
   std::filesystem::path summaryPath;
   std::filesystem::path audioPath;
   std::filesystem::path targetRuntimeFixtureRoot;
+  std::filesystem::path inputProjectPath;
+  std::string inputProjectSha256;
   bool expectMissingBank = false;
   bool offlineOnly = false;
   bool stateDirtyProbe = false;
+  bool invalidArguments = false;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--plugin" && index + 1 < argc) {
@@ -772,17 +808,66 @@ int main(int argc, char** argv) {
       offlineOnly = true;
     } else if (argument == "--state-dirty-probe") {
       stateDirtyProbe = true;
+    } else if (argument == "--project" && index + 1 < argc) {
+      inputProjectPath = argv[++index];
+    } else if (argument == "--project-sha256" && index + 1 < argc) {
+      inputProjectSha256 = argv[++index];
+    } else {
+      invalidArguments = true;
     }
   }
-  if (pluginPath.empty() ||
-      (expectMissingBank && !targetRuntimeFixtureRoot.empty())) {
+  const auto pinnedProject = !inputProjectPath.empty();
+  const auto validDigest = inputProjectSha256.size() == 64U &&
+      std::all_of(inputProjectSha256.begin(), inputProjectSha256.end(), [](char value) {
+        return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+      });
+  if (invalidArguments || pluginPath.empty() ||
+      (expectMissingBank && !targetRuntimeFixtureRoot.empty()) ||
+      (pinnedProject != !inputProjectSha256.empty()) ||
+      (pinnedProject && (!offlineOnly || stateDirtyProbe || expectMissingBank || !validDigest))) {
     std::cerr << "Usage: seam_clap_editor_host --plugin FILE.clap "
                  "[--screenshot FILE.ppm] [--summary FILE.json] "
                  "[--audio FILE.wav] "
                  "[--offline-only] "
+                 "[--project FILE.seam --project-sha256 SHA256 (offline only)] "
                  "[--state-dirty-probe] "
                  "[--target-runtime-fixture-root DIR | --expect-missing-bank]\n";
     return 2;
+  }
+
+  std::optional<seam::domain::Project> inputProject;
+  std::vector<std::byte> inputProjectState;
+  if (pinnedProject) {
+    const auto text = seam::core::readTextFileLimited(inputProjectPath, 16ULL * 1024ULL * 1024ULL);
+    if (!text) {
+      std::cerr << "Pinned project read failed: " << text.error().message << '\n';
+      return 1;
+    }
+    if (seam::core::sha256Hex(text.value()) != inputProjectSha256) {
+      std::cerr << "Pinned project digest does not match\n";
+      return 1;
+    }
+    const auto decoded = seam::formats::ProjectJsonCodec{}.decode(text.value());
+    if (!decoded) {
+      std::cerr << "Pinned project decode failed: " << decoded.error().message << '\n';
+      return 1;
+    }
+    if (!withinOfflineProbeBudget(decoded.value())) {
+      std::cerr << "Pinned project exceeds offline probe budget (256 notes, 30 seconds)\n";
+      return 1;
+    }
+    if (outputReplacesInput(inputProjectPath, audioPath) ||
+        outputReplacesInput(inputProjectPath, summaryPath)) {
+      std::cerr << "Pinned project output would replace input\n";
+      return 1;
+    }
+    inputProject = decoded.value();
+    try {
+      inputProjectState = projectState(*inputProject);
+    } catch (const std::exception& error) {
+      std::cerr << "Pinned project state encoding failed: " << error.what() << '\n';
+      return 1;
+    }
   }
 
   if (!targetRuntimeFixtureRoot.empty()) {
@@ -986,7 +1071,21 @@ int main(int argc, char** argv) {
   }
 
   WriteStream saved;
+  if (pinnedProject) {
+    ReadStream incoming{inputProjectState};
+    if (!state->load(plugin, &incoming.stream)) {
+      std::cerr << "Pinned project CLAP state load failed\n";
+      plugin->destroy(plugin); entry->deinit();
+      return 1;
+    }
+  }
   if (!state->save(plugin, &saved.stream) || saved.bytes.empty()) return 1;
+  const auto inputStateRoundTripMatched = pinnedProject && saved.bytes == inputProjectState;
+  if (pinnedProject && !inputStateRoundTripMatched) {
+    std::cerr << "Pinned project CLAP state round trip differs\n";
+    plugin->destroy(plugin); entry->deinit();
+    return 1;
+  }
 
   OfflineChecks offlineChecks;
   try {
@@ -1013,6 +1112,10 @@ int main(int argc, char** argv) {
         {"result",offlineChecksPassed && audioWritten ? "PASS" : "FAIL"},
         {"evidenceScope","engineering"},{"releaseEligible",false},
         {"executionPath","loaded-clap-cold-score-bounce-v1"},
+        {"inputProjectLoaded",pinnedProject},
+        {"inputProjectSha256",inputProjectSha256},
+        {"inputProjectId",inputProject ? inputProject->id().toString() : std::string{}},
+        {"inputProjectStateRoundTripMatched",inputStateRoundTripMatched},
         {"timingAuthority","fixed-audio-seconds-timeline"},
         {"followHostQualified",false},{"noteEventsSent",std::int64_t{0}},
         {"completeScoreBounce",offlineChecks.completeScore},{"rateChangeReprepared",offlineChecks.rateChange},

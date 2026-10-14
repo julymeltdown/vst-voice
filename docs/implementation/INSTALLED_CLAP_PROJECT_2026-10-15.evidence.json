@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-clap-project",
+  "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+  "baselineHostSourceCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
+  "sourceState": "Retained four-file host/test/CMake change on the integrating base; generated header embeds base; no authenticated clean-build lineage",
+  "manifest": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/manifest.json",
+    "sizeBytes": 19581,
+    "sha256": "85095d883107f93f1ed9dfdb488c213d1c2699addedab0875259858585f3a8e1"
+  },
+  "verification": {
+    "status": "PASS",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/installed-clap-project-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/verification.log",
+      "sizeBytes": 200,
+      "sha256": "66ae028bb709499f74b2f7fb76974c234756fe9bc4e7ec311de27b351e687fa4"
+    },
+    "scope": "Read-only exact retained/input hashes, Git baseline/optional final blobs, fixture identity/receipt fields, raw float32 WAV/derived extent, run receipts/counts and previous follow-up hash/source audit. Recorded signature flags are not a fresh cryptographic signature verification."
+  },
+  "retainedArtifacts": 75,
+  "preservedBindings": 11,
+  "fullBuild": {
+    "label": "final-build",
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+    "startedUnix": 1792002581.609736,
+    "durationSeconds": 27.31054025000776,
+    "exitCode": 0,
+    "stdout": {
+      "bytes": 23314,
+      "sha256": "89879b214ca2543f3cbff345847025472d0efa479ef83ef8ae956d39ce128f66"
+    },
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "focusedCTest": {
+    "label": "focused-ctest",
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "-R",
+      "^(seam_clap_offline_host_tests|seam_procedural_install_journey_tests)$",
+      "-V",
+      "--output-on-failure"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+    "startedUnix": 1792002664.740853,
+    "durationSeconds": 2.4347234579909127,
+    "exitCode": 0,
+    "stdout": {
+      "bytes": 8649,
+      "sha256": "de9b0773189b8e30e81547893abcdc9194394af269e744996cf671e98d1b648c"
+    },
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "focusedCases": {
+    "seam_clap_offline_host_tests": 4,
+    "seam_procedural_install_journey_tests": 34
+  },
+  "newPythonMethods": 2,
+  "newNativeCases": 0,
+  "nativeFixtureInvocationsInsidePythonMethods": 2,
+  "directNativeTrial": {
+    "label": "direct-host",
+    "argv": [
+      "build/release/seam_clap_editor_host",
+      "--plugin",
+      "build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+      "--offline-only",
+      "--project",
+      "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-procedural-install-journey-78255-0/installed-song.seam",
+      "--project-sha256",
+      "eca906de0afc64190b44cf210827d46a9e672c9f38fb4f3b9949f08e257b47da",
+      "--summary",
+      "out/evidence/installed-clap-project-2026-10-15/direct/summary.json",
+      "--audio",
+      "out/evidence/installed-clap-project-2026-10-15/direct/installed.wav"
+    ],
+    "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+    "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+    "startedUnix": 1792002768.9839628,
+    "durationSeconds": 0.1450810829992406,
+    "exitCode": 0,
+    "executable": {
+      "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_clap_editor_host",
+      "bytes": 970920,
+      "sha256": "063f0417c3f334ae28c38def842f2c10fc4cfde880a988e6f4c23aa213846112",
+      "mtimeNs": 1792002593907289612
+    },
+    "stdout": {
+      "bytes": 1094,
+      "sha256": "f4262326af3fb30dac8ac368f2349e1370d3272f06acbd90ff2bcb95f3cc2479"
+    },
+    "stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "baselineFailures": {
+    "initial": {
+      "label": "baseline-tests",
+      "argv": [
+        "python3",
+        "-B",
+        "tests/test_clap_offline_host.py",
+        "--runner",
+        "build/release/seam_clap_editor_host",
+        "--plugin",
+        "build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "--bank",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--journey-runner",
+        "build/release/seam_procedural_install_journey_tests"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
+      "startedUnix": 1792001973.654881,
+      "durationSeconds": 1.2068820830027107,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 10675,
+        "sha256": "8c492fc4e45fce1c47c3816886e836f5b1585f17de8b81a16f3f6c9e87e84b65"
+      }
+    },
+    "immutableFinalRegression": {
+      "label": "baseline-immutable-tests",
+      "argv": [
+        "python3",
+        "-B",
+        "tests/test_clap_offline_host.py",
+        "--runner",
+        "out/evidence/installed-clap-project-2026-10-15/baseline-binaries/seam_clap_editor_host",
+        "--plugin",
+        "out/evidence/installed-clap-project-2026-10-15/baseline-binaries/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "--bank",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--journey-runner",
+        "out/evidence/installed-clap-project-2026-10-15/baseline-binaries/seam_procedural_install_journey_tests"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+      "startedUnix": 1792002629.489036,
+      "durationSeconds": 0.9184802920208313,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 12509,
+        "sha256": "37426f7d9eccca695b27e01e0c9ad5883f50a092230c0c5d231541e4d230fe9d"
+      }
+    },
+    "methods": 4,
+    "failedSubtestsAndMethods": 13
+  },
+  "setupFailure": {
+    "receipt": {
+      "label": "first-repaired-tests",
+      "argv": [
+        "python3",
+        "-B",
+        "tests/test_clap_offline_host.py",
+        "--runner",
+        "build/release/seam_clap_editor_host",
+        "--plugin",
+        "build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "--bank",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--journey-runner",
+        "build/release/seam_procedural_install_journey_tests"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "3a0fa6f18b4962538bb65cb878cf326c384f34d3",
+      "startedUnix": 1792002203.38731,
+      "durationSeconds": 0.8591823749884497,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 891,
+        "sha256": "9b0763feba742455b35f231b7c0de77cdf2a83d596cdf61995a6b8bb0aa5a904"
+      }
+    },
+    "description": "One Python assertion compared short JSON ID3e8 to typed zero-padded ID00000000000003e8. Fixed by numeric hex equality; runtime host result was PASS."
+  },
+  "intermediateBaselineTrial": {
+    "receipt": {
+      "label": "baseline-final-tests",
+      "argv": [
+        "python3",
+        "-B",
+        "tests/test_clap_offline_host.py",
+        "--runner",
+        "out/evidence/installed-clap-project-2026-10-15/baseline-binaries/seam_clap_editor_host",
+        "--plugin",
+        "out/evidence/installed-clap-project-2026-10-15/baseline-binaries/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+        "--bank",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--journey-runner",
+        "build/release/seam_procedural_install_journey_tests"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master",
+      "sourceBaseCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+      "startedUnix": 1792002580.497005,
+      "durationSeconds": 1.2635989169939421,
+      "exitCode": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 12509,
+        "sha256": "fe7967148d3d9a6629321259674d9c9148cc807a2163d6f0a3379ae4f03a85b3"
+      }
+    },
+    "scope": "Retained only; live fixture binary overlapped a later build. Immutable-host/plugin/fixture rerun is the primary baseline proof."
+  },
+  "firstVerifierFailure": {
+    "record": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/verification-failure.json",
+      "sizeBytes": 342,
+      "sha256": "53514fb5d599141651169edb024633a6b275837ea95f7285e047261e4246c69e"
+    },
+    "originalManifest": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/preintegration/first-manifest.json",
+      "sizeBytes": 18517,
+      "sha256": "e371dae0d6370e255ffce2b16dac8f6f8b00873c6194631b561499f1d0e76371"
+    },
+    "originalVerifier": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/preintegration/first-verifier.py",
+      "sizeBytes": 7327,
+      "sha256": "4a28b41ab5bf2e9bae909e818b1e4e6d4095c10f89fbc975824cd7565747bf0c"
+    },
+    "originalLog": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/preintegration/first-verification.log",
+      "sizeBytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "repair": "Exact root-path exclusions; original unpublished draft preserved, no native/source/test change"
+  },
+  "hostBinary": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/final-binaries/seam_clap_editor_host",
+    "sizeBytes": 970920,
+    "sha256": "063f0417c3f334ae28c38def842f2c10fc4cfde880a988e6f4c23aa213846112"
+  },
+  "pluginBinary": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/final-binaries/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor",
+    "sizeBytes": 12409376,
+    "sha256": "67f6c85ea0f24be14312de931a4183cbbeb4b9b41e13ee25de19ee49bd66db2e"
+  },
+  "fixtureBinary": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/final-binaries/seam_procedural_install_journey_tests",
+    "sizeBytes": 12519384,
+    "sha256": "6e167023b1e352a8b8a348f03096d8f83a82f0f1c78e7ea41562097655ad9cda"
+  },
+  "generatedHeader": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/version.hpp",
+    "sizeBytes": 985,
+    "sha256": "c61dff47878c7740f0c514310cad4f0b209dd7ad3baa32c530eb28888e9848fa"
+  },
+  "callerProject": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/baseline-fixture.seam",
+    "sizeBytes": 5403,
+    "sha256": "eca906de0afc64190b44cf210827d46a9e672c9f38fb4f3b9949f08e257b47da"
+  },
+  "summary": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/direct/summary.json",
+    "sizeBytes": 1094,
+    "sha256": "f4262326af3fb30dac8ac368f2349e1370d3272f06acbd90ff2bcb95f3cc2479"
+  },
+  "pcm": {
+    "path": "out/evidence/installed-clap-project-2026-10-15/direct/installed.wav",
+    "sizeBytes": 672044,
+    "sha256": "dff8d2e76f1baf33c697d00e7b86286af2de7e3f9357fb326c5b9ded8de2285d"
+  },
+  "rawAudit": {
+    "format": 3,
+    "channels": 2,
+    "sampleRate": 48000,
+    "frames": 84000,
+    "peak": 0.007925514131784439,
+    "sumSquares": 1.037203592051373,
+    "nonzeroWords": 96000,
+    "originalProducerSourcePresent": false,
+    "originalPackagePresent": false,
+    "scope": "Independent retained WAV decode; not F0/phase/listening or authentication"
+  },
+  "actualExecution": "Public CLAP state load/save, render-mode selection, activation, process buffers and transport/overflow/refusal controls in the dynamically loaded editor plugin; source-filter installed test fixture after producer/package deletion; no NOTE_ON/MIDI notes used for score bounces",
+  "twoRateProcessedOutputFrames": 161175,
+  "retainedWavFrames48k": 84000,
+  "noteWindowsAcrossTwoRates": 2,
+  "notesInOriginalFixture": 1,
+  "negativeAdmissionTrialsOnMacOS": 13,
+  "callerPinnedInputLimitBytes": 16777216,
+  "probeNoteLimit": 256,
+  "probeDurationLimitSeconds": 30,
+  "scope": "ENGINEERING_ONLY_LOADED_CLAP_SAVED_INSTALLED_PROJECT",
+  "previousUnitTechnicalReview": {
+    "status": "APPROVE",
+    "sourceCommit": "1c6a585151f8d13ead6afe0252d04335f9d4ab51",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "verdict": {
+      "path": "out/evidence/installed-clap-project-2026-10-15/review-1c6a5851.txt",
+      "sizeBytes": 6748,
+      "sha256": "08800bc06065d117fbe692b21e60ad74220a101ebe5b04ed1f71c495b5ee19ba"
+    },
+    "scope": "Previous test-only ordering follow-up/evidence/bookkeeping; engineering only, no required changes; not approval of this host unit",
+    "execution": "Read-only Git/live remote/source/hash/JSON/Mach-O/timestamp/count audit; no writes/build/CTest/native/retained scripts"
+  },
+  "technicalReview": {
+    "status": "PENDING",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "scope": "This host/test/CMake/evidence unit only"
+  },
+  "freshPackageSignatureVerification": "NOT_PERFORMED_ORIGINAL_PACKAGE_DELETED",
+  "privateKeysCopied": false,
+  "relocatedReplay": "NOT_SELF_CONTAINED_ORIGINAL_DEPENDENCY_PATHS_REQUIRED",
+  "humanListening": "NOT_RUN",
+  "realDAWExecution": "NOT_RUN",
+  "physicalAudioDevicePlayback": "NOT_RUN",
+  "windowsExecution": "NOT_RUN",
+  "acousticF0AndPhase": "NOT_MEASURED",
+  "internetAssetsImported": false,
+  "resourceQualification": "NOT_PERFORMED",
+  "canonicalIntegration": "NOT_PERFORMED",
+  "canonicalTolerance": "UNRESOLVED",
+  "alphaRecordedPasses": 0,
+  "alphaCheckCount": 20,
+  "betaStatus": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "fullSuite": "NOT_RERUN",
+  "authorizesRelease": false
+}
