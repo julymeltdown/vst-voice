@@ -28,7 +28,26 @@
       "sha256": "38ef6bdcf9385ebd4372baee59253d61e9dd9d36f2af09c457e71d5154904652"
     }
   },
-  "independentReview": "PENDING",
+  "independentReview": {
+    "schemaVersion": 1,
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13d95-f2a9-7c32-a18b-2552ee989a57",
+    "messageId": "msg_ebd4358b43764abd81b85e85dd41ff46",
+    "completedAtUnixSeconds": 1792035323,
+    "durationMs": 723887,
+    "commit": "bc29b1d0c1f8df72948dd503031baa48c820f0a8",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": 0,
+    "requiredChanges": false,
+    "sourcePerformerListeningBankOrBetaApproval": false,
+    "finalAnswer": {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/review-bc29b1d0.md",
+      "sizeBytes": 10599,
+      "sha256": "b2c8422d4787fa0cedb27d2aba705b1b360840b927cd78019854a65b7024765b"
+    },
+    "reviewerExecution": "Own read-only Git/source/hash/ZIP/PCM/analysis parsers and primary-source reads; no native/build/test/retained-script execution or playback"
+  },
   "sourceOrHumanApproval": false,
   "nativeImport": false,
   "humanListening": false,
@@ -39,5 +58,64 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "reviewClarifications": {
+    "acceptedMidi66AnalysisFrames": 3627,
+    "longestMidi66FirstToLastHopFrames": 6144,
+    "minimumFirstToLastHopFrames": 10868,
+    "nativeClippingThreshold": 0.9999,
+    "exactPositiveFullScaleSamples": 19,
+    "thresholdsChanged": false,
+    "publisherNewerVersion": "https://zenodo.org/records/1442513",
+    "historicalBuildTrackedDiffDigest": "NOT_RECORDED",
+    "genericRawImporter": "EXISTING_INSPECT_COPY_HASH_SOURCE_BINDING_AND_REPOSITORY_COMMIT",
+    "preparedPacketDurableBinding": "OPEN"
+  },
+  "reviewFollowupArtifacts": [
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/initial-attempt.json",
+      "sizeBytes": 304,
+      "sha256": "0c684faaf1ede21d71c28f3ddfd71f5d7f8fe7d63f3f10cf78e7f10257359669"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/initial-observations.json",
+      "sizeBytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/observations-run.json",
+      "sizeBytes": 231,
+      "sha256": "de6ab0e336c608a88f9e446e3f610c2ec0ff85e84e3a0c1f6afd6ae8d229005f"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/observations.json",
+      "sizeBytes": 655,
+      "sha256": "5e21bc02dc21a0ec3807caced8196338b3b3562609d974bee91e4514f865f454"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/observations.stderr",
+      "sizeBytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/observe.initial.py",
+      "sizeBytes": 2691,
+      "sha256": "ccd99d2de943a8595caec7743134f6a91a16aa5778a16be88958d7b6ac74c13e"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/observe.py",
+      "sizeBytes": 2756,
+      "sha256": "0a4457e803949ccc0639a2ad382389c72b82cd20e41585c81383a0a8a7b63a2b"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/review-bc29b1d0.md",
+      "sizeBytes": 10599,
+      "sha256": "b2c8422d4787fa0cedb27d2aba705b1b360840b927cd78019854a65b7024765b"
+    },
+    {
+      "path": "out/evidence/female-f1-slow-source-independent-2026-10-15/review.json",
+      "sizeBytes": 700,
+      "sha256": "a38d20119c766309fbd9ca6049b6b1aac17b795b33023583302f0b15ddc30958"
+    }
+  ]
 }
