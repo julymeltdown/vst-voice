@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "unit": "Studio donor import receipt controller boundaries",
+  "sourceBase": "156b9c1602dd793badec3ed53c1afb5ab2e6def8",
+  "manifest": {
+    "path": "out/evidence/studio-donor-receipt-boundaries-2026-10-15/manifest.json",
+    "sizeBytes": 7308,
+    "sha256": "61e023549b49c8fa3bfb377672557945009abf258b9dd8ac7659d5f383a5755d"
+  },
+  "retainedArtifacts": 27,
+  "preservedBindings": 10,
+  "implementationSources": [
+    {
+      "path": "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp",
+      "sizeBytes": 48959,
+      "sha256": "49a54a47cd3856a0c7402024d11cbc0fdf6581e3b31ebff37acb49f186cc9e83"
+    },
+    {
+      "path": "libs/seam-native-ui/src/voicebank_studio_donor_intake.cpp",
+      "sizeBytes": 11172,
+      "sha256": "ac78cfcccf9916875abbc2ebd905c68b860da7992542f42d93fa40c546f93bfc"
+    },
+    {
+      "path": "tests/test_studio_manifest_draft.cpp",
+      "sizeBytes": 75079,
+      "sha256": "88e0ec631619aa8139c64c7d253840e5432e32c60408b367b62e2923a8cdc93a"
+    }
+  ],
+  "sourcePatch": {
+    "path": "out/evidence/studio-donor-receipt-boundaries-2026-10-15/source.patch",
+    "sizeBytes": 12289,
+    "sha256": "933755e8f945a4eee1714797d321e72a9a2d68da9d8ca8be0cca51e458597085"
+  },
+  "verification": {
+    "path": "out/evidence/studio-donor-receipt-boundaries-2026-10-15/verification.log",
+    "sizeBytes": 309,
+    "sha256": "d2cac10da094d35f123bd3e46289f4ae604bd49cca12c3f898d4b9bbcf386d67"
+  },
+  "executions": [
+    {
+      "name": "release-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 50.35168116600835,
+      "sanitizers": {}
+    },
+    {
+      "name": "release-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-V",
+        "-R",
+        "^seam_(studio_manifest_draft_tests|studio_sample_review_tests|voicebank_studio_app_tests)$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 11.477110541018192,
+      "sanitizers": {}
+    },
+    {
+      "name": "sanitize-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_studio_manifest_draft_tests",
+        "-j4"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 27.043086958990898,
+      "sanitizers": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "sanitize-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "-V",
+        "-R",
+        "^seam_studio_manifest_draft_tests$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 30.249055332998978,
+      "sanitizers": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    }
+  ],
+  "releaseNativeCases": 80,
+  "sanitizedNativeCases": 51,
+  "newNativeCases": 3,
+  "newBoundaryForms": 4,
+  "binariesStable": true,
+  "sourcesStable": true,
+  "originatingReview": {
+    "commit": "a7f81e0776ba5d1e903ec2c74b9cdcea85242426",
+    "verdict": "APPROVE_ENGINEERING",
+    "newP3": "OPEN: donor-import committed-receipt controller path untested; capture-worker cancellation coverage wording corrected.",
+    "final": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/review-a7f81e07.md",
+      "sizeBytes": 14727,
+      "sha256": "ae997a7cfafa5db95468d6fe2d506cc7dbfe9922d7ac13c15188bf85a792625a"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/metadata.json",
+      "sizeBytes": 464,
+      "sha256": "7eec00b087f20b2ca51f746edce8aae2dd5b2b81d76ba10fbf1acca2c15da293"
+    }
+  },
+  "originatingP3": "LOCALLY_ADDRESSED_REVIEW_PENDING",
+  "independentReview": "PENDING_EXACT_COMMIT",
+  "liveAppKit": "BLOCKED_MAC_LOCKED",
+  "nativeExecutionScope": "Synthetic native tests; scripted dialogs and silent audio",
+  "sourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": "0/20",
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "fullGoal": "ACTIVE"
+}

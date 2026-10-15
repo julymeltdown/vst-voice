@@ -88,7 +88,8 @@ core::Result<void> VoicebankStudioController::beginPreparedDonorCapture(const Sa
   return core::success();
 }
 
-core::Result<void> VoicebankStudioController::beginPreparedDonorImport(const SampleReviewContext& context, std::string captureSha256) {
+core::Result<void> VoicebankStudioController::beginPreparedDonorImport(const SampleReviewContext& context, std::string captureSha256,
+    p::PreparedDonorImportOptions options) {
   if (proceduralImportBusy() || dirty_ || !preparedDonorInspection_ || preparedDonorInspection_->context != context ||
       preparedDonorInspection_->captureSha256 != captureSha256 || preparedDonorInspection_->producerId != productionOperatorId_)
     return core::failure(core::ErrorCode::Conflict,"Capture and inspect this exact donor before importing");
@@ -98,12 +99,12 @@ core::Result<void> VoicebankStudioController::beginPreparedDonorImport(const Sam
   try {
     sampleReviewWork_ = std::async(std::launch::async,
         [context,held,project=*productionProject_,root=productionWorkspaceRoot_,producer=productionOperatorId_,
-         utc=voicebank_studio_internal::currentUtcTimestamp(),stop]() mutable -> core::Result<SampleReviewWorkResult> {
+         utc=voicebank_studio_internal::currentUtcTimestamp(),stop,options=std::move(options)]() mutable -> core::Result<SampleReviewWorkResult> {
       const auto& take = held->take;
       const auto& evidence = held->snapshot.evidence;
       const auto receipt = p::ProductionProjectRepository{root}.importPreparedDonor(project,held->snapshot,
           {context.projectSha256,evidence.packet.sha256,evidence.donorId,project.selectedSourceStrategyId},take,
-          {take.supersedesTakeId.empty()?"import":"retake",take.takeId,producer,utc},stop);
+          {take.supersedesTakeId.empty()?"import":"retake",take.takeId,producer,utc},stop,options);
       if (!receipt) return core::Result<SampleReviewWorkResult>{receipt.error()};
       return SampleReviewWorkResult{.context=context,.committedProject=std::move(project),.preparedDonorReceipt=receipt.value()};
     });

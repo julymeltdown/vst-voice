@@ -257,6 +257,44 @@ struct StageGate final {
       return core::success();
     }};
   }
+  production::PreparedDonorImportOptions pauseAt(production::PreparedDonorImportStage target) const {
+    return {.faultInjector = [shared = state, target](production::PreparedDonorImportStage stage) -> core::Result<void> {
+      if (stage == target) {
+        std::unique_lock lock(shared->mutex); shared->arrived = true; shared->changed.notify_all();
+        shared->changed.wait(lock, [&] { return shared->released; });
+      }
+      return core::success();
+    }};
+  }
+};
+
+struct DonorReceiptFixture final {
+  test::support::PreparedDonorWorkspaceFixture source;
+  Controller controller;
+  Controller::PreparedDonorInspection capture;
+  DonorReceiptFixture() {
+    CHECK(controller.openProductionProject(source.workspace, source.project.inventorySha256, "producer"));
+    const auto context = controller.captureSampleReviewContext(); CHECK(context);
+    CHECK(controller.beginPreparedDonorCapture(context.value(), source.prepared.root / "donors.json", source.prepared.id, 0U));
+    CHECK(collectDraft(controller)); CHECK(controller.preparedDonorInspection());
+    capture = *controller.preparedDonorInspection();
+  }
+  void begin(production::PreparedDonorImportOptions options = {}) {
+    CHECK(controller.beginPreparedDonorImport(capture.context, capture.captureSha256, std::move(options)));
+  }
+  production::VoicebankProductionProject committed() {
+    const auto recovered = source.repository.recover(); CHECK(recovered);
+    const auto& receipt = controller.preparedDonorReceipt(); CHECK(receipt);
+    CHECK(receipt->committedGeneration == source.project.lastDurableGeneration + 1U);
+    CHECK(receipt->committedGeneration == recovered.value().lastDurableGeneration);
+    CHECK(receipt->committedProjectSha256 == core::sha256Hex(production::encodeProductionProject(recovered.value())));
+    CHECK(recovered.value().takes.size() == 1U);
+    CHECK(recovered.value().takes.front().takeId == capture.intake->take.takeId);
+    CHECK(recovered.value().takes.front().state == production::UnitQueueState::MarkerReview);
+    CHECK(recovered.value().reviews.empty()); CHECK(recovered.value().sourceQualityAssessments.empty());
+    CHECK(!controller.preparedDonorInspection());
+    return recovered.value();
+  }
 };
 
 struct VisualSnapshot final {
@@ -282,6 +320,86 @@ struct VisualSnapshot final {
   }
 };
 } // namespace
+
+TEST_CASE("Studio donor import cancellation before commit preserves inspection and permits an explicit retry") {
+  DonorReceiptFixture fixture; StageGate gate;
+  const auto before = production::encodeProductionProject(fixture.source.project);
+  const auto pointerSha = core::sha256File(fixture.source.workspace / "project.json"); CHECK(pointerSha);
+  fixture.begin(gate.pauseAt(production::PreparedDonorImportStage::NoticesRetained)); gate.wait();
+  fixture.controller.cancelProceduralCandidateImport(); gate.release();
+  const auto refused = collectDraft(fixture.controller); CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(refused.error().message == "Prepared donor import cancelled before commit");
+  CHECK(!fixture.controller.preparedDonorReceipt()); CHECK(fixture.controller.preparedDonorInspection());
+  CHECK(fixture.controller.preparedDonorInspection()->captureSha256 == fixture.capture.captureSha256);
+  CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == before);
+  CHECK(production::encodeProductionProject(*fixture.controller.productionProject()) == before);
+  CHECK(core::sha256File(fixture.source.workspace / "project.json").value() == pointerSha.value());
+  // Notice/audio staging is allowed on refusal; no generation is committed.
+  fixture.begin(); CHECK(collectDraft(fixture.controller));
+  const auto recovered = fixture.committed(); CHECK(fixture.source.repository.verify(recovered));
+  CHECK(fixture.controller.preparedDonorReceipt()->durabilityConfirmed);
+  std::cout << "[DONOR-RECEIPT] PRECOMMIT_CANCEL_NO_COMMIT / INSPECTION_RETRY_COMMITTED\n";
+}
+
+TEST_CASE("Studio donor receipt survives cancellation after repository publication before UI adoption") {
+  DonorReceiptFixture fixture; fixture.begin();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  for (;;) {
+    const auto recovered = fixture.source.repository.recover();
+    if (recovered && recovered.value().lastDurableGeneration > fixture.source.project.lastDurableGeneration) break;
+    CHECK(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  fixture.controller.cancelProceduralCandidateImport(); CHECK(collectDraft(fixture.controller));
+  const auto recovered = fixture.committed(); CHECK(fixture.source.repository.verify(recovered));
+  CHECK(fixture.controller.preparedDonorReceipt()->durabilityConfirmed);
+  CHECK(production::encodeProductionProject(*fixture.controller.productionProject()) == production::encodeProductionProject(recovered));
+  CHECK(fixture.controller.sampleReviewStatus().find("DONOR IMPORTED / UNAPPROVED") != std::string::npos);
+  std::cout << "[DONOR-RECEIPT] LATE_CANCEL_COMMIT_ADOPTED\n";
+}
+
+TEST_CASE("Studio donor receipt preserves a newer editor context and reports unconfirmed pointer durability") {
+  for (const bool obstructPointer : {false, true}) {
+    DonorReceiptFixture fixture; StageGate gate;
+    auto options = gate.pauseAt(production::PreparedDonorImportStage::NoticesRetained);
+    const auto pause = options.faultInjector;
+    options.faultInjector = [pause, root = fixture.source.workspace, obstructPointer](auto stage) {
+      const auto paused = pause(stage); if (!paused) return paused;
+      if (obstructPointer && stage == production::PreparedDonorImportStage::NoticesRetained) {
+        CHECK(std::filesystem::remove(root / "project.json"));
+        CHECK(std::filesystem::create_directory(root / "project.json"));
+      }
+      return core::success();
+    };
+    fixture.begin(std::move(options)); gate.wait();
+    // Mutable editor state may change independently of the worker. Keep a
+    // valid new model, not an invalid manifest that merely fails validation.
+    const auto newer = test::support::makeManifest({test::support::makeUnit("new-editor-unit", {"a"}, "editor.wav")});
+    CHECK(newer.validate()); fixture.controller.manifest() = newer;
+    CHECK(!fixture.controller.validateSampleReviewContext(fixture.capture.context));
+    const auto originalProject = production::encodeProductionProject(*fixture.controller.productionProject());
+    gate.release(); CHECK(collectDraft(fixture.controller));
+    const auto recovered = fixture.committed();
+    CHECK(fixture.controller.manifest() == newer);
+    CHECK(production::encodeProductionProject(*fixture.controller.productionProject()) == originalProject);
+    CHECK(fixture.controller.sampleReviewStatus().find("CONTEXT CHANGED: REOPEN PRODUCER") != std::string::npos);
+    const auto& receipt = *fixture.controller.preparedDonorReceipt();
+    CHECK(receipt.durabilityConfirmed == !obstructPointer);
+    if (obstructPointer) {
+      CHECK(!receipt.diagnostic.empty());
+      CHECK(fixture.controller.sampleReviewStatus().find("DURABILITY UNCONFIRMED: " + receipt.diagnostic) != std::string::npos);
+      CHECK(!fixture.source.repository.verify(recovered));
+      CHECK(std::filesystem::remove(fixture.source.workspace / "project.json"));
+      CHECK(fixture.source.repository.reconcileCurrentPointer(receipt.committedGeneration, receipt.committedProjectSha256));
+    }
+    CHECK(fixture.source.repository.verify(recovered));
+    CHECK(!fixture.controller.beginPreparedDonorImport(fixture.capture.context, fixture.capture.captureSha256));
+    CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == production::encodeProductionProject(recovered));
+    std::cout << "[DONOR-RECEIPT] STALE_EDITOR_PRESERVED / "
+              << (obstructPointer ? "UNCONFIRMED_POINTER_DIAGNOSTIC" : "DURABLE_COMMIT") << '\n';
+  }
+}
 
 TEST_CASE("Studio English generated producer draft retains stress contract through creation save and reopen") {
   test::support::EnglishManifestDraftFixture fixture;

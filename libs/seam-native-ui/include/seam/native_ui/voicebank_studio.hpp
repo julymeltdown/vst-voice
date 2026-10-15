@@ -143,7 +143,9 @@ public:
   };
   [[nodiscard]] core::Result<void> beginPreparedDonorCapture(const SampleReviewContext& context,
       std::filesystem::path packetPath, std::string donorId, std::size_t assignmentIndex);
-  [[nodiscard]] core::Result<void> beginPreparedDonorImport(const SampleReviewContext& context, std::string captureSha256);
+  // Production callers leave the deterministic importer test hooks empty.
+  [[nodiscard]] core::Result<void> beginPreparedDonorImport(const SampleReviewContext& context, std::string captureSha256,
+      voicebank_production::PreparedDonorImportOptions options = {});
   [[nodiscard]] const std::optional<PreparedDonorInspection>& preparedDonorInspection() const noexcept { return preparedDonorInspection_; }
   [[nodiscard]] const std::optional<voicebank_production::CommittedAssetRecord>& preparedDonorReceipt() const noexcept { return preparedDonorReceipt_; }
   [[nodiscard]] core::Result<void> beginSourceLicenseCapture(const SampleReviewContext& context, std::filesystem::path path);

@@ -108,7 +108,7 @@
   "independentReview": {
     "commit": "a7f81e0776ba5d1e903ec2c74b9cdcea85242426",
     "verdict": "APPROVE_ENGINEERING",
-    "newP3": "OPEN: donor-import committed-receipt controller path untested; capture-worker cancellation coverage wording corrected.",
+    "newP3": "LOCALLY_ADDRESSED_REVIEW_PENDING: see STUDIO_DONOR_RECEIPT_BOUNDARIES_2026-10-15.md",
     "final": {
       "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/review-a7f81e07.md",
       "sizeBytes": 14727,
