@@ -75,38 +75,38 @@ class Refusal:
 
 
 _REFUSAL_ROWS: Final = (
-    # The six expression channels the neural carrier refuses. Each refusal site raises a
-    # helper whose text names the capability, so an entry cites both the raise and the
-    # definition: the raise proves the carrier refuses, the definition proves what it says.
+    # Refusal paths for six neural expression channels, under their snapshot guards;
+    # breathiness is refused when the acoustic graph lacks its conditioning control.
+    # These are existing refusal paths, not universal backend limitations. Each cites
+    # both the raise and the helper definition that names the capability.
     ("formant", "neural", "cannot apply the project's formant curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:815",
+     "libs/seam-rendering/src/render_snapshot.cpp:820",
      "libs/seam-rendering/src/render_snapshot.cpp:59"),
     ("breathiness", "neural", "cannot apply the project's breathiness curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:819",
+     "libs/seam-rendering/src/render_snapshot.cpp:824",
      "libs/seam-rendering/src/render_snapshot.cpp:77"),
     ("tension", "neural", "cannot apply the project's tension curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:824",
+     "libs/seam-rendering/src/render_snapshot.cpp:829",
      "libs/seam-rendering/src/render_snapshot.cpp:95"),
     ("airiness", "neural", "cannot apply the project's airiness curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:827",
+     "libs/seam-rendering/src/render_snapshot.cpp:832",
      "libs/seam-rendering/src/render_snapshot.cpp:113"),
     ("gender", "neural", "cannot apply the project's gender curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:830",
+     "libs/seam-rendering/src/render_snapshot.cpp:835",
      "libs/seam-rendering/src/render_snapshot.cpp:131"),
     ("growl", "neural", "cannot apply the project's growl curve",
-     "libs/seam-rendering/src/render_snapshot.cpp:833",
+     "libs/seam-rendering/src/render_snapshot.cpp:838",
      "libs/seam-rendering/src/render_snapshot.cpp:149"),
-    # StyleBlend and the backend refusals raise a literal message at the cited line, so the
-    # message site and the refusal site are the same place.
+    # Literal refusals cite the exact return and message lines; those lines can be adjacent.
     ("style-blend", "neural", "Neural rendering does not admit a StyleBlend PCM pair",
-     "libs/seam-rendering/src/render_snapshot.cpp:811",
-     "libs/seam-rendering/src/render_snapshot.cpp:811"),
+     "libs/seam-rendering/src/render_snapshot.cpp:816",
+     "libs/seam-rendering/src/render_snapshot.cpp:817"),
     ("style-blend", "procedural", "Procedural rendering does not admit a StyleBlend PCM pair",
-     "libs/seam-rendering/src/render_snapshot.cpp:735",
-     "libs/seam-rendering/src/render_snapshot.cpp:735"),
+     "libs/seam-rendering/src/render_snapshot.cpp:740",
+     "libs/seam-rendering/src/render_snapshot.cpp:741"),
     ("style-blend", "sample", "StyleBlend requires an explicit sample-bank style pair",
-     "libs/seam-rendering/src/render_snapshot.cpp:1040",
-     "libs/seam-rendering/src/render_snapshot.cpp:1040"),
+     "libs/seam-rendering/src/render_snapshot.cpp:1045",
+     "libs/seam-rendering/src/render_snapshot.cpp:1046"),
     ("backend", "any", "Snapshot scheduler has no backend for this singer resource",
      "libs/seam-rendering/src/render_scheduler.cpp:117",
      "libs/seam-rendering/src/render_scheduler.cpp:117"),

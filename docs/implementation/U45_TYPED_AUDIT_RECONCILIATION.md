@@ -518,3 +518,8 @@ The current clean 76896845 full dependent Release build passed; the bound serial
 ## 2026-10-15 — Toast/playhead oracle correction
 
 [Toast/playhead dossier](TOAST_PLAYHEAD_ORACLE_2026-10-15.md): the observed original assertion fails because plot y=740 is below the wrapped error card y=738. The visible gap is y=796–800, with a 139-level playhead change and only 4/4 through both cards. The corrected native oracle verifies actual overlap and that gap, retaining >40 and <=8 thresholds. Full dependent rebuild plus all 46 character-surface cases PASS; failing and passing editions render byte-identical without/with frames. No production rendering source changed. Exact independent review and full suite after repairs pending; stale capability citations remain. Source admission unchanged; Alpha 0/20, U45 HELD, Beta BLOCKED; .github untouched.
+
+
+## 2026-10-15 — Capability citation refresh
+
+[Capability citation dossier](CAPABILITY_CITATION_REFRESH_2026-10-15.md): reproduced the three stale StyleBlend carrier subcase failures among five focused Python checks. Updated exact Unsupported return and message lines, including the six related neural expression return citations; comments describe actual guards rather than universal limitations. All five checks PASS and all 11 return sites checked exactly. Native sources/tests unchanged; the report remains REFUSALS_ONLY without positive coverage. Exact independent review and full dependent Release suite after all three repairs remain pending. Duplicate Python discovery remains verification-cost debt. No source admission or gate advancement: Alpha 0/20, U45 HELD, Beta BLOCKED; .github untouched.
