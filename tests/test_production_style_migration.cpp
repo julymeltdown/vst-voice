@@ -6,6 +6,7 @@
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include <map>
 
 namespace {
 namespace production = seam::voicebank_production;
@@ -147,6 +148,65 @@ TEST_CASE("a resolved legacy plan migrates style ownership as one new generation
   CHECK(!fixture.repository.applyStyleMigration(fixture.project, plan, fixture.projectSha256,
       "producer", "2026-09-14T10:02:00Z"));
   CHECK(production::encodeProductionProject(fixture.project) != before);
+}
+
+TEST_CASE("style migration retains missing or identical plans and refuses unsafe or different storage") {
+  const auto inventory = [](const std::filesystem::path& root) {
+    std::map<std::string, std::string> result;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
+      const auto status = entry.symlink_status();
+      const auto name = entry.path().lexically_relative(root).generic_string();
+      if (std::filesystem::is_symlink(status)) result[name] = "link:" + std::filesystem::read_symlink(entry.path()).generic_string();
+      else if (std::filesystem::is_directory(status)) result[name] = "directory";
+      else {
+        CHECK(std::filesystem::is_regular_file(status));
+        const auto bytes = seam::core::readFileBytesLimited(entry.path(), 64U * 1024U * 1024U); CHECK(bytes);
+        result[name] = "file:" + std::to_string(bytes.value().size()) + ":" + seam::core::sha256Hex(bytes.value());
+      }
+    }
+    return result;
+  };
+  for (const int mode : {0, 1, 2, 3, 4, 5}) {
+    MigrationFixture fixture;
+    const auto expected = fixture.expectedMigration();
+    const auto plan = fixture.writePlan("migration-plan.json", "RESOLVED_NOT_APPLIED", &expected);
+    const auto bytes = seam::core::readFileBytesLimited(plan, 4U * 1024U * 1024U); CHECK(bytes);
+    const auto directory = fixture.root / "workspace/migrations";
+    const auto retained = directory / (seam::core::sha256Hex(bytes.value()) + ".json");
+    const auto outside = fixture.root / "outside";
+    std::filesystem::create_directory(outside);
+    if (mode == 0) CHECK(std::filesystem::remove(directory));
+    if (mode == 1) CHECK(seam::core::durableAtomicWriteNew(retained, bytes.value()));
+    if (mode == 2 || mode == 3) {
+      CHECK(std::filesystem::remove(directory));
+      if (mode == 2) CHECK(seam::core::durableAtomicWriteTextNew(directory, "not a directory"));
+      else std::filesystem::create_directory_symlink(outside, directory);
+    }
+    if (mode == 4) CHECK(seam::core::durableAtomicWriteTextNew(retained, "different plan bytes"));
+    if (mode == 5) {
+      CHECK(seam::core::durableAtomicWriteNew(outside / "plan.json", bytes.value()));
+      std::filesystem::create_symlink(outside / "plan.json", retained);
+    }
+    const auto before = inventory(fixture.root);
+    const auto projectBefore = production::encodeProductionProject(fixture.project);
+    const auto generationBefore = fixture.project.lastDurableGeneration;
+    const auto result = fixture.repository.applyStyleMigration(fixture.project, plan,
+        fixture.projectSha256, "producer", "2026-09-14T10:01:00Z");
+    if (mode < 2) {
+      CHECK(result); CHECK(result.value().durabilityConfirmed);
+      CHECK(fixture.project.lastDurableGeneration == generationBefore + 1U);
+      CHECK(seam::core::readFileBytesLimited(retained, 4U * 1024U * 1024U).value() == bytes.value());
+      CHECK(fixture.repository.verify(fixture.project));
+    } else {
+      CHECK(!result); CHECK(result.error().code == seam::core::ErrorCode::Conflict);
+      CHECK(production::encodeProductionProject(fixture.project) == projectBefore);
+      CHECK(inventory(fixture.root) == before);
+      const auto recovered = fixture.repository.recover(); CHECK(recovered);
+      CHECK(production::encodeProductionProject(recovered.value()) == projectBefore);
+    }
+    std::cout << "[MIGRATION-RETENTION] " << mode << (mode < 2 ? ": COMMITTED\n" : ": REFUSED_UNCHANGED\n");
+    std::filesystem::remove_all(fixture.root);
+  }
 }
 
 TEST_CASE("a legacy plan without a unique style binding is refused without touching the producer") {

@@ -134,22 +134,17 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::applyStyleMig
   // Retain the exact plan before any generation depends on it, the way a source declaration is
   // retained before imported material depends on it.
   const auto directory = root_ / "migrations";
-  std::error_code error;
-  auto directoryStatus = std::filesystem::symlink_status(directory, error);
-  // A workspace written by another implementation of this format may not carry the directory yet,
-  // so it is created here and then still has to be a real directory rather than a link.
-  if (!std::filesystem::exists(directoryStatus)) {
-    std::filesystem::create_directory(directory, error);
-    directoryStatus = std::filesystem::symlink_status(directory, error);
+  for (const auto& parent : {root_, directory}) {
+    const auto synced = core::durableCreateDirectories(parent);
+    if (!synced) return core::Result<Output>{synced.error()};
   }
-  if (error || !std::filesystem::is_directory(directoryStatus) || std::filesystem::is_symlink(directoryStatus))
-    return core::failure<Output>(core::ErrorCode::Conflict, "Style migration directory is unsafe");
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,
       "Style migration cancelled before retention");
   const auto planSha256 = core::sha256Hex(planBytes.value());
   const auto retained = directory / (planSha256 + ".json");
   const auto written = core::durableAtomicWriteNew(retained, planBytes.value());
   if (!written) {
+    if (written.error().code != core::ErrorCode::Conflict) return core::Result<Output>{written.error()};
     const auto existing = core::readFileBytesLimited(retained, 4ULL * 1024ULL * 1024ULL);
     if (!existing || existing.value() != planBytes.value()) return core::Result<Output>{written.error()};
   }

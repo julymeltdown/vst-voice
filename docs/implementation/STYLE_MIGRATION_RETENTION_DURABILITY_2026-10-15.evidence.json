@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "unit": "style-migration-retention-durability",
+  "sourceBase": "090d1e0903850586cf024961c10aa5988cbedbbb",
+  "sourcePatchSha256": "2ae6503b732c5731ea70dc76bfed2d523950c972d4f9d68b0a885f26462e1e20",
+  "implementationSources": [
+    "libs/seam-voicebank-production/src/style_migration.cpp",
+    "tests/test_production_style_migration.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/style-migration-retention-durability-2026-10-15/manifest.json",
+    "sizeBytes": 6596,
+    "sha256": "a72b3169653fc65a05834014c82749060e9a8430536273d6f118daa6a4068a2d"
+  },
+  "retainedArtifacts": 23,
+  "preservedBindings": 9,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 32.72668687501573,
+      "sourceBase": "090d1e0903850586cf024961c10aa5988cbedbbb",
+      "sourcePatchSha256": "2ae6503b732c5731ea70dc76bfed2d523950c972d4f9d68b0a885f26462e1e20",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_production_style_migration_tests$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.5189819159859326,
+      "sourceBase": "090d1e0903850586cf024961c10aa5988cbedbbb",
+      "sourcePatchSha256": "2ae6503b732c5731ea70dc76bfed2d523950c972d4f9d68b0a885f26462e1e20",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/style-migration-retention-durability-2026-10-15/verification.log",
+      "sizeBytes": 368,
+      "sha256": "65ede4e2ded6ef2d794d03eeadbe85c9765dd787a8cfb409e8e7dfceac07d2b5"
+    }
+  },
+  "nativeCases": 5,
+  "newCases": 1,
+  "newPositiveForms": 2,
+  "newNegativeForms": 4,
+  "treeInventory": "regular-file size/hash, link target and directories including empty directories",
+  "priorSiblingReview": {
+    "verdict": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review-bce11b9a.md",
+      "sizeBytes": 12571,
+      "sha256": "9f2c059cf1570aedaa57e354347433333a21767f213baf1b2dcdc0aedd96f8e3"
+    },
+    "metadata": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review.json",
+      "sizeBytes": 553,
+      "sha256": "c1fa44f9b6dbb3ae37a306f1633b69fb1df12e59a034171b6832763f2bde009c"
+    },
+    "scope": "Exact bce11b9a approval, not this patch"
+  },
+  "styleMigrationFollowUp": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
+  "wrapperFsyncPostPublicationFaults": "NOT_RUN",
+  "migrationPlanRecoveryDependency": false,
+  "draftVerifierSummaryCorrection": "First read-only verifier summary printed 6 artifacts due to a shadowed trace variable, while all 20 artifact checks passed. Draft files retained. Final verifier uses a distinct trace variable; no test rerun.",
+  "fullBuild": true,
+  "fullSuite": "NOT_RUN",
+  "newSanitizers": "NOT_RUN",
+  "powerLoss": "NOT_RUN",
+  "realSourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}
