@@ -113,7 +113,7 @@
   "Beta": "BLOCKED",
   "rangeBoundCoverageFollowUp": {
     "report": "docs/implementation/PREPARED_DONOR_PCM_RANGE_NEGATIVES_2026-10-15.md",
-    "status": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
+    "status": "CLOSED_BY_EXACT_090D1E09_REVIEW",
     "nativeCases": 22,
     "newCases": 2,
     "positiveForms": 2,
@@ -125,5 +125,24 @@
       "sizeBytes": 5452,
       "sha256": "72f93ac7eb907fac2f536ece9dd67aa0784c5c0ff5e4d484f9ff9fdbd385fe40"
     }
+  },
+  "nativeRangeAndMigrationIndependentReview": {
+    "commits": [
+      "090d1e0903850586cf024961c10aa5988cbedbbb",
+      "dc433d80797b3c2b3f50964c3833f04531785b41"
+    ],
+    "nativeRangeVerdict": "APPROVE_ZERO_FINDINGS_RANGE_TEST_P3_CLOSED",
+    "migrationVerdict": "APPROVE_ZERO_FINDINGS_MIGRATION_ITEM_CLOSED_WRAPPER_FAULTS_OPEN",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-range-migration-independent-2026-10-15/review-090d1e09-dc433d80.md",
+      "sizeBytes": 18520,
+      "sha256": "648d7e37742c9fac8a7afbf6dc4a4ac4a8428b498bf98b14a760b6655f581448"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-range-migration-independent-2026-10-15/review.json",
+      "sizeBytes": 738,
+      "sha256": "e386f73912b72101ebee0b366cda7cffb56114a5a705fa7ba2890a2a359e8f53"
+    },
+    "scope": "Exact read-only source/evidence review; no build/test/native/retained-script/playback or human/Beta approval"
   }
 }
