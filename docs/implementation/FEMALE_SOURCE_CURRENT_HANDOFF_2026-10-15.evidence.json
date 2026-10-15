@@ -41,9 +41,9 @@
   },
   "implementationReviews": {
     "a7f81e0776ba5d1e903ec2c74b9cdcea85242426": "APPROVE_ENGINEERING; receipt P3 independently CLOSED by 7ec877f7",
-    "029cc6a9c27af967873fc317a70d3401e0890495": "APPROVE_ENGINEERING; originating import/style P3 CLOSED; separate source-assessment P3 locally repaired by b3998f99, independent closure pending",
+    "029cc6a9c27af967873fc317a70d3401e0890495": "APPROVE_ENGINEERING; originating import/style P3 CLOSED; separate source-assessment P3 independently CLOSED by b3998f99",
     "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd": "APPROVE_ENGINEERING_ZERO_FINDINGS; a7 receipt P3 CLOSED",
-    "b3998f99de1c63fa3e1479776d2af60095aa19a0": "LOCAL_VERIFICATION_PASS; ACTIVE_INDEPENDENT_REVIEW"
+    "b3998f99de1c63fa3e1479776d2af60095aa19a0": "APPROVE_ENGINEERING_ZERO_FINDINGS; source-assessment P3 CLOSED"
   },
   "testsRun": [],
   "verificationScope": "Rehash all originals and PCM headers; existing canonical gates; changed local Markdown links and JSON; git diff --check.",
@@ -82,7 +82,7 @@
       "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
     },
     "newPreExistingWriterP3": {
-      "status": "LOCALLY_REPAIRED_REVIEW_PENDING",
+      "status": "CLOSED_BY_EXACT_B3998F99_REVIEW",
       "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
       "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
       "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression.",
@@ -108,5 +108,21 @@
       "sizeBytes": 293,
       "sha256": "2bead2c90fb92de3991602d2f01d0036cb39890a3d1c9967de0e42a92401ccdf"
     }
+  },
+  "sourceAssessmentIndependentReview": {
+    "commit": "b3998f99de1c63fa3e1479776d2af60095aa19a0",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "originatingSourceAssessmentP3": "CLOSED",
+    "final": {
+      "path": "out/evidence/source-assessment-independent-2026-10-15/review-b3998f99.md",
+      "sizeBytes": 8711,
+      "sha256": "e543addc9ce419e0b53fe9f3bfc4fd59c94e2d70b7c2e74195172fd8853dfb18"
+    },
+    "metadata": {
+      "path": "out/evidence/source-assessment-independent-2026-10-15/metadata.json",
+      "sizeBytes": 531,
+      "sha256": "62e02e7dbf6ff34439b5f1504d8f6f0e07efa7243ba6ef56f01cd91858a334a6"
+    },
+    "scope": "Exact committed source and retained evidence; read-only; no reviewer build, native/test/script execution or playback."
   }
 }

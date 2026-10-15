@@ -137,14 +137,29 @@
       "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
     },
     "newPreExistingWriterP3": {
-      "status": "OPEN",
+      "status": "CLOSED_BY_EXACT_B3998F99_REVIEW",
       "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
       "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
       "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression."
     }
   },
-  "originatingP3": "LOCALLY_REPAIRED_REVIEW_PENDING",
-  "independentReview": "ACTIVE_EXACT_B3998F99_REVIEW",
+  "originatingP3": "CLOSED_BY_EXACT_B3998F99_REVIEW",
+  "independentReview": {
+    "commit": "b3998f99de1c63fa3e1479776d2af60095aa19a0",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "originatingSourceAssessmentP3": "CLOSED",
+    "final": {
+      "path": "out/evidence/source-assessment-independent-2026-10-15/review-b3998f99.md",
+      "sizeBytes": 8711,
+      "sha256": "e543addc9ce419e0b53fe9f3bfc4fd59c94e2d70b7c2e74195172fd8853dfb18"
+    },
+    "metadata": {
+      "path": "out/evidence/source-assessment-independent-2026-10-15/metadata.json",
+      "sizeBytes": 531,
+      "sha256": "62e02e7dbf6ff34439b5f1504d8f6f0e07efa7243ba6ef56f01cd91858a334a6"
+    },
+    "scope": "Exact committed source and retained evidence; read-only; no reviewer build, native/test/script execution or playback."
+  },
   "predecessorReceiptReview": {
     "commit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
     "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",

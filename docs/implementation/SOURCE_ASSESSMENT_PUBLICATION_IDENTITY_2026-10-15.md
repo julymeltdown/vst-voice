@@ -1,6 +1,6 @@
 # Exact publication identity for source assessments
 
-Source base: `b9849150b35451cc866cdc198f1df855fb7e4218`. This locally repairs the separate pre-existing P3 found in the exact `029cc6a9` review. **Independent review of this source-assessment repair remains pending.** The originating import/style P3 and Studio receipt-test P3 are already independently closed; neither approval covers this newer change.
+Source base: `b9849150b35451cc866cdc198f1df855fb7e4218`. The exact `b3998f99de1c63fa3e1479776d2af60095aa19a0` repair is independently **APPROVED for engineering with zero new findings**, closing the separate pre-existing source-assessment P3 found in the `029cc6a9` review. The originating import/style and Studio receipt-test P3s remain independently closed.
 
 A schema-2 producer can hold two source strategies and a take approved through the software review APIs under the first strategy. Registering a second source and importing its take preserves that first approval. The first quality assessment raises the project to schema 3. Its draft explicitly lowers approvals under the assessed strategy; publication's review transition also reopens the first source's approval because the schema belongs to every take's review basis. If the current-pointer write then fails, the old writer compares recovery with its pre-transition draft and returns “recovery found different work” for its own committed assessment.
 
@@ -27,3 +27,7 @@ Frozen root: `out/evidence/source-assessment-publication-2026-10-15`. Manifest *
 The predecessor `7ec877f7` review independently APPROVES the Studio receipt coverage with zero new findings and closes the a7 P3. Its exact final answer is retained at `out/evidence/studio-donor-receipt-independent-2026-10-15/review-7ec877f7.md`: **9,424 bytes**, SHA-256 `4b3dbba606539f2ebe3c2cbce4d9ff409eeaeb8a5d9651f29ed60fe2fda3b2c6`; metadata **471 bytes**, SHA-256 `3776752005532dddf17f7f2064f4da9a7e9df39c7ff92450cba3c488ce9295ac`. This was a read-only source/evidence review, with no reviewer build, native/test/script execution or playback.
 
 Live AppKit remains blocked by the locked Mac. The downloaded sources remain unadmitted; no original audio, human/rights/listening approval or acceptance record changed. Alpha **0/20**, U45 **HELD**, Beta **BLOCKED**, full goal **ACTIVE**. Other writers' optional hardening and wrapper faults retain their separate scope. Stash preserved; `.github` untouched; Windows remains TODO.
+
+## Exact independent closure
+
+The reviewer read the committed source, before/after regression evidence, logs and bindings without rerunning builds, native binaries, tests, verifier scripts or playback. The exact final answer is retained at `out/evidence/source-assessment-independent-2026-10-15/review-b3998f99.md` (**8,711 bytes**, SHA-256 `e543addc9ce419e0b53fe9f3bfc4fd59c94e2d70b7c2e74195172fd8853dfb18`); metadata is **531 bytes**, SHA-256 `62e02e7dbf6ff34439b5f1504d8f6f0e07efa7243ba6ef56f01cd91858a334a6`. The original source-assessment P3 is **CLOSED**. Optional product pointer reconciliation and other writer hardening remain separate work; this verdict conveys no source, human or release approval.
