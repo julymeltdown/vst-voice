@@ -12,6 +12,7 @@
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include <cstdlib>
 #include <chrono>
 #include <iostream>
@@ -148,6 +149,37 @@ TEST_CASE("style coverage uses the selected English phonemizer when the bank and
   CHECK(sheet);
   CHECK(sheet.value().coverage());
   CHECK(sheet.value().coverage()->complete());
+}
+
+TEST_CASE("style coverage folds dictionary vowels for both declared blend arms without inventing legacy coverage") {
+  using namespace seam;
+  Fixture f;
+  auto& manifest = f.bank.candidate->manifest;
+  manifest.language = domain::Language::English;
+  manifest.languageContract = voicebank::Manifest::EnglishPhoneContract{std::string{phonemizer::kEnglishVocabularyId},
+      phonemizer::englishVocabularySha256(), "FOLD_LEXICAL_STRESS"};
+  for (auto& unit : manifest.units) { unit.phones = {"ay"}; unit.enabled = true; }
+  CHECK(manifest.validate());
+  auto* region = f.project.findRegion(f.region);
+  region->lyrics.front().language = domain::Language::English;
+  region->lyrics.front().surface = U"I";
+  CHECK(!region->notes.front().phoneticHint);
+  application::EditorSession session{f.project};
+  auto sheet = native_ui::StyleCoverageSheet::prepare(session, f.track, f.region, f.bank); CHECK(sheet);
+  CHECK(sheet.value().coverage()); CHECK(sheet.value().coverage()->complete());
+  CHECK(sheet.value().coverage()->summary.coveredPhonemes == 1U);
+  CHECK(sheet.value().chooseBlend("soft", 0.5F));
+  CHECK(sheet.value().coverage()->complete()); CHECK(sheet.value().secondaryCoverage());
+  CHECK(sheet.value().secondaryCoverage()->complete());
+  CHECK(session.project() == f.project); CHECK(!session.canUndo());
+  manifest.languageContract->stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
+  auto exact = native_ui::StyleCoverageSheet::prepare(session, f.track, f.region, f.bank); CHECK(exact);
+  CHECK(exact.value().coverage()); CHECK(!exact.value().coverage()->complete());
+  CHECK(exact.value().coverage()->issues.front().symbol == "ay1");
+  manifest.languageContract.reset();
+  auto legacy = native_ui::StyleCoverageSheet::prepare(session, f.track, f.region, f.bank); CHECK(legacy);
+  CHECK(legacy.value().coverage()); CHECK(!legacy.value().coverage()->complete());
+  CHECK(legacy.value().coverage()->issues.front().symbol == "ay1");
 }
 
 TEST_CASE("native style sheet stages rows and rejects changed bank before exact apply undo") {

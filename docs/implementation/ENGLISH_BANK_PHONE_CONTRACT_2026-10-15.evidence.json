@@ -47,12 +47,26 @@
     "sourceApproval": false,
     "qualifiedProductionBank": false
   },
-  "independentTechnicalReview": "PENDING",
+  "independentTechnicalReview": "APPROVE exact d5ecc1f9, engineering only; one P2 follow-up; no required changes to reviewed commit",
   "originalFemaleWavCensus": 1429,
   "newOriginalFemaleWavs": 0,
   "alphaRecordedPasses": 0,
   "alphaRequiredChecks": 20,
   "u45": "HELD",
   "beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "independentReviewRecord": {
+    "commit": "d5ecc1f952844be2910ca5b1eedef20b60fbcc0a",
+    "verdict": "APPROVE",
+    "p2FollowUpFindings": 1,
+    "requiredChangesToReviewedCommit": false,
+    "final": {
+      "path": "out/evidence/english-coverage-contract-2026-10-15/review-d5ecc1f9.md",
+      "sizeBytes": 18628,
+      "sha256": "b589f06dba99268f1b1cc88265ce899e65ecbddbe41e8366cf2ae840b363f30c"
+    },
+    "turnId": "01a13ccb-05ef-7001-9dc5-df496d79b047",
+    "execution": "Read-only; no build/native/CLI/tests/retained-script execution"
+  },
+  "coverageAnalyzerFollowUp": "Locally repaired and verified in ENGLISH_COVERAGE_CONTRACT_2026-10-15.md; independent closure pending"
 }

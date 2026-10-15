@@ -1163,3 +1163,33 @@ TEST_CASE("English sample-bank coverage reports the missing English phone instea
     CHECK(declared.value().missing.front().keys == (std::vector<domain::PhonemeKey>{tokens[2].key}));
   }
 }
+
+TEST_CASE("dictionary English coverage shares declared folding without hiding a missing consonant") {
+  using namespace seam;
+  Fixture english; english.add(0, U"sing");
+  const auto* region = english.project.findRegion(english.region);
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+  const auto& tokens = resolved.value().pronunciation.tokens;
+  CHECK(symbols(tokens) == "s ih1 ng"); CHECK(!region->notes.front().phoneticHint);
+  auto manifest = test::support::makeManifest({
+      test::support::makeUnit("s", {"s"}, "audio/s.wav", 60),
+      test::support::makeUnit("ih", {"ih"}, "audio/ih.wav", 60),
+      test::support::makeUnit("ng", {"ng"}, "audio/ng.wav", 60)});
+  manifest.language = domain::Language::English;
+  manifest.languageContract = voicebank::Manifest::EnglishPhoneContract{std::string{phonemizer::kEnglishVocabularyId},
+      phonemizer::englishVocabularySha256(), "FOLD_LEXICAL_STRESS"};
+  CHECK(manifest.validate());
+  const auto analyze = [&] { return voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      manifest, english.track, *region, tokens, "original"); };
+  CHECK(analyze().complete());
+  manifest.units.pop_back(); auto report = analyze();
+  CHECK(report.summary.coveredPhonemes == 2U); CHECK(report.issues.size() == 1U);
+  CHECK(report.issues.front().symbol == "ng"); CHECK(report.issues.front().phonemeKey == tokens[2].key);
+  CHECK(report.issues.front().kind == voicebank::CoverageIssueKind::MissingUnit);
+  CHECK(symbols(tokens) == "s ih1 ng");
+  manifest.units.push_back(test::support::makeUnit("ng", {"ng"}, "audio/ng.wav", 60));
+  manifest.languageContract->stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
+  report = analyze(); CHECK(report.issues.size() == 1U); CHECK(report.issues.front().symbol == "ih1");
+  manifest.languageContract.reset(); report = analyze();
+  CHECK(report.issues.size() == 1U); CHECK(report.issues.front().symbol == "ih1");
+}

@@ -25,14 +25,15 @@ std::string phoneSequence(const Unit& unit) {
   return result;
 }
 
-bool phonesMatch(const Unit& unit,
+bool phonesMatch(const Manifest& manifest,
+                 const Unit& unit,
                  std::span<const domain::PhonemeToken> tokens,
                  std::size_t start) {
   if (unit.phones.empty() || start + unit.phones.size() > tokens.size()) {
     return false;
   }
   for (std::size_t index = 0; index < unit.phones.size(); ++index) {
-    if (unit.phones[index] != tokens[start + index].symbol) return false;
+    if (unit.phones[index] != manifest.matchedPhone(tokens[start + index].symbol)) return false;
   }
   return true;
 }
@@ -135,7 +136,7 @@ VoicebankCoverageReport VoicebankCoverageAnalyzer::analyzeRegion(
   for (std::size_t start = tokens.size(); start-- > 0U;) {
     best[start] = best[start + 1U];
     for (const auto& unit : manifest.units) {
-      if (!phonesMatch(unit, tokens, start)) continue;
+      if (!phonesMatch(manifest, unit, tokens, start)) continue;
       if (!unit.enabled || unit.style != style) {
         auto& destination = !unit.enabled ? disabledWitness : styleWitness;
         for (std::size_t offset = 0; offset < unit.phones.size(); ++offset)

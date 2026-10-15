@@ -5,6 +5,7 @@
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 
 #include <vector>
 
@@ -48,6 +49,60 @@ seam::domain::VocalRegion regionWithNotes(
   return region;
 }
 }  // namespace
+
+TEST_CASE("English coverage folds only under the declared bank contract and preserves resolved tokens") {
+  using namespace seam;
+  const auto note = domain::NoteId{1U};
+  const auto region = regionWithNotes({{note, 60}});
+  const std::vector phones{token(note, 0U, "ih0"), token(note, 1U, "ih1"), token(note, 2U, "ih2")};
+  auto manifest = test::support::makeManifest({test::support::makeUnit("ih", {"ih"}, "audio/ih.wav", 60)});
+  manifest.language = domain::Language::English;
+  manifest.languageContract = voicebank::Manifest::EnglishPhoneContract{std::string{phonemizer::kEnglishVocabularyId},
+      phonemizer::englishVocabularySha256(), "FOLD_LEXICAL_STRESS"};
+  CHECK(manifest.validate());
+  const auto analyze = [&] { return voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      manifest, domain::TrackId{7U}, region, phones, "original"); };
+  auto report = analyze(); CHECK(report.complete()); CHECK(report.summary.coveredPhonemes == 3U);
+  CHECK(report.inventory.phoneSequences == std::vector<std::string>{"ih"});
+  CHECK(phones[0].symbol == "ih0"); CHECK(phones[1].symbol == "ih1"); CHECK(phones[2].symbol == "ih2");
+  manifest.languageContract->stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
+  CHECK(manifest.validate()); report = analyze();
+  CHECK(!report.complete()); CHECK(report.summary.missingUnitCount == 3U);
+  CHECK(report.issues[1].symbol == "ih1"); CHECK(report.issues[1].phonemeKey == phones[1].key);
+  manifest.languageContract.reset(); report = analyze(); CHECK(report.summary.missingUnitCount == 3U);
+  manifest.languageContract = voicebank::Manifest::EnglishPhoneContract{std::string{phonemizer::kEnglishVocabularyId},
+      std::string(64U, '0'), "FOLD_LEXICAL_STRESS"};
+  CHECK(!manifest.validate()); CHECK(analyze().summary.missingUnitCount == 3U);
+  manifest.languageContract->vocabularySha256 = phonemizer::englishVocabularySha256();
+  manifest.language = domain::Language::Japanese;
+  CHECK(!manifest.validate()); CHECK(analyze().summary.missingUnitCount == 3U);
+}
+
+TEST_CASE("folded English coverage retains disabled style pitch and non-overlapping sequence diagnostics") {
+  using namespace seam;
+  const auto note = domain::NoteId{1U}; const auto region = regionWithNotes({{note, 60}});
+  const std::vector phones{token(note, 0U, "k"), token(note, 1U, "ih1"), token(note, 2U, "t")};
+  auto manifest = test::support::makeManifest({
+      test::support::makeUnit("kih", {"k", "ih"}, "audio/kih.wav", 60),
+      test::support::makeUnit("iht", {"ih", "t"}, "audio/iht.wav", 60)});
+  manifest.language = domain::Language::English;
+  manifest.languageContract = voicebank::Manifest::EnglishPhoneContract{std::string{phonemizer::kEnglishVocabularyId},
+      phonemizer::englishVocabularySha256(), "FOLD_LEXICAL_STRESS"};
+  CHECK(manifest.validate());
+  const auto analyze = [&] { return voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      manifest, domain::TrackId{7U}, region, phones, "original"); };
+  auto report = analyze(); CHECK(report.summary.coveredPhonemes == 2U); CHECK(report.summary.sequenceConflictCount == 1U);
+  manifest.units.push_back(test::support::makeUnit("k", {"k"}, "audio/k.wav", 60));
+  CHECK(analyze().complete()); // k + iht; folding must not turn an overlapping cover into a complete one.
+  manifest.units = {test::support::makeUnit("ih", {"ih"}, "audio/ih.wav", 60)};
+  manifest.units.front().enabled = false; report = analyze();
+  CHECK(report.summary.disabledUnitCount == 1U); CHECK(report.summary.missingUnitCount == 2U);
+  CHECK(report.issues[1].symbol == "ih1"); CHECK(report.issues[1].relatedUnitIds == std::vector<std::string>{"ih"});
+  manifest.units.front().enabled = true; manifest.styles.push_back("soft"); manifest.units.front().style = "soft";
+  report = analyze(); CHECK(report.summary.unsupportedStyleCount == 1U); CHECK(report.summary.missingUnitCount == 2U);
+  manifest.units.front().style = "original"; manifest.units.front().rootMidi = 90;
+  report = analyze(); CHECK(report.summary.unsupportedPitchRangeCount == 1U); CHECK(report.summary.missingUnitCount == 2U);
+}
 
 TEST_CASE("voicebank_inventory_summarizes_styles_layers_kinds_and_special_units") {
   auto sustain = seam::test::support::makeUnit(

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-coverage-contract-consistency",
+  "sourceBaseCommit": "a0259814d7e61a7745dd7481ed86f7c404417baa",
+  "manifest": {
+    "path": "out/evidence/english-coverage-contract-2026-10-15/manifest.json",
+    "sizeBytes": 10034,
+    "sha256": "23ce302ecc5cbc61288420d30374608d572437b5b36d58a01922c3f32e8e458b"
+  },
+  "retainedArtifacts": 50,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/english-coverage-contract-2026-10-15/verification.log",
+      "sizeBytes": 233,
+      "sha256": "6645107db6dba676d87eb8358710ad7da0676808fc2f8bafeb67bf0646ac3bcd"
+    },
+    "scope": "Read-only retained hashes/Git source bindings/native receipt totals; no native replay"
+  },
+  "independentBankCoreReview": {
+    "commit": "d5ecc1f952844be2910ca5b1eedef20b60fbcc0a",
+    "verdict": "APPROVE",
+    "p2FollowUpFindings": 1,
+    "requiredChangesToReviewedCommit": false,
+    "final": {
+      "path": "out/evidence/english-coverage-contract-2026-10-15/review-d5ecc1f9.md",
+      "sizeBytes": 18628,
+      "sha256": "b589f06dba99268f1b1cc88265ce899e65ecbddbe41e8366cf2ae840b363f30c"
+    },
+    "turnId": "01a13ccb-05ef-7001-9dc5-df496d79b047",
+    "execution": "Read-only; no build/native/CLI/tests/retained-script execution"
+  },
+  "execution": {
+    "initialFailure": "Test-only namespace qualification compile error; exact source/logs retained",
+    "unchangedProductionBaselineFullBuild": "PASS",
+    "baselineNativeExecutions": 3,
+    "baselineNativeFailures": 4,
+    "baselineBinaryRetention": 3,
+    "finalFullDependentReleaseBuild": "PASS",
+    "finalBuildSeconds": 6.8494659590069205,
+    "finalCtestSeconds": 4.486678874993231,
+    "finalCtestLanes": 4,
+    "passingNativeCases": 70,
+    "passingCounts": {
+      "languagePhonemizer": 40,
+      "styleCoverage": 11,
+      "u3": 18,
+      "installedEnglishLifecycle": 1
+    },
+    "newNativeCases": 4,
+    "changedSourceFilesBound": 4,
+    "retainedFinalExecutables": 5,
+    "temporaryLifecycleOutputsRetained": false,
+    "hermeticOrAuthenticatedBuildProof": false,
+    "fullSuiteOrPhysicalAcceptance": false
+  },
+  "coverageChange": "Region analyzer uses Manifest::matchedPhone; legacy/DISTINGUISH remain exact, structural constraints and resolved symbols unchanged",
+  "technicalP2Repair": "LOCALLY_VERIFIED; independent exact-fix closure PENDING",
+  "independentTechnicalReview": "PENDING for this follow-up",
+  "sourceApproval": false,
+  "newOriginalFemaleWavs": 0,
+  "originalFemaleWavCensus": 1429,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "u45": "HELD",
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}

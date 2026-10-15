@@ -141,3 +141,8 @@ External Beta **BLOCKED**. Independent review of this exact unit is pending.
 ## Later installed lifecycle evidence
 
 The [installed lifecycle regression](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.md) exercises both declared English stress policies through actual generated workspace, review/publication, typed test-signed installation and fresh dictionary/continuation Final export. Both policies pass in the one registered native case; this later unit has separate pending review and does not change source/singer or Beta acceptance. The fresh SLT attribution packet was independently approved in [the exact attribution review](FEMALE_SLT_ATTRIBUTION_REVIEW_2026-10-15.md); the old packet remains unsuitable for import/provenance.
+
+
+## Exact independent verdict and coverage follow-up
+
+Independent review APPROVED exact d5ecc1f9 for engineering scope, with one P2 follow-up and no required changes to that reviewed commit. The analyzer used exact phone comparisons and incorrectly marked folded stressed vowels missing. [The code-level coverage fix and evidence](ENGLISH_COVERAGE_CONTRACT_2026-10-15.md) retain the full verdict, reproduce four baseline failures, repair the shared matcher and pass 70 native cases across four final CTest lanes after a full dependent rebuild. Independent exact-fix closure remains pending; later producer/lifecycle units have separate review status. No source, singer, human or Beta approval.
