@@ -45,7 +45,7 @@ procedural frequencies 440 Hz and approximately 466.16 Hz.
 | Review separation | Real `prepare-sample-review`; `review-sample` by producer refuses with exit 2; a distinct registered mock reviewer accepts. Candidate availability becomes true, release eligibility stays false. |
 | Publication | Real `publish-sample` binds reviewed generation/project hash. Typed descriptor schema 3 references the schema-4 bank manifest and remains engineering / NOT_QUALIFIED / release-ineligible. |
 | Packaging and installation | `packageResourceCandidate`, trusted-signer `verifyResourceCandidatePackage`, then `VoicebankInstallerService`. Installation is TrustedInstalled and retains exact manifest policy, content and package identities. |
-| Changed authority refusal | The folded fixture copies its candidate and changes the manifest to a syntactically valid distinguished policy. Typed packaging refuses the changed candidate under the original binding and leaves no output package. |
+| Changed authority refusal | Packaging refuses/no output, but the retained altered candidate includes `manifest.json.bak`; file-count refusal precedes the intended manifest integrity check. Its exact diagnostic was not captured, so this test does not isolate changed-contract refusal. |
 | Reopen and dictionary | A newly created `.seam` score contains English `I` followed by `-`, MIDI 69/70, 960 ticks each, no phonetic hints. It is saved and reopened through the actual codec. A fresh session searches only its installed root. Both resolved tokens are `ay1`. |
 | Final rendering/export | Production renderer: no diagnostics or fallback, finite non-silent PCM. Folded and distinguished audio is exactly equal, including continuation behavior. Actual Float32 master and stem export both equal rendered PCM. |
 
@@ -91,8 +91,7 @@ Beta acceptance is inferred from equality and RMS.
 
 Candidate and package bytes vary across captures because paths/history and the
 ephemeral signing keys vary. Repeated export equality does not imply deterministic
-packages. Policy changes affect the manifest/content/snapshot identities even
-when these same tone recordings render identical audio.
+packages. Production encoding binds the policy into manifest/content/snapshot identities. This two-arm run also changes phone labels and unit IDs, so it does not isolate policy as the cause of identity differences even though tone audio remains equal.
 
 ## Retention and limits
 
@@ -140,3 +139,12 @@ product multilingual/classical/neural requirements, R9, signing/installation,
 Windows and human acoustic/accessibility evidence remain open. The four canonical
 gate/resource files are pinned unchanged: Usable Alpha **0/20 recorded passes**,
 U45 **HELD**, External Beta **BLOCKED**, release eligibility **false**.
+
+
+## 2026-10-15 — Exact independent lifecycle review
+
+Independent reviewer **APPROVE exact `a0259814d7e61a7745dd7481ed86f7c404417baa`**, engineering scope only, **two P3 findings/no required changes**. The [updated evidence index](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.evidence.json) binds the actual retained final (`review-a0259814.md`, 16,604 bytes, SHA-256 `abcc5d00fc1c907aed82373f06ea7cb074bc6b419b7f3cebf5ad8acebf49d757`) in a separate frozen review root. Both the reviewer and the lead rechecked all 468 historical artifacts/7 pins. The reviewer read Git/source/artifacts/hashes/JSON/WAVs; no build, test, CLI/native binary or retained script/verifier was executed. The original lifecycle root is unchanged.
+
+P3 findings remain open: (1) remove the stray backup or write without it, require the manifest-specific size/digest diagnostic and add removed-contract packaging coverage; (2) validate editable English contracts against the bound producer inventory before review capture and review commit. The second gap predates this test commit: a changed/missing declaration can enter review/publication as supplied, including silently successful cases. Exact post-review/package integrity checks do not close this earlier authority boundary. This corrects the earlier refusal interpretation; the positive preservation/render results remain valid.
+
+Later commits are not approved by this verdict. Producer/layout P3 implementation and coverage P2 closure retain their own review status. Alpha 0/20, U45 HELD, Beta BLOCKED; mock signing/actors/rights/quality and one-word/one-vowel rendering provide no human, source, platform or full-product acceptance.

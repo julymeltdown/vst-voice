@@ -9313,3 +9313,8 @@ Five fresh publisher HTTP-200 responses and body hashes verified: VocalSet origi
 ## 2026-10-15 — Duplicate Python CTest discovery removed
 
 [Deduplication dossier](PYTHON_CTEST_DEDUPLICATION_2026-10-15.md): explicit/default discovery load identical 443 unique IDs. Removed root duplicate; Phase13A canonical registration retained. Full dependent Release rebuild, 443 surviving Python cases and 17 CMake identity cases PASS. Before/after registration inventory 240→239, every other name/command/property identical; 65 artifacts/6 bindings retained. Prior removed lane cost71.57s; fresh full239 suite/saving not measured. Independent review pending; Alpha0/20, U45HELD, BetaBLOCKED; full goalACTIVE; .github untouched.
+
+
+## 2026-10-15 — Exact lifecycle review and evidence correction
+
+Independent APPROVE exact a0259814, engineering only, two P3 findings/no required changes. [Lifecycle dossier](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.md) retains the actual final and corrects tamper evidence: stray manifest.json.bak confounds the intended integrity refusal; diagnostic not captured. Pre-review editable English contract is not rechecked against inventory; earlier authority gap remains open. Positive preservation/render evidence remains; all 468 historical artifacts/7 pins rehashed unchanged. Coverage 76896845 review active; later units unapproved. Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
