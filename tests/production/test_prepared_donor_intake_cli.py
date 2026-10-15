@@ -86,7 +86,8 @@ class PreparedDonorIntakeCliTests(unittest.TestCase):
         self.assertEqual(0 if success else 2, result.returncode, result.stderr + result.stdout)
         if not success:
             self.assertEqual("", result.stdout)
-            self.assertIn("Prepared donor refused", result.stderr)
+            prefix = "Pointer reconciliation refused" if arguments[0] == "reconcile-producer-pointer" else "Prepared donor refused"
+            self.assertIn(prefix, result.stderr)
         if match:
             self.assertIn(match, result.stderr)
         return result
@@ -123,6 +124,35 @@ class PreparedDonorIntakeCliTests(unittest.TestCase):
         self.assertFalse(quality["releaseEligible"])
         self.assertFalse(quality["recordedQualityPassingForCurrentMaterial"])
         self.assertEqual(before, files(self.workspace))
+
+    def test_pointer_reconciliation_repairs_exact_import_without_new_take_and_refuses_rollback(self):
+        request, _ = self.capture()
+        receipt = json.loads(self.import_request(request).stdout)
+        before = files(self.workspace)
+        pointer = self.workspace / "project.json"
+        args = ("reconcile-producer-pointer", self.workspace, receipt["generation"], receipt["projectSha256"])
+        for generation, digest in (("0", args[3]), ("3x", args[3]), (str(2**64), args[3]),
+                                   (args[2], "f" * 64), (args[2], "A" * 64)):
+            self.native(args[0], self.workspace, generation, digest, success=False)
+            self.assertEqual(before, files(self.workspace))
+        pointer.unlink(); pointer.mkdir()
+        obstructed = files(self.workspace)
+        self.native(*args, success=False)
+        self.assertEqual(obstructed, files(self.workspace))
+        pointer.rmdir()  # Only the test removes its own deliberately empty obstruction.
+        result = json.loads(self.native(*args).stdout)
+        self.assertEqual("ProductionPointerReconciled", result["result"])
+        self.assertEqual((args[2], args[3], True, False, False, False, False),
+                         tuple(result[key] for key in ("generation", "projectSha256", "pointerReconciled",
+                               "generationAppended", "nativeImport", "sourceRightsApproved", "releaseEligible")))
+        self.assertEqual(before, files(self.workspace))
+        self.native(*args); self.assertEqual(before, files(self.workspace))
+        self.readers()
+        request, _ = self.capture(index=1, style="soft", pitch=72, name="newer.json")
+        self.import_request(request)
+        newer = files(self.workspace)
+        self.native(*args, success=False, match="newer or incomplete work")
+        self.assertEqual(newer, files(self.workspace)); self.readers()
 
     def test_capture_displays_exact_notices_phones_and_assignment_without_import(self):
         _, request = self.capture(style="soft", pitch=72)

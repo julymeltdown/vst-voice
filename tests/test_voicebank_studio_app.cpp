@@ -1828,4 +1828,27 @@ TEST_CASE("Studio application captures and explicitly imports a prepared donor t
   CHECK(recovered.value().reviews.empty()); CHECK(recovered.value().sourceQualityAssessments.empty());
   CHECK(!voicebank_production::selectedStrategyReady(recovered.value()));
   studio.snapshot("prepared-donor-imported-720x520",720,520);
+  const auto committedBytes=voicebank_production::encodeProductionProject(recovered.value());
+  studio.app.reset();
+  CHECK(std::filesystem::remove(fixture.workspace/"project.json"));
+  CHECK(std::filesystem::create_directory(fixture.workspace/"project.json"));
+  StudioHarness reopened{fixture.prepared.root/"reopened-app"};
+  CHECK(reopened.app->open(options)); reopened.resize(720,520);
+  reopened.dialogs->workspaces={platform::IFileDialog::ProductionWorkspaceInput{
+      .root=fixture.workspace,.inventorySha256=fixture.project.inventorySha256,.operatorId="producer"}};
+  CHECK(reopened.activate("back"));
+  CHECK(reopened.settle([&] { return reopened.app->productionProject()!=nullptr; }));
+  reopened.key(NativeKey::Q,{});
+  CHECK(reopened.settle([&] { const auto node=reopened.node("reconcile-project-pointer"); return node && node->enabled; }));
+  CHECK(reopened.activate("reconcile-project-pointer"));
+  CHECK(reopened.settle([&] { return !reopened.app->lastError().empty(); }));
+  CHECK(std::filesystem::is_directory(fixture.workspace/"project.json"));
+  CHECK(voicebank_production::encodeProductionProject(fixture.repository.recover().value())==committedBytes);
+  CHECK(std::filesystem::remove(fixture.workspace/"project.json"));
+  CHECK(reopened.activate("reconcile-project-pointer"));
+  CHECK(reopened.settle([&] { return fixture.repository.verify(recovered.value()).hasValue() &&
+      reopened.value("status").find("PROJECT POINTER RECONCILED")!=std::string::npos; }));
+  CHECK(voicebank_production::encodeProductionProject(*reopened.app->productionProject())==committedBytes);
+  CHECK(voicebank_production::encodeProductionProject(fixture.repository.recover().value())==committedBytes);
+  reopened.snapshot("producer-pointer-reconciled-after-reopen-720x520",720,520);
 }

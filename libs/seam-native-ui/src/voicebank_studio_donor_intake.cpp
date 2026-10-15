@@ -113,6 +113,24 @@ core::Result<void> VoicebankStudioController::beginPreparedDonorImport(const Sam
   return core::success();
 }
 
+core::Result<void> VoicebankStudioController::beginProductionPointerReconciliation() {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict,"Finish current production work first");
+  const auto context = captureSampleReviewContext(); if (!context) return core::Result<void>{context.error()};
+  const ReconciledProductionPointer expected{productionWorkspaceRoot_,productionProject_->projectId,
+      context.value().generation,context.value().projectSha256};
+  proceduralImportStop_ = std::stop_source{}; const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
+  try {
+    sampleReviewWork_ = std::async(std::launch::async,[context=context.value(),expected,stop]() -> core::Result<SampleReviewWorkResult> {
+      const auto repaired = p::ProductionProjectRepository{expected.workspaceRoot}.reconcileCurrentPointer(
+          expected.generation,expected.projectSha256,stop);
+      if (!repaired) return core::Result<SampleReviewWorkResult>{repaired.error()};
+      return SampleReviewWorkResult{.context=context,.reconciledProductionPointer=expected};
+    });
+  } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal,"Cannot start pointer reconciliation",error.what()); }
+  sampleReviewStatus_ = status_ = "RECONCILING EXACT PRODUCER POINTER / NO NEW TAKE OR APPROVAL";
+  return core::success();
+}
+
 core::Result<void> captureStudioPreparedDonor(VoicebankStudioController& controller, platform::IFileDialog& dialog) {
   if (controller.proceduralImportBusy() || controller.dirty()) return core::failure(core::ErrorCode::Conflict,"Finish work and save manifest edits first");
   const auto context = controller.captureSampleReviewContext(); if (!context) return core::Result<void>{context.error()};

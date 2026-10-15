@@ -1968,6 +1968,12 @@ public:
     }
     stopAudition();
     if (action == "capture") { sampleReviewFirstLine_ = 0U; return controller_.beginSelectedSampleReview(); }
+    if (action == "reconcile-project-pointer") {
+      sampleReviewFirstLine_ = 0U;
+      const auto result = controller_.beginProductionPointerReconciliation();
+      if (result) sampleBankStatus_.clear();
+      return result;
+    }
     if (action == "previous-unit" || action == "next-unit") {
       sampleReviewFirstLine_ = 0U;
       if (action == "previous-unit" && controller_.selectedIndex() == 0U) return seam::core::success();

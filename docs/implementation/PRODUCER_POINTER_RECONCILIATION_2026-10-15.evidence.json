@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "unit": "Shipped exact producer pointer reconciliation",
+  "sourceBase": "c7e451970bb15f4af3e77f8a6829e8836f968296",
+  "manifest": {
+    "path": "out/evidence/producer-pointer-reconciliation-2026-10-15/manifest.json",
+    "sizeBytes": 12828,
+    "sha256": "1834e33f72104d15d1a972561fb08a5ead585aafa5f364e1fd13c6207a77a04d"
+  },
+  "retainedArtifacts": 57,
+  "preservedBindings": 7,
+  "sourceFiles": [
+    {
+      "path": "apps/seam-voicebank-cli/source_intake_commands.cpp",
+      "sizeBytes": 12994,
+      "sha256": "d5714060a277ed8e27d179f26d450f20e7f23dbace5ffd4c8f680e90b34877e0"
+    },
+    {
+      "path": "apps/seam-voicebank-studio-native/studio_app.cpp",
+      "sizeBytes": 233590,
+      "sha256": "10431ce62fe7dcab8dfe9fd4e553862e4f220279da4dfb5568ca5f6c55bc5e1f"
+    },
+    {
+      "path": "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp",
+      "sizeBytes": 49598,
+      "sha256": "02a22b049d6ab3b5633e87f523d5b09e4587a5dee8d3bb167345e79067db9ad2"
+    },
+    {
+      "path": "libs/seam-native-ui/src/voicebank_studio_donor_intake.cpp",
+      "sizeBytes": 12554,
+      "sha256": "ffed77f96ea409fecde77ef82293dc5402cefadf63fb6df8d14a6832e0c02adf"
+    },
+    {
+      "path": "libs/seam-native-ui/src/voicebank_studio_production_view.cpp",
+      "sizeBytes": 73073,
+      "sha256": "f380eb8ab76e0800792fe55aa0c4cd091e19c136b169a17a743bb9b40332e73c"
+    },
+    {
+      "path": "libs/seam-native-ui/src/voicebank_studio_sample_review.cpp",
+      "sizeBytes": 44454,
+      "sha256": "1c6c772e0747c600895e3e77dd035491965485be3c8fb3419d28de7863baee37"
+    },
+    {
+      "path": "tests/production/test_prepared_donor_intake_cli.py",
+      "sizeBytes": 20678,
+      "sha256": "484af3f9639ccee762d9e619be7c0124e1323a625efb7631d7ccf4d97f677d7f"
+    },
+    {
+      "path": "tests/test_studio_manifest_draft.cpp",
+      "sizeBytes": 79287,
+      "sha256": "1670919386027637109933a5eb0339caee2b78e79fbf1a527c21d17b1edca65e"
+    },
+    {
+      "path": "tests/test_studio_sample_review.cpp",
+      "sizeBytes": 28621,
+      "sha256": "5d79bd37a801ba965fa8398d2f671abb7e544cff9f18fe3b732b2368ee8a9af9"
+    },
+    {
+      "path": "tests/test_voicebank_studio_app.cpp",
+      "sizeBytes": 96742,
+      "sha256": "089576f8cb5523f038fc5df8f81d4accb663510b77bac322fa2118508ac09f8a"
+    }
+  ],
+  "executions": [
+    {
+      "name": "release-preliminary-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 44.9154537919967,
+      "environment": {}
+    },
+    {
+      "name": "release-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 6.89668883298873,
+      "environment": {}
+    },
+    {
+      "name": "release-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-V",
+        "-R",
+        "^seam_(studio_manifest_draft_tests|studio_sample_review_tests|voicebank_studio_app_tests)$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 11.257754999998724,
+      "environment": {
+        "SEAM_STUDIO_APP_SNAPSHOT_DIR": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/producer-pointer-reconciliation-2026-10-15/captures"
+      }
+    },
+    {
+      "name": "native-cli-python",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 2.379361166997114,
+      "environment": {}
+    },
+    {
+      "name": "sanitize-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_studio_manifest_draft_tests",
+        "seam_studio_sample_review_tests",
+        "-j4"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 23.833173249993706,
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "sanitize-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "-V",
+        "-R",
+        "^seam_(studio_manifest_draft_tests|studio_sample_review_tests)$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 38.726889500016114,
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "final-release-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 7.321421208995162,
+      "environment": {}
+    },
+    {
+      "name": "final-app-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-V",
+        "-R",
+        "^seam_voicebank_studio_app_tests$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 8.47933745800401,
+      "environment": {
+        "SEAM_STUDIO_APP_SNAPSHOT_DIR": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/producer-pointer-reconciliation-2026-10-15/captures"
+      }
+    }
+  ],
+  "distinctReleaseNativeCases": 82,
+  "releaseLaneCounts": {
+    "sampleReview": 14,
+    "manifestDraft": 53,
+    "actualApplication": 15
+  },
+  "finalAppRerunCases": 15,
+  "sanitizedControllerCases": 67,
+  "nativeCliPythonMethods": 7,
+  "newControllerCases": 2,
+  "newPythonMethods": 1,
+  "existingActualAppCaseExtendedForRestartRecovery": true,
+  "verification": {
+    "path": "out/evidence/producer-pointer-reconciliation-2026-10-15/verification.log",
+    "sizeBytes": 395,
+    "sha256": "39b68b504c4a8861514741d0c1e5d18e4b5422b7ae93aedeae431b4479005ef9"
+  },
+  "capture": {
+    "path": "out/evidence/producer-pointer-reconciliation-2026-10-15/producer-pointer-reconciled-after-reopen-720x520.png",
+    "sizeBytes": 8906,
+    "sha256": "ab660e427de93c6b51f6e60d42cbfca56d57626599f125f3a5f9276d3a335a4a"
+  },
+  "independentReview": "PENDING_EXACT_COMMITTED_UNIT",
+  "sourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": "0/20",
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "fullGoal": "ACTIVE",
+  "limits": [
+    "No full suite, leak detection, TSan, AppKit, OS/power-loss/fsync injection, physical input, DAW, Windows or human listening.",
+    "Directory obstruction is a real filesystem refusal, not a power-loss or fsync test.",
+    "Final captures use the application test harness, scripted dialogs and fallback font, not live AppKit.",
+    "An initial manifest setup used the wrong dossier directory; corrected using discovered docs/voicebank path. It was not a runtime/test result."
+  ]
+}

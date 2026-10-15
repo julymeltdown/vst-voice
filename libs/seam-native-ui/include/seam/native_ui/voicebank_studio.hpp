@@ -148,6 +148,15 @@ public:
       voicebank_production::PreparedDonorImportOptions options = {});
   [[nodiscard]] const std::optional<PreparedDonorInspection>& preparedDonorInspection() const noexcept { return preparedDonorInspection_; }
   [[nodiscard]] const std::optional<voicebank_production::CommittedAssetRecord>& preparedDonorReceipt() const noexcept { return preparedDonorReceipt_; }
+  struct ReconciledProductionPointer final {
+    std::filesystem::path workspaceRoot;
+    std::string projectId;
+    std::uint64_t generation{};
+    std::string projectSha256;
+  };
+  // Repair only the exact recovered producer snapshot; never repeat an import.
+  [[nodiscard]] core::Result<void> beginProductionPointerReconciliation();
+  [[nodiscard]] const std::optional<ReconciledProductionPointer>& reconciledProductionPointer() const noexcept { return reconciledProductionPointer_; }
   [[nodiscard]] core::Result<void> beginSourceLicenseCapture(const SampleReviewContext& context, std::filesystem::path path);
   [[nodiscard]] core::Result<void> beginSourceRegistration(const SourceRegistrationInspection& expected,
       voicebank_production::SourceStrategyAssessment source);
@@ -549,6 +558,7 @@ private:
     std::string draftLoadDiagnostic;
     std::optional<PreparedDonorInspection> preparedDonorInspection;
     std::optional<voicebank_production::CommittedAssetRecord> preparedDonorReceipt;
+    std::optional<ReconciledProductionPointer> reconciledProductionPointer;
     std::optional<SourceQualityInspection> sourceQualityInspection;
     std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt;
     std::optional<SourceRegistrationInspection> sourceRegistrationInspection;
@@ -575,6 +585,7 @@ private:
   std::optional<SampleReviewInspection> sampleReview_;
   std::optional<PreparedDonorInspection> preparedDonorInspection_;
   std::optional<voicebank_production::CommittedAssetRecord> preparedDonorReceipt_;
+  std::optional<ReconciledProductionPointer> reconciledProductionPointer_;
   std::optional<SourceQualityInspection> sourceQualityInspection_;
   std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt_;
   std::optional<SourceRegistrationInspection> sourceRegistrationInspection_;

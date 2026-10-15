@@ -59,6 +59,24 @@ int print(const J::Object& value) {
   std::cout << formats::stringifyJson(value, true) << '\n';
   return std::cout ? 0 : 2;
 }
+int reconcilePointer(int argc, char** argv) {
+  SignalCancellation cancellation;
+  const auto refuse = [&](std::string_view message) {
+    std::cerr << "Pointer reconciliation refused: " << message << '\n';
+    return cancellation.signal() != 0 ? 128 + cancellation.signal() : 2;
+  };
+  if (argc != 5) return refuse("Expected WORKSPACE GENERATION PROJECT_SHA256");
+  const std::string_view number{argv[3]}, hash{argv[4]}; std::uint64_t generation{};
+  const auto parsed = std::from_chars(number.data(),number.data()+number.size(),generation);
+  if (parsed.ec != std::errc{} || parsed.ptr != number.data()+number.size() || generation == 0U || !digest(hash))
+    return refuse("Requires a nonzero generation and full lowercase SHA-256");
+  if (!cancellation.install()) return refuse("Cannot install cancellation handlers");
+  const auto repaired = p::ProductionProjectRepository{argv[2]}.reconcileCurrentPointer(generation,hash,cancellation.token());
+  if (!repaired) return refuse(repaired.error().message);
+  return print({{"result","ProductionPointerReconciled"},{"generation",std::to_string(generation)},
+      {"projectSha256",std::string{hash}},{"pointerReconciled",true},{"generationAppended",false},
+      {"nativeImport",false},{"sourceRightsApproved",false},{"releaseEligible",false}});
+}
 bool inside(const std::filesystem::path& path, const std::filesystem::path& root) {
   const auto relative = path.lexically_relative(root);
   return !relative.empty() && *relative.begin() != "..";
@@ -169,6 +187,7 @@ std::optional<int> runSourceIntakeCommand(int argc, char** argv) {
   if (command == "verify-phone-donor") return verify(argc, argv);
   if (command == "prepare-donor-intake") return prepare(argc, argv);
   if (command == "import-prepared-donor") return importPrepared(argc, argv);
+  if (command == "reconcile-producer-pointer") return reconcilePointer(argc, argv);
   return std::nullopt;
 }
 void printSourceIntakeUsage() {
@@ -176,6 +195,8 @@ void printSourceIntakeUsage() {
       << "  seam_voicebank_cli prepare-donor-intake WORKSPACE DIRECTORY PACKET_SHA256 DONOR_ID SOURCE_ID COVERAGE MIDI STYLE NEW_REQUEST_JSON\n"
       << "    Displays exact notices and source phones beside the assignment; creates an unapproved request without importing.\n"
       << "  seam_voicebank_cli import-prepared-donor WORKSPACE DIRECTORY REQUEST_JSON REQUEST_SHA256 PRODUCER UTC\n"
-      << "    Imports only against the unchanged displayed request; no phonetic, listening, rights or bank approval.\n";
+      << "    Imports only against the unchanged displayed request; no phonetic, listening, rights or bank approval.\n"
+      << "  seam_voicebank_cli reconcile-producer-pointer WORKSPACE GENERATION PROJECT_SHA256\n"
+      << "    Repairs only the exact recovered current pointer; refuses newer or incomplete work; no new generation or approval.\n";
 }
 }

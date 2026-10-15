@@ -401,6 +401,64 @@ TEST_CASE("Studio donor receipt preserves a newer editor context and reports unc
   }
 }
 
+TEST_CASE("Studio reconciles a confirmed donor generation without repeating import or changing its historical receipt") {
+  DonorReceiptFixture fixture;
+  fixture.begin({.faultInjector=[&](production::PreparedDonorImportStage stage) {
+    if (stage == production::PreparedDonorImportStage::NoticesRetained) {
+      CHECK(std::filesystem::remove(fixture.source.workspace / "project.json"));
+      CHECK(std::filesystem::create_directory(fixture.source.workspace / "project.json"));
+    }
+    return core::success();
+  }});
+  CHECK(collectDraft(fixture.controller)); const auto recovered = fixture.committed();
+  const auto original = *fixture.controller.preparedDonorReceipt(); CHECK(!original.durabilityConfirmed);
+  const auto bytes = production::encodeProductionProject(recovered);
+  CHECK(fixture.controller.beginProductionPointerReconciliation());
+  CHECK(!collectDraft(fixture.controller));
+  CHECK(std::filesystem::is_directory(fixture.source.workspace / "project.json"));
+  CHECK(!fixture.controller.reconciledProductionPointer());
+  CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == bytes);
+  CHECK(std::filesystem::remove(fixture.source.workspace / "project.json"));
+  CHECK(fixture.controller.beginProductionPointerReconciliation());
+  // The pointer can be durable before UI polling. Late stop and a valid newer
+  // editor model must not hide the result or overwrite that model.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (!fixture.source.repository.verify(recovered)) {
+    CHECK(std::chrono::steady_clock::now() < deadline);
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  const auto newer = test::support::makeManifest({test::support::makeUnit("pointer-editor", {"a"}, "editor.wav")});
+  CHECK(newer.validate()); fixture.controller.manifest() = newer;
+  fixture.controller.cancelProceduralCandidateImport(); CHECK(collectDraft(fixture.controller));
+  const auto& receipt = fixture.controller.reconciledProductionPointer(); CHECK(receipt);
+  CHECK(receipt->workspaceRoot == std::filesystem::absolute(fixture.source.workspace).lexically_normal());
+  CHECK(receipt->projectId == recovered.projectId); CHECK(receipt->generation == original.committedGeneration);
+  CHECK(receipt->projectSha256 == original.committedProjectSha256);
+  CHECK(fixture.controller.manifest() == newer);
+  CHECK(fixture.controller.sampleReviewStatus().find("CONTEXT CHANGED: REOPEN PRODUCER") != std::string::npos);
+  CHECK(!fixture.controller.preparedDonorReceipt()->durabilityConfirmed);
+  CHECK(fixture.controller.preparedDonorReceipt()->diagnostic == original.diagnostic);
+  CHECK(production::encodeProductionProject(*fixture.controller.productionProject()) == bytes);
+  CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == bytes);
+  CHECK(fixture.source.repository.verify(recovered));
+  CHECK(fixture.controller.beginProductionPointerReconciliation()); CHECK(collectDraft(fixture.controller));
+  CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == bytes);
+  std::cout << "[POINTER-RECONCILIATION] OBSTRUCTION_REFUSED / EXACT_DURABLE_REPAIR / LATE_CANCEL_EDITOR_PRESERVED\n";
+}
+
+TEST_CASE("Studio refuses to reconcile its older producer snapshot over newer durable work") {
+  DonorReceiptFixture fixture; Controller older;
+  CHECK(older.openProductionProject(fixture.source.workspace,fixture.source.project.inventorySha256,"producer"));
+  const auto before = production::encodeProductionProject(*older.productionProject());
+  fixture.begin(); CHECK(collectDraft(fixture.controller)); const auto recovered = fixture.committed();
+  CHECK(older.beginProductionPointerReconciliation()); CHECK(!collectDraft(older));
+  CHECK(older.sampleReviewStatus().find("newer or incomplete work") != std::string::npos);
+  CHECK(!older.reconciledProductionPointer());
+  CHECK(production::encodeProductionProject(*older.productionProject()) == before);
+  CHECK(fixture.source.repository.verify(recovered));
+  CHECK(production::encodeProductionProject(fixture.source.repository.recover().value()) == production::encodeProductionProject(recovered));
+}
+
 TEST_CASE("Studio English generated producer draft retains stress contract through creation save and reopen") {
   test::support::EnglishManifestDraftFixture fixture;
   Controller controller;
@@ -983,7 +1041,7 @@ TEST_CASE("Studio source quality capture cancellation preserves source history a
   fixture.controller.cancelProceduralCandidateImport(); CHECK(!collectDraft(fixture.controller));
   CHECK(!fixture.controller.sourceQualityInspection()); CHECK(!fixture.controller.sourceQualityReceipt()); fixture.sourceUnchanged();
   for (double width : {720.0,960.0,1440.0}) {
-    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==24U);
+    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==25U);
     for (std::size_t i=0U;i<controls.size();++i) for (std::size_t j=i+1U;j<controls.size();++j) {
       const auto& a=controls[i].bounds; const auto& b=controls[j].bounds;
       CHECK(a.right()<=b.x || b.right()<=a.x || a.bottom()<=b.y || b.bottom()<=a.y);

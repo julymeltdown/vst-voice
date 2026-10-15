@@ -188,12 +188,13 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
       available && signedBank != nullptr && installedBank == nullptr, "P INSTALL"});
   controls.push_back({"open-bank-in-song-editor", "Y NEW SONG", {32.0+2.0*quarter,154.0,quarter,24.0},
       available && installedBank != nullptr, "Y SONG"});
-  const auto half = std::max(1.0,(width-52.0)/2.0);
-  controls.push_back({"donor-capture","CAPTURE PREPARED DONOR",{24.0,182.0,half,24.0},
+  controls.push_back({"donor-capture","CAPTURE PREPARED DONOR",{24.0,182.0,third,24.0},
       available && project && project->language=="en" && project->schemaVersion>=4 && !controller.dirty(),"CAPTURE DONOR"});
   const auto& donor = controller.preparedDonorInspection();
-  controls.push_back({"donor-import","IMPORT UNAPPROVED TAKE",{28.0+half,182.0,half,24.0},
+  controls.push_back({"donor-import","IMPORT UNAPPROVED TAKE",{28.0+third,182.0,third,24.0},
       available && donor && controller.validateSampleReviewContext(donor->context) && !controller.dirty(),"IMPORT UNAPPROVED"});
+  controls.push_back({"reconcile-project-pointer","RECONCILE PROJECT POINTER",{32.0+2.0*third,182.0,third,24.0},
+      available && project != nullptr,"RECONCILE POINTER"});
   return controls;
 }
 
@@ -245,6 +246,12 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
     values.push_back("LAST DONOR IMPORT " + std::to_string(receipt->committedGeneration) + " / " + receipt->committedProjectSha256);
     values.push_back("UNAPPROVED / RECREATE EDITABLE DRAFT BEFORE UNIT REVIEW");
     if (!receipt->diagnostic.empty()) values.push_back(receipt->diagnostic);
+  }
+  if (const auto& receipt = controller.reconciledProductionPointer()) {
+    values.push_back("LAST POINTER RECONCILIATION / PROJECT " + receipt->projectId);
+    values.push_back("WORKSPACE " + receipt->workspaceRoot.generic_string());
+    values.push_back("GENERATION " + std::to_string(receipt->generation) + " / " + receipt->projectSha256);
+    values.push_back("POINTER DURABILITY CONFIRMED AT RECONCILIATION / NO NEW TAKE OR APPROVAL");
   }
   if (const auto& registration = controller.sourceRegistrationInspection()) {
     values.push_back("CAPTURED SOURCE LICENSE / PRODUCER " + registration->producerId);

@@ -35,3 +35,5 @@ The current canonical records remain **Alpha 0/20 recorded passes, External Beta
 This checkpoint changes documentation entry points only. It preserves source audio, frozen manifests, pending questions, the existing stash and all acceptance records; `.github` is untouched. No build or native test was required or run for this documentation correction.
 
 The exact source-assessment verdict and metadata are bound in the [repair report](SOURCE_ASSESSMENT_PUBLICATION_IDENTITY_2026-10-15.md) and this handoff's evidence index. The reviewer ran no builds, tests, native binaries, retained scripts or playback. This closure changes no source-admission or Beta gate.
+
+Studio and CLI now provide [exact producer pointer reconciliation](PRODUCER_POINTER_RECONCILIATION_2026-10-15.md) for recovered durable generations, including after reopening Studio. The locally verified unit awaits exact independent review; it creates no take, source permission or approval and leaves the source-admission decisions above unresolved.

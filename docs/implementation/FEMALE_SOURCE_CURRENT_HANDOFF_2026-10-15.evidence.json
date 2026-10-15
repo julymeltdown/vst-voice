@@ -124,5 +124,16 @@
       "sha256": "62e02e7dbf6ff34439b5f1504d8f6f0e07efa7243ba6ef56f01cd91858a334a6"
     },
     "scope": "Exact committed source and retained evidence; read-only; no reviewer build, native/test/script execution or playback."
+  },
+  "producerPointerReconciliation": {
+    "report": "docs/implementation/PRODUCER_POINTER_RECONCILIATION_2026-10-15.md",
+    "status": "LOCAL_VERIFICATION_PASS_REVIEW_PENDING",
+    "sourceBase": "c7e451970bb15f4af3e77f8a6829e8836f968296",
+    "manifest": {
+      "path": "out/evidence/producer-pointer-reconciliation-2026-10-15/manifest.json",
+      "sizeBytes": 12828,
+      "sha256": "1834e33f72104d15d1a972561fb08a5ead585aafa5f364e1fd13c6207a77a04d"
+    },
+    "createsTakeOrApproval": false
   }
 }

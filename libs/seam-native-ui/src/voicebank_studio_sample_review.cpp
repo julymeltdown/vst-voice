@@ -436,6 +436,15 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
     if (!result) { sampleReviewStatus_ = result.error().message; status_ = statusBeforeImport_; return core::Result<void>{result.error()}; }
     auto& value = result.value();
     const auto current = validateSampleReviewContext(value.context);
+    if (value.reconciledProductionPointer) {
+      // A completed durable write remains a result even after late cancellation
+      // or an editor change. Do not adopt a project or rewrite earlier receipts.
+      reconciledProductionPointer_ = std::move(value.reconciledProductionPointer);
+      sampleReviewStatus_ = "PROJECT POINTER RECONCILED / NO NEW TAKE OR APPROVAL";
+      if (!current) sampleReviewStatus_ += " / CONTEXT CHANGED: REOPEN PRODUCER";
+      status_ = sampleReviewStatus_;
+      return core::success();
+    }
     if (value.preparedDonorReceipt) {
       preparedDonorReceipt_ = std::move(value.preparedDonorReceipt);
       if (current) { productionProject_ = std::move(value.committedProject); refreshCandidateMarkerPreview(); }
