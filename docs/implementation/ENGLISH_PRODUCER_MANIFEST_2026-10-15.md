@@ -85,3 +85,8 @@ attribution review, listening, classical/neural and multilingual resources, AE1/
 original singer, R9, acoustic tolerances, full candidate checks and physical/DAW
 evidence remain open. Exact independent review of this unit is pending.
 Usable Alpha remains 0/20 recorded passes, U45 held, External Beta BLOCKED.
+
+
+## Later installed lifecycle evidence
+
+The [installed lifecycle regression](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.md) exercises both declared English stress policies through actual generated workspace, review/publication, typed test-signed installation and fresh dictionary/continuation Final export. Both policies pass in the one registered native case; this later unit has separate pending review and does not change source/singer or Beta acceptance. The fresh SLT attribution packet was independently approved in [the exact attribution review](FEMALE_SLT_ATTRIBUTION_REVIEW_2026-10-15.md); the old packet remains unsuitable for import/provenance.

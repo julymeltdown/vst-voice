@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-installed-candidate-lifecycle",
+  "sourceBaseCommit": "ebae2f88dce0c6c4347f397e76651cc9d88e3c48",
+  "manifest": {
+    "path": "out/evidence/english-installed-lifecycle-2026-10-15/manifest.json",
+    "sizeBytes": 105977,
+    "sha256": "5a59f3e53b3ee21bbe1043d2aadd1625a48c42642a7db3b840777df86f390d02"
+  },
+  "retainedArtifacts": 468,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS",
+    "log": {
+      "path": "out/evidence/english-installed-lifecycle-2026-10-15/verification.log",
+      "sizeBytes": 203,
+      "sha256": "083106bda0034538ae618ee64c7d63cd8d41beae8cc2badf17d43940f32c47a9"
+    },
+    "scope": "Read-only local hashes, selected Git source bindings, receipts and independent WAV decoding; no native replay or independent package-signature revalidation"
+  },
+  "execution": {
+    "fullDependentReleaseRebuild": "PASS",
+    "finalBuildSeconds": 3.198105458985083,
+    "registeredNativeCases": 1,
+    "policiesPerRun": 2,
+    "finalPassingCtestExecutions": 2,
+    "finalCaptureSeconds": 1.1735654170042835,
+    "finalDefaultSeconds": 0.6921372920041904,
+    "retainedFinalCliReceipts": 14,
+    "changedSourceFilesBound": 2,
+    "selectedUnchangedProductionSourcesBound": 7,
+    "retainedFinalExecutables": 2,
+    "priorPassingTestExecutableRetained": false,
+    "ordinaryTemporaryOutputsRetained": false,
+    "initialFailures": "Two test-only compile errors; exact failed logs/source versions retained",
+    "productionLibraryCodeChanged": false,
+    "hermeticOrAuthenticatedBuildProof": false,
+    "fullSuiteOrPhysicalAcceptance": false
+  },
+  "lifecycle": {
+    "stressPolicies": [
+      "FOLD_LEXICAL_STRESS",
+      "DISTINGUISH_LEXICAL_STRESS"
+    ],
+    "reducedProfileUnitsPerPolicy": 2,
+    "sourceSampleRate": 16000,
+    "sourceActorsAndQuality": "MOCK_FIXTURE_ONLY",
+    "realDictionaryWithoutPhoneticHints": true,
+    "continuationLyrics": [
+      "I",
+      "-"
+    ],
+    "trustedSignedTestPackageInstall": true,
+    "productionSigningAcceptance": false,
+    "originalInputPathsRenamed": true,
+    "resolverRoots": "Installed-only; editable/renamed files still on disk; no syscall sandbox claim",
+    "policyTamperedCandidateRefused": true,
+    "finalDiagnostics": 0,
+    "finalFallbackCount": 0,
+    "exports": {
+      "count": 4,
+      "byteIdentical": true,
+      "format": "Float32",
+      "sampleRate": 48000,
+      "channels": 2,
+      "frames": 48000,
+      "interleavedSamples": 96000,
+      "durationSeconds": 1,
+      "sizeBytesEach": 384044,
+      "sha256": "5b0e4fef0a1adc8f8d9031f931c152155fd27ce813705822fc478590c012b8d7"
+    },
+    "packageDeterminismProven": false
+  },
+  "independentTechnicalReview": "PENDING",
+  "newOriginalFemaleWavs": 0,
+  "originalFemaleWavCensus": 1429,
+  "sourceApproval": false,
+  "qualifiedProductionBank": false,
+  "alphaRecordedPasses": 0,
+  "alphaRequiredChecks": 20,
+  "u45": "HELD",
+  "beta": "BLOCKED",
+  "releaseEligible": false
+}
