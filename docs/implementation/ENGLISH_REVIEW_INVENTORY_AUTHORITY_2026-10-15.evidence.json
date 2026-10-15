@@ -196,5 +196,14 @@
       "sha256": "661e5fa9388b118f8ab66373c527a732d26f33ac0664350fd7f4a261c3d257e7"
     }
   },
-  "refinedCommitCaseBaseline": "Not executed against unchanged production; baseline outcome inferred from source. Earlier unregistered-identity reproduction is distinct."
+  "refinedCommitCaseBaseline": "Not executed against unchanged production; baseline outcome inferred from source. Earlier unregistered-identity reproduction is distinct.",
+  "legacyFollowUp": {
+    "commit": "ce9113d770220554549486845ba7cbb1aecb258c",
+    "status": "INDEPENDENTLY_CLOSED",
+    "reviewManifest": {
+      "path": "out/evidence/legacy-english-authority-independent-2026-10-15/manifest.json",
+      "sizeBytes": 1437,
+      "sha256": "736aa1c43c0654f3dda0232ae5b29fa0566f40925ba5f12db5a6d3529a10e196"
+    }
+  }
 }

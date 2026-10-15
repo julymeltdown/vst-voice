@@ -116,7 +116,7 @@
       "sha256": "645aeedafa8e4ee7f370eef08e2258b615093da22940b29247596985d4ac7701"
     }
   },
-  "independentClosure": "PENDING_FOR_THIS_UNIT",
+  "independentClosure": "APPROVE_EXACT_CE9113D7_NO_FINDINGS_LEGACY_P3_CLOSED",
   "full239AfterThisUnit": "NOT_RUN; PRIOR_FULL_PASS_AT_50F5B1D9",
   "sourceOrHumanApproval": false,
   "Alpha": [
@@ -125,5 +125,36 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "review": {
+    "schemaVersion": 1,
+    "reviewedCommit": "ce9113d770220554549486845ba7cbb1aecb258c",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13d40-c7a0-7812-9768-e8f4188a2914",
+    "completedAtUnixSeconds": 1792029795,
+    "verdict": "APPROVE",
+    "findings": [],
+    "priorLegacyP3Status": "CLOSED",
+    "execution": "Read-only Git/source/artifact/hash and own offline checks; no build/test/CLI/native or retained-script execution",
+    "retainedFinal": {
+      "path": "out/evidence/legacy-english-authority-independent-2026-10-15/review-ce9113d7.md",
+      "sizeBytes": 12859,
+      "sha256": "79bb7bbc630a8f95b2639dce0adea6055df0020fd2bb179bcebf498cd9873927"
+    },
+    "historicalManifest": {
+      "path": "out/evidence/legacy-english-review-authority-2026-10-15/manifest.json",
+      "sizeBytes": 7221,
+      "sha256": "f8a89470315d798a740cd36ec531d13c6576ba5098adcd7a06da69706dc502d8"
+    },
+    "leadRehashedArtifacts": 33,
+    "leadRehashedPins": 7,
+    "leadCheckedSixObservationHashesAndExactBaselineFinalLines": true,
+    "laterCommitsApproved": false,
+    "sourceOrHumanOrBetaApproval": false,
+    "manifest": {
+      "path": "out/evidence/legacy-english-authority-independent-2026-10-15/manifest.json",
+      "sizeBytes": 1437,
+      "sha256": "736aa1c43c0654f3dda0232ae5b29fa0566f40925ba5f12db5a6d3529a10e196"
+    }
+  }
 }

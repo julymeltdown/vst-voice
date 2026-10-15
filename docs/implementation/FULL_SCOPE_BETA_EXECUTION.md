@@ -9340,3 +9340,6 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 
 2026-10-15 — New phone-donor proposal outputs bind exact retained UTF-8 attribution bytes with retainedAttributionSha256. Two missing-field baseline errors reproduced;18 direct Python methods PASS; source/license/audio controls preserved. See PHONE_DONOR_ATTRIBUTION_DIGEST_2026-10-15.md/index. Existing packets untouched; downstream import enforcement and independent review pending. Alpha0/20; U45HELD; BetaBLOCKED.
+
+
+2026-10-15 — Independent APPROVE exact ce9113d7, no findings; legacy-English P3 from4bafec5e CLOSED. Lead rehashed33 artifacts/7pins and matched6 binary observation hashes plus exact baseline/final lines. Frozen verdict bound in LEGACY_ENGLISH_REVIEW_AUTHORITY_2026-10-15.evidence.json. Focused102 cases remain execution evidence; full239 belongs to 50f5b1d9. Alpha0/20; U45HELD; BetaBLOCKED.
