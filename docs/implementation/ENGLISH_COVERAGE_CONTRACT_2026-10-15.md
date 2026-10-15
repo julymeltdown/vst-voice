@@ -17,7 +17,7 @@ Review turn `01a13ccb-05ef-7001-9dc5-df496d79b047` completed at Unix second
 1792022404. Its execution was read-only Git/source/hash/data checking: no build,
 native binary, CLI, test or retained verifier/script execution. Its verdict
 applies to d5ecc1f9, not producer propagation, the later lifecycle regression or
-this follow-up. The exact producer-propagation review is running separately.
+this follow-up. The exact producer-propagation review separately approved 210688b0, with one P3 follow-up and no required changes; that verdict does not close this coverage fix.
 
 ## Production change
 

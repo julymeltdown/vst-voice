@@ -21,11 +21,14 @@ The validated profile's three contract fields populate
 `Manifest::languageContract`. The schema-4 codec and matching path introduced in
 `d5ecc1f9` preserve them. The inventory is checked again before publication.
 Missing, linked, tampered or substituted authority is refused before the new
-draft commits. These checks do not assert atomicity against uncooperative file
-writes after the final check; the manifest itself is a frozen, project-bound
-policy snapshot. Legacy projects without policy authority retain exact matching.
-Manual style-owned English layouts must be recreated through the generated
-workspace path; this API does not invent a stress policy for them.
+draft commits. The producer-bound inventory digest includes the language contract:
+a replacement inventory must retain that policy or fail its digest/identity
+check. File writes are not atomic, but neither disclosed race window can change
+the admitted policy under that binding. Legacy projects without policy authority
+retain exact matching. Other style-owned English layouts, including the documented
+prepare-draft/init-production route at an arbitrary workspace path, are currently
+refused. They need the bound inventory.json beside a producer/ directory, as
+new-producer-workspace creates; this API does not invent a policy or move data.
 
 CLI `create-sample-draft` and Studio's asynchronous draft worker already call
 this shared function, so both use the same authority checks. No new CLI flag,
@@ -90,3 +93,12 @@ Usable Alpha remains 0/20 recorded passes, U45 held, External Beta BLOCKED.
 ## Later installed lifecycle evidence
 
 The [installed lifecycle regression](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.md) exercises both declared English stress policies through actual generated workspace, review/publication, typed test-signed installation and fresh dictionary/continuation Final export. Both policies pass in the one registered native case; this later unit has separate pending review and does not change source/singer or Beta acceptance. The fresh SLT attribution packet was independently approved in [the exact attribution review](FEMALE_SLT_ATTRIBUTION_REVIEW_2026-10-15.md); the old packet remains unsuitable for import/provenance.
+
+
+## Exact independent review checkpoint — 2026-10-15
+
+The reviewer APPROVED exact 210688b0a254c6069448ad5543aef55315391764 for engineering scope, with one P3 follow-up and no required changes. Turn 01a13cdd-5462-7192-986e-f8b1ea5007de completed at Unix second 1792023444. The retained final is out/evidence/release-suite-after-english-2026-10-15/review-210688b0.md: 17,571 bytes, SHA-256 d3ecd158968576faa8bf497480d5322a1886259551e3a22f717d0ba6986aca07, indexed in the frozen 240-lane baseline root. Review execution was read-only Git/source/artifact/hash analysis; no builds, native/CLI/tests or retained verifier/script execution. The lead rechecked all 48 original artifacts/seven pins and 27 baseline artifacts/seven pins. The review confirmed policy propagation, stronger digest binding, legacy exact behavior, existing 16 kHz handling and the 142-case receipt arithmetic.
+
+The P3 remains open: the refusal and init-production/create-sample-draft help need to explain the bound inventory.json + producer/ layout, and a direct layout-guard regression should cover the documented arbitrary-workspace route. The dossier wording above is corrected; product help/behavior is not changed by this review-record checkpoint. The reviewer withdrew the broad claim that DISTINGUISH cannot use stressed labels: it can; a profile containing only bare vowels is the narrower hazard.
+
+This verdict approves neither the later lifecycle/coverage/UI repairs nor source/rights/quality/human acceptance. Lifecycle review attempts ended with HTTP 429 retry-limit errors, without a verdict; its review remains PENDING. Alpha 0/20, U45 HELD and Beta BLOCKED.

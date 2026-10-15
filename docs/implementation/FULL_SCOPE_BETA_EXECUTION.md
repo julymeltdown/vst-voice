@@ -9288,3 +9288,8 @@ The current clean 76896845 full dependent Release build passed; the bound serial
 ## 2026-10-15 — Capability citation refresh
 
 [Capability citation dossier](CAPABILITY_CITATION_REFRESH_2026-10-15.md): reproduced the three stale StyleBlend carrier subcase failures among five focused Python checks. Updated exact Unsupported return and message lines, including the six related neural expression return citations; comments describe actual guards rather than universal limitations. All five checks PASS and all 11 return sites checked exactly. Native sources/tests unchanged; the report remains REFUSALS_ONLY without positive coverage. Exact independent review and full dependent Release suite after all three repairs remain pending. Duplicate Python discovery remains verification-cost debt. No source admission or gate advancement: Alpha 0/20, U45 HELD, Beta BLOCKED; .github untouched.
+
+
+## 2026-10-15 — Exact English producer review recorded
+
+Independent review APPROVED exact 210688b0 for engineering scope, one P3 follow-up/no required changes; retained final and artifact hashes checked in [the producer dossier](ENGLISH_PRODUCER_MANIFEST_2026-10-15.md). Corrected the documented arbitrary init-production layout description and clarified contract inclusion in the bound inventory digest. Help/layout-guard regression remains open. Lifecycle review attempts failed with HTTP 429 without a verdict; lifecycle/coverage/UI changes remain independently unapproved. Source, human and release gates unchanged: Alpha 0/20, U45 HELD, Beta BLOCKED; .github untouched.
