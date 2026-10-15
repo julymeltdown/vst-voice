@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "sourceBase": "0d91f7490e663720a79ad953ee4cf1567ae36343",
+  "result": "FOCUSED_PASS",
+  "productionChange": false,
+  "independentReview": "PENDING",
+  "fullSuiteAfterRepair": "NOT_RUN",
+  "nativeCasesPassed": 46,
+  "rasterPairByteIdentical": true,
+  "observedGeometry": {
+    "laneY": [
+      740,
+      836
+    ],
+    "errorY": [
+      738,
+      794
+    ],
+    "diagnosticsY": [
+      802,
+      850
+    ],
+    "sampledGapY": [
+      796,
+      800
+    ],
+    "maximumPixelChannelChanges": [
+      139,
+      4,
+      4
+    ]
+  },
+  "manifest": {
+    "path": "out/evidence/toast-playhead-oracle-2026-10-15/manifest.json",
+    "sizeBytes": 8633,
+    "sha256": "9ec6bb9261da56cd06aed0fef3f20efa294e7e055b2dfdb967610d06d32d6739",
+    "artifactCount": 37,
+    "pinCount": 9
+  },
+  "acceptance": {
+    "usableAlphaPassed": 0,
+    "usableAlphaRequired": 20,
+    "U45": "HELD",
+    "externalBeta": "BLOCKED",
+    "releaseEligible": false
+  }
+}

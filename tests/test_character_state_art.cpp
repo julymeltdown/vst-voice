@@ -720,11 +720,29 @@ TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, ne
   CHECK(x < diagnostics->right());
   state.playheadPixel = x - f.shell.layout().grid.x;
   const auto with = paintScene(f, state);
-  // The playhead is drawn: the lane's plot column above the toasts changed...
+  // Both toasts actually cover the lane's playhead. Its visible gap between them is the
+  // witness that the line was drawn; a wrapped error can start above the plot, leaving no
+  // plot segment above it to compare.
   const auto plot = f.shell.layout().laneTimePlot;
-  CHECK(plot.y < error->y - 4.0);
-  const seam::ui::Rect above{x - 3.0, plot.y, 6.0, error->y - 4.0 - plot.y};
-  CHECK(largestChange(without, with, above) > 40);
+  CHECK(x > plot.x && x < plot.right());
+  CHECK(error->y < plot.bottom() && error->bottom() > plot.y);
+  CHECK(diagnostics->y < plot.bottom() && diagnostics->bottom() > plot.y);
+  const auto gapTop = std::max(plot.y, error->bottom() + 2.0);
+  const auto gapBottom = std::min(plot.bottom(), diagnostics->y - 2.0);
+  CHECK(gapBottom > gapTop);
+  const seam::ui::Rect gap{x - 3.0, gapTop, 6.0, gapBottom - gapTop};
+  writePreview(without, "toast-playhead-without");
+  writePreview(with, "toast-playhead-with");
+  if (std::getenv("SEAM_CHARACTER_PREVIEW_DIR") != nullptr) {
+    std::cout << "toast-playhead geometry: plot=" << plot.y << ',' << plot.bottom()
+              << " error=" << error->y << ',' << error->bottom()
+              << " diagnostics=" << diagnostics->y << ',' << diagnostics->bottom()
+              << " gap=" << gap.y << ',' << gap.bottom()
+              << " changes=" << largestChange(without, with, gap) << ','
+              << largestChange(without, with, *error) << ','
+              << largestChange(without, with, *diagnostics) << '\n';
+  }
+  CHECK(largestChange(without, with, gap) > 40);
   // ...and neither toast is drawn over: at most the few levels its 97% card lets through from
   // underneath, never the line itself.
   CHECK(largestChange(without, with, *diagnostics) <= 8);
