@@ -9362,3 +9362,8 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 ### 2026-10-15 — Packet-integrity approval and native execution correction
 
 Exact21c04d3a independently APPROVED for engineering with one evidence P3/no required code change; reviewer independently reconstructed all312 donors from originals/automatic labels. [Correction and controlled repeats](SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.md):historical37/38 Python-method suites did invoke native integration; old no-native wording is superseded, old binary identities UNKNOWN. Separate exact21c37-method/1a38-method repeats PASS with an explicitly retained native executable/hash/embedded1a0cfceb literal.24artifacts/5pins; P3 correction addressed, closure review pending. Other optional notes/durable admissionOPEN; encoding/new acquisition independently unreviewed. No source/human/Beta approval; Alpha0/20,U45HELD,BetaBLOCKED,full goalACTIVE.
+
+
+### 2026-10-15 — Installed export with backing media
+
+[Backing-media export and replay](INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md) replaces the blanket installed sample/recipe refusal with existing verified staging/rendering and closed v2 track-to-WAV bindings. Unchanged production refuses both real family cases; final full build, two focused CTest lanes/68 native cases and10 mocked Python policy methods PASS. Separate synthetic sample export/replay and changed-input/coherent-geometry-forgery refusals retained; original87-artifact/seven-pin fixture unchanged.124artifacts/five pins; independent review pending. No internet audio/source/human acceptance, full-suite or release claim. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.

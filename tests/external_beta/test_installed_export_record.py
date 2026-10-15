@@ -63,6 +63,10 @@ class Fixture:
         output = Path(command[12]); output.mkdir()
         self.outputs.append(output)
         (output / "master.wav").write_bytes(b"mocked native audio")
+        for artifact in self.record["artifacts"]:
+            if artifact["path"] != "master.wav":
+                target = output / artifact["path"]; target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((self.export / artifact["path"]).read_bytes())
         receipt = copy.deepcopy(self.receipt)
         receipt.update(transactionId="b" * 24, executionDateUnixMs=2)
         (output / "receipt.json").write_text(json.dumps(receipt))
@@ -72,6 +76,66 @@ class Fixture:
 
 
 class InstalledExportRecordTests(unittest.TestCase):
+    def backing_fixture(self, root, recipe=False):
+        f = Fixture(root, recipe)
+        data = b"mocked backing media"
+        digest = hashlib.sha256(data).hexdigest(); name = "media/" + digest + ".wav"
+        path = f.export / name; path.parent.mkdir(); path.write_bytes(data)
+        f.record.update(schemaVersion=2, backingMediaCapture="PROJECT_HASH_MATCHED_STAGED_WAV_BYTES", recordType="seam.u45.installed-" +
+            f.record["installed"]["payloadFamily"] + "-export.v2", backingMedia=[dict(
+            trackId=f"{index:016x}", artifactPath=name, mediaSha256=digest,
+            sourceFrames=3, sourceSampleRate=44100, sourceChannels=1) for index in (1, 2)])
+        f.record["artifacts"].append(dict(path=name, sha256=digest, frames=3, channels=1))
+        f.receipt["files"] = copy.deepcopy(f.record["artifacts"])
+        f.receipt_path.write_text(json.dumps(f.receipt)); f.record["exportReceiptSha256"] = sha(f.receipt_path)
+        f.update(); return f
+
+    def test_backing_v2_binds_duplicate_tracks_to_one_owned_artifact_and_replays(self):
+        for recipe in (False, True):
+            with tempfile.TemporaryDirectory() as tmp:
+                f = self.backing_fixture(Path(tmp), recipe)
+                audit.validate_record(f.record)
+                before = {str(p.relative_to(f.export)): sha(p) for p in f.export.rglob("*") if p.is_file()}
+                with mock.patch.object(audit.installed, "_run", side_effect=f.native):
+                    result = audit.audit_installed_export_record(**f.args)
+                self.assertTrue(result["passed"], result)
+                self.assertFalse(result["authorizesRelease"])
+                self.assertEqual(before, {str(p.relative_to(f.export)): sha(p) for p in f.export.rglob("*") if p.is_file()})
+
+    def test_backing_v2_refuses_missing_geometry_unbound_artifacts_and_version_confusion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.backing_fixture(Path(tmp))
+            audit.validate_record(f.record)
+            for key, value in (("trackId", "0" * 16), ("trackId", "not-an-id"),
+                ("artifactPath", "master.wav"), ("mediaSha256", "f" * 64),
+                ("sourceFrames", 4), ("sourceFrames", True), ("sourceSampleRate", 0),
+                ("sourceSampleRate", True), ("sourceChannels", 2)):
+                record = copy.deepcopy(f.record); record["backingMedia"][0][key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError): audit.validate_record(record)
+            for change in ("missing", "empty", "duplicate-track", "unknown-field", "v1", "wrong-type", "unreferenced-media", "capture-claim"):
+                record = copy.deepcopy(f.record)
+                if change == "missing": record.pop("backingMedia")
+                elif change == "empty": record["backingMedia"] = []
+                elif change == "duplicate-track": record["backingMedia"][1] = record["backingMedia"][0]
+                elif change == "unknown-field": record["backingMedia"][0]["accepted"] = True
+                elif change == "v1": record["schemaVersion"] = 1
+                elif change == "wrong-type": record["recordType"] = audit.TYPES["sample"]
+                elif change == "capture-claim": record["backingMediaCapture"] = "SIGNED_SOURCE_APPROVED"
+                else: record["artifacts"].append(dict(path="media/" + "a" * 64 + ".wav", sha256="a" * 64, frames=3, channels=1))
+                with self.subTest(change=change), self.assertRaises(ValueError): audit.validate_record(record)
+
+    def test_backing_v2_replay_refuses_consistent_declared_rate_forgery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = self.backing_fixture(Path(tmp)); original = copy.deepcopy(f.record["backingMedia"])
+            for row in f.record["backingMedia"]: row["sourceSampleRate"] = 48000
+            f.update()
+            def native(command, timeout):
+                result = f.native(command, timeout); result["backingMedia"] = original; return result
+            with mock.patch.object(audit.installed, "_run", side_effect=native):
+                result = audit.audit_installed_export_record(**f.args)
+            self.assertFalse(result["passed"])
+            self.assertIn("differs from fresh native rendering", result["errors"][0])
+
     def test_closed_record_and_non_authorizing_family_bindings(self):
         for recipe in (False, True):
             with tempfile.TemporaryDirectory() as tmp:

@@ -21,6 +21,7 @@ from .full_product_report import _canonical, _parse_json
 
 TYPES = {"sample": "seam.u45.installed-sample-export.v1",
          "recipe": "seam.u45.installed-recipe-export.v1"}
+BACKING_TYPES = {family: value.removesuffix("v1") + "v2" for family, value in TYPES.items()}
 CAPTURE = {"sample": "SIGNED_ENTRIES_MATCHED_FROZEN_SAMPLE_ASSETS",
            "recipe": "SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE"}
 FIXED = {"schemaVersion": 1, "result": "ExportCommittedAndObserved",
@@ -72,14 +73,22 @@ def _files(value):
 
 
 def validate_record(record):
-    if not isinstance(record, dict) or set(record) != FIELDS:
+    if not isinstance(record, dict):
+        raise ValueError("operation record differs from its closed engineering schema")
+    version = record.get("schemaVersion")
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("unsupported operation schemaVersion")
+    fields = FIELDS if version == 1 else FIELDS | {"backingMedia", "backingMediaCapture"}
+    if set(record) != fields:
         raise ValueError("operation record differs from its closed engineering schema")
     for key, expected in FIXED.items():
+        if key == "schemaVersion": expected = version
         if type(record[key]) is not type(expected) or record[key] != expected:
             raise ValueError(f"invalid operation {key}")
     validate_installed_binding(record["installed"], record["project"])
     family = record["installed"]["payloadFamily"]
-    if record["recordType"] != TYPES[family] or record["resourceCapture"] != CAPTURE[family]:
+    types = TYPES if version == 1 else BACKING_TYPES
+    if record["recordType"] != types[family] or record["resourceCapture"] != CAPTURE[family]:
         raise ValueError("operation type/capture differs from the installed family")
     for key in ("exportReceiptSha256", "masterSha256"):
         _digest(record[key], key)
@@ -103,6 +112,41 @@ def validate_record(record):
     if languages != sorted(set(languages)) or not set(record["project"]["languages"]).issubset(languages):
         raise ValueError("operation languages must include the selected note-linked languages")
     _files(record["artifacts"])
+    media = {item["path"]: item for item in record["artifacts"] if item["path"].startswith("media/")}
+    if version == 1 and media:
+        raise ValueError("backing media requires operation schemaVersion 2")
+    if version == 2:
+        if record["backingMediaCapture"] != "PROJECT_HASH_MATCHED_STAGED_WAV_BYTES":
+            raise ValueError("invalid operation backingMediaCapture")
+        bindings = record["backingMedia"]
+        if not isinstance(bindings, list) or not 1 <= len(bindings) <= 1024:
+            raise ValueError("operation requires bounded nonempty backing media bindings")
+        tracks, references, geometry = set(), set(), {}
+        for item in bindings:
+            if not isinstance(item, dict) or set(item) != {"trackId", "artifactPath", "mediaSha256",
+                    "sourceFrames", "sourceSampleRate", "sourceChannels"}:
+                raise ValueError("backing media binding differs from its closed shape")
+            track = item["trackId"]
+            if type(track) is not str or re.fullmatch(r"[0-9a-f]{16}", track) is None or int(track, 16) == 0 or track in tracks:
+                raise ValueError("backing media requires distinct valid track identities")
+            tracks.add(track); _digest(item["mediaSha256"], "backing media digest")
+            name = item["artifactPath"]
+            if name != "media/" + item["mediaSha256"] + ".wav" or name not in media:
+                raise ValueError("backing media must bind an owned canonical WAV artifact")
+            for key, minimum, maximum in (("sourceFrames", 1, (1 << 63) - 1),
+                    ("sourceSampleRate", 8000, 384000), ("sourceChannels", 1, 8)):
+                if type(item[key]) is not int or not minimum <= item[key] <= maximum:
+                    raise ValueError(f"invalid backing media {key}")
+            artifact = media[name]
+            if (artifact["sha256"], artifact["frames"], artifact["channels"]) != (
+                    item["mediaSha256"], item["sourceFrames"], item["sourceChannels"]):
+                raise ValueError("backing media geometry differs from its owned artifact")
+            facts = (item["sourceFrames"], item["sourceSampleRate"], item["sourceChannels"])
+            if name in geometry and geometry[name] != facts:
+                raise ValueError("shared backing media has inconsistent source geometry")
+            geometry[name] = facts; references.add(name)
+        if references != set(media):
+            raise ValueError("operation contains unbound backing media artifacts")
     master = [x for x in record["artifacts"] if x["path"] == "master.wav"]
     if len(master) != 1 or master[0]["sha256"] != record["masterSha256"] or master[0]["frames"] == 0:
         raise ValueError("operation master must bind the reported master artifact")

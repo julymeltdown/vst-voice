@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "unit": "installed-backing-media-export-and-replay",
+  "sourceBase": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+  "manifest": {
+    "path": "out/evidence/installed-backing-media-export-2026-10-15/manifest.json",
+    "sizeBytes": 23331,
+    "sha256": "da48f6cc1c05355e5a1bad83e16b936a69ae6df3fc3444c4e5ef48abc4e371bd"
+  },
+  "retainedArtifacts": 124,
+  "preservedBindings": 5,
+  "baselineNative": {
+    "passed": 28,
+    "failed": 2,
+    "bothExactBackingRefusals": true
+  },
+  "baselinePython": {
+    "passed": 7,
+    "failures": 1,
+    "errors": 2,
+    "methods": 10
+  },
+  "finalBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 2.2973372919950634,
+    "head": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+    "sourcePatchSha256": "6364e1aee550ffd78b0332284b19b271d89748a93ac01dffac70da834437bc06",
+    "stableTrackedDiff": true
+  },
+  "finalFocusedCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_sample_review_cli_tests|seam_export_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 21.855014500004472,
+    "head": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+    "sourcePatchSha256": "6364e1aee550ffd78b0332284b19b271d89748a93ac01dffac70da834437bc06",
+    "stableTrackedDiff": true
+  },
+  "passingNativeCases": {
+    "seam_export_tests": 38,
+    "seam_sample_review_cli_tests": 30
+  },
+  "finalPython": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.external_beta.test_installed_export_record",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.122231457993621,
+    "head": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+    "sourcePatchSha256": "6364e1aee550ffd78b0332284b19b271d89748a93ac01dffac70da834437bc06",
+    "stableTrackedDiff": true
+  },
+  "passingMockedPythonMethods": 10,
+  "actualSyntheticTrial": {
+    "historicalArtifactCount": 87,
+    "historicalPinCount": 7,
+    "historicalFixtureUnchanged": true,
+    "retainedOutputUnchanged": true,
+    "fixtureClass": "SYNTHETIC_ENGINEERING_ONLY",
+    "humanAcceptance": "NOT_RUN",
+    "sourceApproval": false,
+    "authorizesRelease": false,
+    "nativeExport": true,
+    "nativeReplay": true,
+    "changedInputExportRefused": true,
+    "changedInputReplayRefused": true,
+    "consistentGeometryForgeryRefused": true
+  },
+  "nativeExecutable": {
+    "path": "out/evidence/installed-backing-media-export-2026-10-15/final/seam_voicebank_cli",
+    "sizeBytes": 9842512,
+    "sha256": "19aba7fe6f72fa6ffd34e4e007ce834f03f9f60385ec1597b91186f71239b3a8"
+  },
+  "nativeEmbeddedSourceCommit": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+  "executedImplementation": "BASE_PLUS_RETAINED_UNIT_PATCH",
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/installed-backing-media-export-2026-10-15/verification.log",
+      "sizeBytes": 378,
+      "sha256": "ec4c8c6fef2890dfc917f9ccb08296127684abb5f81fa984a9a9c9a3d55a049c"
+    }
+  },
+  "independentReview": "PENDING",
+  "fullSuite": "NOT_RUN",
+  "sanitizers": "NOT_RUN",
+  "internetAudioImported": false,
+  "sourceOrHumanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

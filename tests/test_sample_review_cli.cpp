@@ -15,6 +15,7 @@
 #include "seam/rendering/render_snapshot.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/render_scheduler.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
@@ -1052,6 +1053,88 @@ void checkProceduralContinuity(const std::vector<std::string>& bindingArguments,
   }
   CHECK(treeDigest(installed) == before);
 }
+void checkInstalledBackingMedia(const domain::Project& original, domain::TrackId firstBackingId,
+    const std::vector<std::string>& originalArguments, const formats::JsonValue& originalRecord,
+    const std::filesystem::path& root) {
+  const auto directory = root / "backing-operation-check";
+  CHECK(std::filesystem::create_directory(directory));
+  const auto path = std::filesystem::path{originalArguments[1]};
+  const auto originalProjectBytes = core::readFileBytesLimited(path, 16ULL << 20U); CHECK(originalProjectBytes);
+  const auto media = directory / "backing.wav", alias = directory / "same-backing.wav";
+  CHECK(voicebank::writeMonoPcm16Wav(media, 48000U, test::support::sineWave(48000U, 220.0, 0.5, 0.1F)));
+  const auto bytes = core::readFileBytesLimited(media, 1ULL << 20U); CHECK(bytes);
+  CHECK(core::durableAtomicWriteNew(alias, bytes.value()));
+  const auto source = rendering::StreamingPcmSource::open(media, 4096U); CHECK(source);
+  const auto& info = source.value()->info();
+  auto project = original;
+  project.audioTracks().push_back(domain::AudioTrack{.id = firstBackingId, .name = "Audible backing",
+      .mediaPath = media.lexically_relative(path.parent_path()).generic_string(), .mediaHash = info.contentHash,
+      .sourceSampleRate = info.sampleRate, .sourceChannels = info.channels, .sourceFrameCount = info.frameCount,
+      .trimStartFrame = 100U, .trimEndFrame = 20000U, .startTick = time::Tick{0}, .gainDb = -3.0F, .pan = 0.25F,
+      .outputRoute = {.bus = domain::BusId{1U}, .matrix = domain::RoutingMatrix::monoToStereo()}});
+  auto duplicate = project.audioTracks().back();
+  duplicate.id = domain::TrackId{firstBackingId.value() + 1U}; duplicate.name = "Muted alias";
+  duplicate.mediaPath = alias.string(); duplicate.muted = true;
+  project.audioTracks().push_back(duplicate);
+  CHECK(formats::ProjectJsonCodec{}.save(project, path));
+  auto arguments = originalArguments; arguments[2] = core::sha256File(path).value();
+  const auto output = directory / "mixed"; arguments.back() = output.string();
+  const auto completed = authoring::runBoundedHelperProcessObserved(
+      {.executable = SEAM_TEST_VOICEBANK_CLI, .arguments = arguments});
+  CHECK(completed);
+  const auto* exited = std::get_if<authoring::HelperExited>(&completed.value().termination);
+  if (!exited || exited->code != 0U)
+    throw test::Failure{"Backing export failed: " + completed.value().output.standardOutput + completed.value().output.standardError};
+  const auto parsed = formats::parseJson(completed.value().output.standardOutput); CHECK(parsed);
+  const auto observed = parsed.value();
+  CHECK(observed.find("schemaVersion")->asInt64() == 2);
+  CHECK(field(observed, "backingMediaCapture") == "PROJECT_HASH_MATCHED_STAGED_WAV_BYTES");
+  const auto family = field(*observed.find("installed"), "payloadFamily");
+  CHECK(field(observed, "recordType") == "seam.u45.installed-" + family + "-export.v2");
+  const auto& backing = observed.find("backingMedia")->asArray(); CHECK(backing.size() == 2U);
+  const auto artifactPath = "media/" + info.contentHash + ".wav";
+  CHECK(field(backing[0], "trackId") == firstBackingId.toString());
+  CHECK(field(backing[1], "trackId") == duplicate.id.toString());
+  for (const auto& binding : backing) {
+    CHECK(field(binding, "artifactPath") == artifactPath);
+    CHECK(field(binding, "mediaSha256") == info.contentHash);
+    CHECK(binding.find("sourceFrames")->asInt64() == static_cast<std::int64_t>(info.frameCount));
+    CHECK(binding.find("sourceSampleRate")->asInt64() == info.sampleRate);
+    CHECK(binding.find("sourceChannels")->asInt64() == info.channels);
+  }
+  CHECK(core::readFileBytesLimited(output / artifactPath, 1ULL << 20U).value() == bytes.value());
+  CHECK(std::count_if(observed.find("artifacts")->asArray().begin(), observed.find("artifacts")->asArray().end(),
+      [&](const auto& file) { return field(file, "path") == artifactPath; }) == 1);
+  CHECK(field(observed, "masterSha256") != field(originalRecord, "masterSha256"));
+  CHECK(!observed.find("authorizesRelease")->asBool());
+  const auto savedProjectHash = core::sha256File(path).value();
+  const auto savedOutput = treeDigest(output);
+#if defined(SEAM_TEST_PYTHON)
+  const auto replay = directory / "replay"; CHECK(std::filesystem::create_directory(replay));
+  checkInstalledOperationReplay(observed, arguments, replay);
+#endif
+  project.audioTracks()[0].muted = true;
+  CHECK(formats::ProjectJsonCodec{}.save(project, path)); arguments[2] = core::sha256File(path).value();
+  arguments.back() = (directory / "muted").string();
+  CHECK(field(cliSuccess(arguments), "masterSha256") == field(originalRecord, "masterSha256"));
+  project.audioTracks()[0].muted = false;
+  CHECK(formats::ProjectJsonCodec{}.save(project, path)); arguments[2] = core::sha256File(path).value();
+  CHECK(arguments[2] == savedProjectHash);
+  auto changed = bytes.value(); changed.back() ^= std::byte{1};
+  for (const auto& changedPath : {media, alias}) {
+    CHECK(core::durableAtomicWrite(changedPath, changed));
+    arguments.back() = (directory / (changedPath == media ? "changed-audible" : "changed-muted-alias")).string();
+    cliRefusal(arguments, "Backing media no longer matches");
+    CHECK(!std::filesystem::exists(arguments.back()));
+    CHECK(core::durableAtomicWrite(changedPath, bytes.value()));
+  }
+  CHECK(std::filesystem::remove(media)); arguments.back() = (directory / "missing-media").string();
+  cliRefusal(arguments, "backing media is not a regular file"); CHECK(!std::filesystem::exists(arguments.back()));
+  CHECK(core::durableAtomicWriteNew(media, bytes.value()));
+  CHECK(treeDigest(output) == savedOutput); CHECK(core::sha256File(path).value() == savedProjectHash);
+  CHECK(core::durableAtomicWrite(path, originalProjectBytes.value()));
+}
+
 void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain::SingerResourceIdentity& resource,
     const std::filesystem::path& root, const std::filesystem::path& package,
     const std::filesystem::path& installed, const std::string& key) {
@@ -1212,6 +1295,7 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
         voicebank::analyzeAudio(master.value().interleaved).peak, 1e-6);
     CHECK(!observed.find("masterClipped")->asBool());
     CHECK(core::sha256File(output/"master.wav").value()==field(observed,"masterSha256"));
+    checkInstalledBackingMedia(project, factory.nextTrackId(), operation, observed, root);
     // An evidence operation must leave an interrupted transaction untouched.
     // This is deliberately not a valid journal: refusal must precede parsing or
     // recovery, even when the destination itself is absent.
@@ -1963,6 +2047,8 @@ TEST_CASE("Installed sample operation observes committed outputs without claimin
     if (sha.value() == field(record, "masterSha256")) master = true;
   }
   CHECK(master); CHECK(treeDigest(bankRoot) == before);
+  checkInstalledBackingMedia(song, factory.nextTrackId(), args, record, fixture.root);
+  CHECK(treeDigest(bankRoot) == before);
   const auto preservedOutput = treeDigest(output);
   CHECK(!fixture.run(args)); CHECK(treeDigest(output) == preservedOutput);
 

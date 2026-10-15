@@ -234,8 +234,6 @@ core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured
     return refuse(sample ? "Operation export requires a verified installed sample"
                          : "Operation export requires a verified installed recipe");
   const auto& project = captured.project();
-  if (!project.audioTracks().empty())
-    return refuse("Operation export cannot attest backing-media inputs yet");
   const auto rate = project.settings().sampleRate;
   if (!std::isfinite(rate) || rate != std::floor(rate) || rate < 8000.0 || rate > 192000.0)
     return refuse("Operation export requires an integer sample rate from 8000 to 192000");
@@ -325,6 +323,22 @@ core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured
         {"sha256", sha.value()}, {"frames", static_cast<std::int64_t>(file.frames)},
         {"channels", static_cast<std::int64_t>(file.channels)}});
   }
+  Json::Array backingMedia;
+  for (const auto& track : project.audioTracks()) {
+    if (track.mediaPath.empty()) continue;
+    const auto relative = "media/" + track.mediaHash + ".wav";
+    const auto file = std::find_if(exported.value().files.begin(), exported.value().files.end(), [&](const auto& value) {
+      return value.path.lexically_relative(destination).generic_string() == relative;
+    });
+    if (file == exported.value().files.end() || file->sha256 != track.mediaHash ||
+        file->frames != track.sourceFrameCount || file->channels != track.sourceChannels)
+      return refuse("Committed backing media differs from the captured project identity");
+    backingMedia.emplace_back(Json::Object{{"trackId", track.id.toString()}, {"artifactPath", relative},
+        {"mediaSha256", track.mediaHash}, {"sourceFrames", static_cast<std::int64_t>(track.sourceFrameCount)},
+        {"sourceSampleRate", static_cast<std::int64_t>(track.sourceSampleRate)},
+        {"sourceChannels", static_cast<std::int64_t>(track.sourceChannels)}});
+  }
+  const bool hasBackingMedia = !backingMedia.empty();
   const auto receiptSha = core::sha256File(exported.value().receiptPath, 16U * 1024U * 1024U);
   if (!receiptSha) return core::Result<Json>{receiptSha.error()};
   if (receiptSha.value() != exported.value().receiptSha256)
@@ -338,8 +352,10 @@ core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured
 #else
   constexpr auto platform = "unsupported";
 #endif
-  return Json{Json::Object{{"schemaVersion", std::int64_t{1}},
-      {"recordType", sample ? "seam.u45.installed-sample-export.v1" : "seam.u45.installed-recipe-export.v1"}, {"result", "ExportCommittedAndObserved"},
+  Json::Object record{{"schemaVersion", std::int64_t{hasBackingMedia ? 2 : 1}},
+      {"recordType", sample ? (hasBackingMedia ? "seam.u45.installed-sample-export.v2" : "seam.u45.installed-sample-export.v1")
+                            : (hasBackingMedia ? "seam.u45.installed-recipe-export.v2" : "seam.u45.installed-recipe-export.v1")},
+      {"result", "ExportCommittedAndObserved"},
       {"evidenceScope", "ENGINEERING_ONLY"}, {"operation", "NATIVE_FINAL_EXPORT_SET"},
       {"project", captured.record()}, {"installed", installedRecord(installed)},
       {"resourceCapture", sample ? "SIGNED_ENTRIES_MATCHED_FROZEN_SAMPLE_ASSETS" : "SIGNED_IDENTITY_MATCHED_FROZEN_RECIPE"},
@@ -352,7 +368,12 @@ core::Result<Json> exportInstalledProject(const CapturedProjectBinding& captured
       {"masterPeakAbs", static_cast<double>(exported.value().masterPeakAbs)},
       {"masterClipped", exported.value().masterClipped}, {"playback", "NOT_RUN"},
       {"dawExecution", "NOT_RUN"}, {"qualification", "NOT_QUALIFIED"},
-      {"humanAcceptance", "NOT_RUN"}, {"authorizesRelease", false}, {"releaseEligible", false}}};
+      {"humanAcceptance", "NOT_RUN"}, {"authorizesRelease", false}, {"releaseEligible", false}};
+  if (hasBackingMedia) {
+    record.emplace("backingMediaCapture", "PROJECT_HASH_MATCHED_STAGED_WAV_BYTES");
+    record.emplace("backingMedia", std::move(backingMedia));
+  }
+  return Json{std::move(record)};
 }
 
 int verifyInstalledProjectBinding(int argc, char** argv,
