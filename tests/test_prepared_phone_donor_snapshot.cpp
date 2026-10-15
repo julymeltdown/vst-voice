@@ -642,6 +642,122 @@ TEST_CASE("Prepared donor inspected import refuses mismatched requests actors as
   }
 }
 
+TEST_CASE("Prepared donor import cancels or propagates injected errors at each precommit checkpoint") {
+  using Stage = p::PreparedDonorImportStage;
+  const std::array stages{Stage::SnapshotValidated, Stage::RawTakeStaged, Stage::NoticesRetained};
+  for (const bool cancel : {false, true}) {
+    for (std::size_t at = 0U; at < stages.size(); ++at) {
+      PreparedImportFixture f; const auto snapshot = f.prepared.load();
+      const auto expected = f.expectation(); const auto take = f.input();
+      const auto before = retainedFiles(f.workspace);
+      const auto journals = retainedFiles(f.workspace / "journal"), generations = retainedFiles(f.workspace / "generations");
+      const auto project = p::encodeProductionProject(f.project);
+      std::stop_source stop;
+      std::vector<Stage> observed;
+      p::PreparedDonorImportOptions options;
+      options.faultInjector = [&](Stage stage) -> seam::core::Result<void> {
+        observed.push_back(stage);
+        if (stage != stages[at]) return seam::core::success();
+        if (cancel) { stop.request_stop(); return seam::core::success(); }
+        return seam::core::failure(seam::core::ErrorCode::IoError, "Injected prepared-donor checkpoint failure");
+      };
+      const auto result = f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take), stop.get_token(), options);
+      CHECK(!result);
+      CHECK(result.error().code == (cancel ? seam::core::ErrorCode::Conflict : seam::core::ErrorCode::IoError));
+      CHECK(result.error().message == (cancel ? "Prepared donor import cancelled before commit" : "Injected prepared-donor checkpoint failure"));
+      CHECK(observed == std::vector<Stage>(stages.begin(), stages.begin() + static_cast<std::ptrdiff_t>(at + 1U)));
+      CHECK(p::encodeProductionProject(f.project) == project);
+      CHECK(p::encodeProductionProject(f.repository.recover().value()) == project);
+      CHECK(f.repository.verify(f.project));
+      CHECK(retainedFiles(f.workspace / "journal") == journals);
+      CHECK(retainedFiles(f.workspace / "generations") == generations);
+      const auto after = retainedFiles(f.workspace);
+      for (const auto& [path, digest] : before) CHECK(after.at(path) == digest);
+      if (at == 0U) CHECK(after == before);
+      const auto packet = f.workspace / "source-evidence/packets" / expected.packetSha256;
+      CHECK(std::filesystem::exists(packet) == (at == 2U));
+      if (at == 2U) {
+        for (const auto* file : {&snapshot.evidence.packet, &snapshot.evidence.plan, &snapshot.evidence.license, &snapshot.evidence.attribution})
+          CHECK(seam::core::readFileBytesLimited(packet / file->relativePath, 1024U * 1024U).value() == file->bytes);
+      }
+      f.checkPrivateCaptureRemoved();
+      const auto generation = f.project.lastDurableGeneration;
+      const auto retry = f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take)); CHECK(retry);
+      CHECK(retry.value().durabilityConfirmed); CHECK(f.project.lastDurableGeneration == generation + 1U);
+      CHECK(f.project.takes.size() == 1U); CHECK(f.project.reviews.empty()); CHECK(f.repository.verify(f.project));
+      f.checkPrivateCaptureRemoved();
+      std::cout << "[PREPARED-TRANSACTION] " << (cancel ? "cancel " : "injected error ") << at << ": UNCOMMITTED_THEN_RETRY\n";
+    }
+  }
+}
+
+TEST_CASE("Prepared donor import distinguishes journal generation and pointer publication failures") {
+  using Stage = p::PreparedDonorImportStage;
+  for (const int mode : {0, 1, 2}) {
+    PreparedImportFixture f; const auto snapshot = f.prepared.load();
+    const auto expected = f.expectation(); const auto take = f.input();
+    const auto project = p::encodeProductionProject(f.project); const auto generation = f.project.lastDurableGeneration;
+    const auto number = std::to_string(generation + 1U);
+    const auto filename = std::string(20U - number.size(), '0') + number + ".json";
+    const auto blocked = mode == 2 ? f.workspace / "project.json" :
+        f.workspace / (mode == 0 ? "journal" : "generations") / filename;
+    std::vector<Stage> observed;
+    p::PreparedDonorImportOptions options;
+    options.faultInjector = [&](Stage stage) -> seam::core::Result<void> {
+      observed.push_back(stage);
+      if (stage == Stage::NoticesRetained) {
+        if (mode == 2) CHECK(std::filesystem::remove(blocked));
+        CHECK(std::filesystem::create_directory(blocked));
+      }
+      return seam::core::success();
+    };
+    const auto result = f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take), {}, options);
+    CHECK(observed == std::vector<Stage>({Stage::SnapshotValidated, Stage::RawTakeStaged, Stage::NoticesRetained}));
+    CHECK(std::filesystem::is_directory(blocked));
+    const auto recovered = f.repository.recover(); CHECK(recovered);
+    f.checkPrivateCaptureRemoved();
+    if (mode < 2) {
+      CHECK(!result); CHECK(result.error().message.starts_with("Import did not confirm a commit."));
+      CHECK(p::encodeProductionProject(f.project) == project);
+      CHECK(p::encodeProductionProject(recovered.value()) == project);
+      CHECK(f.repository.verify(f.project));
+      // A generation refusal leaves the earlier journal publication occupied.
+      // Preserve it and prove retry appends after it instead of replacing it.
+      const auto occupied = retainedFiles(f.workspace / "journal");
+      CHECK(std::filesystem::remove(blocked));
+      const auto retry = f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take)); CHECK(retry);
+      CHECK(retry.value().durabilityConfirmed);
+      CHECK(f.project.lastDurableGeneration == generation + (mode == 1 ? 2U : 1U));
+      const auto after = retainedFiles(f.workspace / "journal");
+      for (const auto& [path, digest] : occupied) CHECK(after.at(path) == digest);
+    } else {
+      CHECK(result); CHECK(!result.value().durabilityConfirmed);
+      CHECK(result.value().diagnostic.starts_with("The exact import is recoverably committed, but pointer durability is uncertain."));
+      CHECK(f.project.lastDurableGeneration == generation + 1U);
+      CHECK(result.value().committedGeneration == f.project.lastDurableGeneration);
+      CHECK(result.value().committedProjectSha256 == seam::core::sha256Hex(p::encodeProductionProject(f.project)));
+      CHECK(p::encodeProductionProject(recovered.value()) == p::encodeProductionProject(f.project));
+      CHECK(!f.repository.verify(f.project));
+      const auto committed = p::encodeProductionProject(f.project);
+      CHECK(!f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take)));
+      CHECK(p::encodeProductionProject(f.project) == committed);
+      CHECK(std::filesystem::remove(blocked));
+      CHECK(f.repository.reconcileCurrentPointer(result.value().committedGeneration, result.value().committedProjectSha256));
+      CHECK(p::encodeProductionProject(f.project) == committed);
+    }
+    CHECK(f.project.takes.size() == 1U); CHECK(f.project.sourceBindings.size() == 1U);
+    CHECK(f.project.reviews.empty()); CHECK(f.project.sourceQualityAssessments.empty());
+    CHECK(f.project.takes[0].state == p::UnitQueueState::MarkerReview); CHECK(!p::selectedStrategyReady(f.project));
+    CHECK(f.repository.verify(f.project));
+    const auto after = retainedFiles(f.workspace);
+    const auto committed = p::encodeProductionProject(f.project);
+    CHECK(!f.repository.importPreparedDonor(f.project, snapshot, expected, take, f.event(take)));
+    CHECK(retainedFiles(f.workspace) == after); CHECK(p::encodeProductionProject(f.project) == committed);
+    f.checkPrivateCaptureRemoved();
+    std::cout << "[PREPARED-TRANSACTION] publication " << mode << (mode == 2 ? ": COMMITTED_POINTER_RECONCILED\n" : ": UNCOMMITTED_THEN_RETRY\n");
+  }
+}
+
 TEST_CASE("Prepared donor inspected imports retain one shared packet while preserving style and retake ownership") {
   PreparedImportFixture f; const auto held = f.prepared.load(); const auto firstGeneration = f.project.lastDurableGeneration;
   for (const auto style : {"neutral", "soft", "neutral"}) {

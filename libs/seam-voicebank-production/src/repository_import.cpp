@@ -207,8 +207,18 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importRaw(
 core::Result<CommittedAssetRecord> ProductionProjectRepository::importPreparedDonor(
     VoicebankProductionProject& project, PreparedPhoneDonorSnapshot snapshot,
     const PreparedDonorImportExpectation& expectation, const RawTakeInput& take,
-    const ProductionJournalEvent& event, std::stop_token stopToken) {
+    const ProductionJournalEvent& event, std::stop_token stopToken,
+    const PreparedDonorImportOptions& options) {
   using Output = CommittedAssetRecord;
+  const auto checkpoint = [&](PreparedDonorImportStage stage) -> core::Result<void> {
+    if (options.faultInjector) {
+      const auto injected = options.faultInjector(stage);
+      if (!injected) return injected;
+    }
+    if (stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict,
+        "Prepared donor import cancelled before commit");
+    return core::success();
+  };
   if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Prepared donor import cancelled");
   if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en" ||
       expectation.projectSha256 != core::sha256Hex(encodeProductionProject(project)) ||
@@ -233,6 +243,8 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importPreparedDo
   const auto authorized = requireSelectedSourceExecution(project); if (!authorized) return core::Result<Output>{authorized.error()};
   auto held = validatePreparedPhoneDonorSnapshot(std::move(snapshot), expectation.packetSha256, expectation.donorId, stopToken);
   if (!held) return core::Result<Output>{held.error()};
+  auto checked = checkpoint(PreparedDonorImportStage::SnapshotValidated);
+  if (!checked) return core::Result<Output>{checked.error()};
   PrivatePreparedAudio capture;
   const auto created = capture.create(root_); if (!created) return core::Result<Output>{created.error()};
   const auto written = core::durableAtomicWriteNew(capture.path(), held.value().audio.bytes);
@@ -241,6 +253,8 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importPreparedDo
   const auto imported = importRawBound(draft, capture.path(), take, event, held.value().audio.sha256,
       std::nullopt, take.technicalInspection, stopToken);
   if (!imported) return core::Result<Output>{imported.error()};
+  checked = checkpoint(PreparedDonorImportStage::RawTakeStaged);
+  if (!checked) return core::Result<Output>{checked.error()};
   auto& binding = draft.sourceBindings.back();
   const auto& evidence = held.value().evidence;
   binding.preparedDonor = PreparedDonorBinding{evidence.packet.sha256, evidence.donorId, evidence.plan.sha256,
@@ -250,6 +264,8 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importPreparedDo
   draft.schemaVersion = kProductionPreparedDonorSchemaVersion;
   const auto retained = retainPreparedEvidence(root_, evidence, stopToken);
   if (!retained) return core::Result<Output>{retained.error()};
+  checked = checkpoint(PreparedDonorImportStage::NoticesRetained);
+  if (!checked) return core::Result<Output>{checked.error()};
   const auto committed = commitImportedDraft(*this, project, std::move(draft), event, stopToken);
   if (!committed) return core::Result<Output>{committed.error()};
   return Output{imported.value(), committed.value()};

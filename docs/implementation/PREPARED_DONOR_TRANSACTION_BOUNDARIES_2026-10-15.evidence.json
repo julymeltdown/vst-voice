@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-transaction-boundaries",
+  "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+  "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+  "implementationSources": [
+    "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp",
+    "libs/seam-voicebank-production/src/repository_import.cpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-transaction-boundaries-2026-10-15/manifest.json",
+    "sizeBytes": 14470,
+    "sha256": "64871e920047f60247ca440531977d1434de32dc1a676fa71dab40891aa5922c"
+  },
+  "retainedArtifacts": 56,
+  "preservedBindings": 15,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 77.04665866697906,
+      "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+      "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_import_outcome_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.53010937498766,
+      "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+      "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "sanitize-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_prepared_phone_donor_snapshot_tests",
+        "seam_production_import_outcome_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 15.493146833003266,
+      "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+      "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    "sanitize-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_import_outcome_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.193490792007651,
+      "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+      "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "nativeBeforeEqualsAfter": true
+    },
+    "release-python": {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.9431397910229862,
+      "sourceBase": "2922ddaa4a100bdfb93ed3d9b91d6e4761e1a750",
+      "sourcePatchSha256": "6b68528ef700cf1540f107accd6e9cb83c260bfe3ad934f9225dfc400e09d9a9",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-transaction-boundaries-2026-10-15/verification.log",
+      "sizeBytes": 415,
+      "sha256": "ebadfc9b3fe92fc3cfacfab9f505a2c7dbeb21c0c0b648542ddea2a1d53b8e7f"
+    }
+  },
+  "nativeCasesPerConfiguration": 32,
+  "newCases": 2,
+  "newTransactionForms": 9,
+  "existingActualCliMethods": 6,
+  "skips": 0,
+  "independentReview": "PENDING_EXACT_COMMIT",
+  "preparedImporterCancellationCommitFaultCoverage": "LOCALLY_VERIFIED_EXACT_REVIEW_PENDING",
+  "ownedReaderMidRunCancellation": "NOT_TESTED_BY_THIS_UNIT",
+  "wrapperFsyncPostPublicationFaults": "NOT_RUN",
+  "cancellationAfterPublicationStarts": "NOT_TESTED_BY_THIS_UNIT",
+  "fullReleaseBuild": true,
+  "fullSuite": "NOT_RUN",
+  "newLeakDetection": "DISABLED_ASAN_DETECT_LEAKS_0",
+  "TSan": "NOT_RUN",
+  "powerLoss": "NOT_RUN",
+  "stagedOrphanFilesMayRemain": true,
+  "fileInventory": "regular-file hashes/link targets; no empty-directory inventory; private capture cleanup asserted separately",
+  "sourceCallCompatibility": "Default options preserve existing source calls; no old C++ binary compatibility claim",
+  "realSourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

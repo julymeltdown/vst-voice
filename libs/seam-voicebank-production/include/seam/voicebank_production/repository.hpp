@@ -7,6 +7,7 @@
 #include "seam/synthesis/singer_resource.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -121,6 +122,14 @@ struct PreparedDonorImportExpectation final {
   std::string projectSha256, packetSha256, donorId, sourceStrategyId;
 };
 
+enum class PreparedDonorImportStage { SnapshotValidated, RawTakeStaged, NoticesRetained };
+struct PreparedDonorImportOptions final {
+  // Deterministic fault/cancellation tests at real transaction boundaries.
+  // Production callers leave this empty. Staged files may remain on refusal;
+  // no checkpoint is invoked after journal publication starts.
+  std::function<core::Result<void>(PreparedDonorImportStage)> faultInjector;
+};
+
 class ProductionProjectRepository final {
 public:
   explicit ProductionProjectRepository(std::filesystem::path root);
@@ -167,7 +176,8 @@ public:
   [[nodiscard]] core::Result<CommittedAssetRecord> importPreparedDonor(
       VoicebankProductionProject& project, PreparedPhoneDonorSnapshot snapshot,
       const PreparedDonorImportExpectation& expectation, const RawTakeInput& take,
-      const ProductionJournalEvent& event, std::stop_token stopToken = {});
+      const ProductionJournalEvent& event, std::stop_token stopToken = {},
+      const PreparedDonorImportOptions& options = {});
   [[nodiscard]] core::Result<CommittedAssetRecord> importProceduralCandidate(
       VoicebankProductionProject& project, const std::filesystem::path& metadataPath,
       const std::filesystem::path& audioPath, const synthesis::ProceduralSingerResource& recipe,
