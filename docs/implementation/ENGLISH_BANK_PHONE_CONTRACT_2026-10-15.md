@@ -146,3 +146,8 @@ The [installed lifecycle regression](ENGLISH_INSTALLED_LIFECYCLE_2026-10-15.md) 
 ## Exact independent verdict and coverage follow-up
 
 Independent review APPROVED exact d5ecc1f9 for engineering scope, with one P2 follow-up and no required changes to that reviewed commit. The analyzer used exact phone comparisons and incorrectly marked folded stressed vowels missing. [The code-level coverage fix and evidence](ENGLISH_COVERAGE_CONTRACT_2026-10-15.md) retain the full verdict, reproduce four baseline failures, repair the shared matcher and pass 70 native cases across four final CTest lanes after a full dependent rebuild. Independent exact-fix closure remains pending; later producer/lifecycle units have separate review status. No source, singer, human or Beta approval.
+
+
+### 2026-10-15 — Coverage P2 independently closed
+
+Exact 76896845 independent APPROVE/no findings closes this review's coverage stress-policy P2; see [the coverage dossier](ENGLISH_COVERAGE_CONTRACT_2026-10-15.md) and retained final. Original d5ecc1f9 approval scope and optional notes remain unchanged; no later-unit, source/human or Beta approval is granted.

@@ -103,3 +103,12 @@ classical/neural/multilingual resources, R9, immutable candidate checks, acousti
 tolerances, signed application/platform/DAW journeys and human acceptance remain
 open. Canonical files are pinned unchanged: Alpha **0/20**, U45 **HELD**, External
 Beta **BLOCKED**, release eligibility **false**.
+
+
+## 2026-10-15 — Exact independent P2 closure
+
+Independent **APPROVE exact `76896845c7128f427ec2e583a920eaa0fee69e7a`**, engineering only, **no findings; the `d5ecc1f9` coverage P2 is CLOSED**. The updated index binds the actual retained final in a separate frozen review root. Reviewer and lead rehashed all 50 historical artifacts/7 pins. The reviewer read source/Git/artifacts and replayed the matching rule with an independent offline implementation; no build, test, CLI/native binary or retained verifier/script was run. Historical build/test evidence was read, not independently re-executed.
+
+The review confirms FOLD coverage through the same guarded matching view used by selection/render identity; DISTINGUISH, legacy and invalid views stay exact. Original score symbols/keys and related unit labels remain unchanged. Both native sheet arms and the unchanged standalone caller use the analyzer. Optional standalone-specific test, issue-label wording and unmeasured cost notes remain optional. The retained verdict contains a placeholder unit-selection link; the lead checked the actual `libs/seam-synthesis/src/unit_selection.cpp` matching sites at lines 31/51. No broader approval is inferred from that correction.
+
+Later help/UI/registration/authority/source-license work is outside this verdict. Alpha 0/20, U45 HELD, Beta BLOCKED; no source, actor, listening, platform or full-product acceptance is granted.

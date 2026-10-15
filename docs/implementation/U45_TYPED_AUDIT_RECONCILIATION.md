@@ -553,3 +553,8 @@ Independent APPROVE exact a0259814, engineering only, two P3 findings/no require
 ## 2026-10-15 — English review inventory authority and packaging isolation
 
 [Authority dossier](ENGLISH_REVIEW_INVENTORY_AUTHORITY_2026-10-15.md) implements both a0259814 P3 follow-ups: shared unchanged inventory validator used by capture and commit; changed/missing manifest declarations refused; packaging changed/removed contract cases require manifest.json-specific size/digest refusal without backup/output. Unchanged-code reproduction fails three intended cases in two lanes. Two final full dependent rebuild/focused batches pass five distinct lanes/101 native cases; refined registered mock reviewer control proves restoring only inventory permits the same rejection. 73 artifacts/8 bindings retained; independent closure and full239 suite pending. Source admission unchanged; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+## 2026-10-15 — English coverage P2 independently closed
+
+Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f9 coverage stress-policy P2 CLOSED. [Coverage dossier](ENGLISH_COVERAGE_CONTRACT_2026-10-15.md) binds the actual final in a separate review root. All 50 historical artifacts/7 pins rehashed; reviewer read/replayed rules offline without builds/tests/native/verifier execution. Optional notes and later-unit review statuses remain separate. New 4bafec5e authority repair review active. Source/human gates unchanged: Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.

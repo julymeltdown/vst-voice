@@ -56,8 +56,8 @@
     "fullSuiteOrPhysicalAcceptance": false
   },
   "coverageChange": "Region analyzer uses Manifest::matchedPhone; legacy/DISTINGUISH remain exact, structural constraints and resolved symbols unchanged",
-  "technicalP2Repair": "LOCALLY_VERIFIED; independent exact-fix closure PENDING",
-  "independentTechnicalReview": "PENDING for this follow-up",
+  "technicalP2Repair": "VERIFIED_AND_INDEPENDENTLY_CLOSED exact76896845",
+  "independentTechnicalReview": "APPROVE exact76896845; no findings; d5ecc1f9 P2 closed",
   "sourceApproval": false,
   "newOriginalFemaleWavs": 0,
   "originalFemaleWavCensus": 1429,
@@ -65,5 +65,37 @@
   "alphaRequiredChecks": 20,
   "u45": "HELD",
   "beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "review": {
+    "schemaVersion": 1,
+    "reviewedCommit": "76896845c7128f427ec2e583a920eaa0fee69e7a",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13d1d-17af-7ef0-a14e-6cd3a5f5a37f",
+    "completedAtUnixSeconds": 1792027249,
+    "verdict": "APPROVE",
+    "findings": [],
+    "priorP2": "d5ecc1f9 coverage stress-policy alignment",
+    "priorP2Status": "CLOSED",
+    "execution": "Read-only Git/source/artifact/hash/JSON audit and own offline rule replay; no build, test, CLI/native or retained verifier/script execution",
+    "retainedFinal": {
+      "path": "out/evidence/english-coverage-review-2026-10-15/review-76896845.md",
+      "sizeBytes": 12688,
+      "sha256": "06b41e28d8bb8f44bfadcceb6a3c54b2be88513a5b216993d5a4966faa0c80ce"
+    },
+    "historicalManifest": {
+      "path": "out/evidence/english-coverage-contract-2026-10-15/manifest.json",
+      "sizeBytes": 10034,
+      "sha256": "23ce302ecc5cbc61288420d30374608d572437b5b36d58a01922c3f32e8e458b"
+    },
+    "leadRehashedArtifacts": 50,
+    "leadRehashedPins": 7,
+    "laterCommitsApproved": false,
+    "sourceOrHumanOrBetaApproval": false,
+    "citationCorrection": "Reviewer unit_selection.cpp link was a placeholder; actual libs/seam-synthesis/src/unit_selection.cpp matchedPhone sites checked at31/51",
+    "manifest": {
+      "path": "out/evidence/english-coverage-review-2026-10-15/manifest.json",
+      "sizeBytes": 1425,
+      "sha256": "03711ae07c5ead17cad3ddb1b532793129ef5db8bb3b4bc09a066676f4b8c1b3"
+    }
+  }
 }
