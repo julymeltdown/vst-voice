@@ -193,5 +193,23 @@
     "liveAppKit": "BLOCKED: fresh cua.listApps observation reports Mac locked; existing unlock question pending",
     "fullBetaReleaseGate": "NOT_RUN; no committed External Beta candidate was found. The phase13b public-release candidate has a different schema and was not substituted.",
     "noNewSourceCensus": true
+  },
+  "blockedGoalAudit": {
+    "audit": {
+      "path": "out/evidence/beta-blocked-audit-75e94f31-2026-10-15/audit.json",
+      "sizeBytes": 4364,
+      "sha256": "cd38a232e7af974dc5c5292615ba5e5138b1b421f98d80bcc129ee549850e705"
+    },
+    "thresholdSatisfied": true,
+    "consecutiveGoalTurns": [
+      "01a13e96-2adc-7701-943f-c1f1d29334dc",
+      "01a13ebf-84af-7112-8928-5ece50b2b993",
+      "01a13ee4-1137-7ea3-be95-a788110cc91f",
+      "01a13f02-fe4e-77b3-b417-6798c9406aaa"
+    ],
+    "recommendation": "BLOCKED; completion unproven; full objective unchanged",
+    "reviewTerminal": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "noRemainingRequiredRecoveryFinding": true,
+    "goalToolStateAtAudit": "ACTIVE; status transition requested only after this audit is committed/pushed"
   }
 }
