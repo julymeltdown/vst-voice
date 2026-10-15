@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-f1-slow-original-source-extension",
+  "sourceBase": "1a0cfcebf8435020002dc91b96f25b008907454a",
+  "manifest": {
+    "path": "out/evidence/female-f1-slow-source-extension-2026-10-15/manifest.json",
+    "sizeBytes": 84291,
+    "sha256": "0911c5124aff8ff916dae820e8ecb32567bb13991e43aa7e707f2342f31f0579"
+  },
+  "retainedArtifacts": 434,
+  "preservedBindings": 13,
+  "newOriginalWavs": 40,
+  "newDurationSeconds": 420.3865759637188,
+  "combinedOriginalWavs": 1469,
+  "combinedF1OriginalWavs": 65,
+  "nativeInspections": 40,
+  "nativeAnalyses": 40,
+  "measuredIntervals": 3,
+  "note66Intervals": 0,
+  "clippedSamples": 28,
+  "clippedOriginalFiles": 1,
+  "derivedWavsWritten": 0,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/female-f1-slow-source-extension-2026-10-15/verification.log",
+      "sizeBytes": 307,
+      "sha256": "38ef6bdcf9385ebd4372baee59253d61e9dd9d36f2af09c457e71d5154904652"
+    }
+  },
+  "independentReview": "PENDING",
+  "sourceOrHumanApproval": false,
+  "nativeImport": false,
+  "humanListening": false,
+  "fullArchiveMd5Verified": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

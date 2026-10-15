@@ -40,3 +40,8 @@ Use the [current source refresh](FEMALE_INTERNET_SOURCE_REFRESH_2026-10-15.md) f
 ### 2026-10-15 — Prepared phone-donor integrity preflight
 
 The [packet integrity unit](PHONE_DONOR_PACKET_INTEGRITY_2026-10-15.md) adds a read-only external-digest preflight and makes preparation verify notices, license, plan and derived WAVs before clearing INCOMPLETE. Final37 direct Python methods pass. A separate actual output at `out/evidence/phone-donor-packet-integrity-2026-10-15/actual-attributed-final/` contains312 unchanged speech donors from four existing originals, retains the corrected author notice and passes the new check. Both retained trial outputs are byte-identical; neither adds original audio or bank coverage. The earlier correct-attribution packet remains historical and is now refused for missing its notice hash; the old misattributed packet remains unsuitable. Independent review and downstream durable admission remain open; no source, actor, QC/listening or Beta approval. Alpha0/20; U45HELD; BetaBLOCKED.
+
+
+### 2026-10-15 — Additional original f1 slow-dynamic recordings
+
+[Fresh acquisition and native measurements](FEMALE_F1_SLOW_SOURCE_EXTENSION_2026-10-15.md):40 additional unchanged VocalSet f1 originals,420.386575964s; fresh publisher CC-BY4 metadata, exact HTTP206/member CRC/SHA and40 native reader/40 native analysis checks. Combined1469 distinct originals (65f1 singing,272growls,1132speech); all1429 earlier originals rehash unchanged. Unchanged stability thresholds yield only3 measured intervals/0.708208617s, nearest60/65 and **zero near66**;28 clipped samples in one original. No coverage, source/actor/listening/QC/import/Beta approval.434artifacts/13pins; independent review pending. Alpha0/20; U45HELD; BetaBLOCKED; full goalACTIVE.

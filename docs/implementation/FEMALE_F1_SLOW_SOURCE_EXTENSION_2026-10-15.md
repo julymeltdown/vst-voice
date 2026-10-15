@@ -1,0 +1,34 @@
+# Additional internet recordings from the same f1 singer
+
+Date: 2026-10-15, Asia/Seoul. Base: `1a0cfcebf8435020002dc91b96f25b008907454a`. **40 additional original singing WAVs downloaded and measured; no source or bank approval.** Git fetch/fast-forward pull confirmed local, tracking and live master equality before this unit. Existing recordings, stash, `.github` and root README are preserved.
+
+The [original VocalSet 1.1 publisher record](https://zenodo.org/records/1203819) and its freshly retained API response identify the same `VocalSet11.zip`: 2,077,243,579 bytes, advertised MD5 `0c09396242f946e7111ad7d8fc649b81`, license `cc-by-4.0`. The original archive readme identifies anonymous f1 as soprano. This acquisition selects all 40 f1 scales/arpeggios labelled `slow_forte` or `slow_piano`, keeping the earlier singer identity instead of combining different women into one proposed bank. The exact archive labels remain unchanged; they are not relabelled as the earlier `straight` technique.
+
+CC BY 4.0 permits commercial sharing and adaptation within the licensed rights, with attribution, license/change notices and no additional restrictions on those rights. See the [primary CC license](https://creativecommons.org/licenses/by/4.0/). This root retains the original creators, source DOI/URL, copied legal code and a notice that the WAV members were copied without audio changes. The project-specific source/EULA disposition and actual producer/distinct reviewer are still pending; the publisher's grant is not a fabricated performer agreement or native source-registration decision.
+
+## Download and execution results
+
+| Check | Observed result |
+| --- | --- |
+| Newly acquired originals | **40**, 37,079,856 WAV bytes; **420.386575964 seconds** (7.01 minutes) |
+| Format | All mono, 44,100 Hz, PCM16; complete readable frame extents |
+| Acquisition | Fresh publisher metadata, HTTP 206 archive tail/central-directory reads, exact member ranges; local-header identities, decompressed sizes and member CRCs checked; each original SHA-256 retained |
+| Archive identity | Fresh central-directory bytes equal the retained earlier index; verifier independently parses the directory and replays all 40 compressed member payloads |
+| Full archive MD5 | **NOT_CHECKED**; selected-member acquisition is not a full archive download |
+| Native tool | Full Release build passed at the stated base in 28.243 seconds; copied executable SHA-256 `812abe00aba817de9df1078efc0cdf1193f1c27995f8cf044805716828f7f2a9` |
+| Actual native executions | **40 inspect-wav + 40 analyze**, all exit 0; 45.581 seconds for the measurement batch |
+| Reader diagnostics | 40 finite/non-silent files; **28 clipped samples in one original**, `f1_scales_f_slow_forte_o.wav`; no clipping repair or QC override |
+| Unchanged measurement thresholds | Confidence ≥0.90, within 40 cents of an observed note, contiguous support with one 2048-frame window trimmed at each edge, remaining duration ≥0.20 seconds |
+| Measured support | **3 intervals**, summed **0.708208617 seconds**, nearest MIDI **60 and 65**; **zero near MIDI 66** |
+
+The three intervals are scale-forte/f/a (0.220590 s, nearest 65), scale-piano/f/u (0.261224 s, nearest 65) and scale-piano/c/i (0.226395 s, nearest 60). These are automatic observations, not three accepted samples. No derived WAV, resampling, normalization, pitch shift, bank assignment or import was performed. The frozen existing proposal-measurement helper computes these intervals directly from the new original bytes and native analyses; the restricted straight-technique preparation plan is not used or extended.
+
+The missing note was **not resolved**. The larger source pool must not be presented as added bank coverage. Do not weaken thresholds or infer a pitch-layer decision from this result. The next useful source decision is an attributed review of the retained material and target pitch policy, followed by normal measured import/QC only after genuine admission inputs exist. More downloads alone do not close listening, phonetic mapping, clipping or bank qualification.
+
+## Retained handoff and boundaries
+
+The [evidence index](FEMALE_F1_SLOW_SOURCE_EXTENSION_2026-10-15.evidence.json) binds **434 artifacts and 13 preserved files**, including compressed HTTP ranges, exact originals, current metadata, acquisition/measurement scripts and receipts, the copied executable, six selected source snapshots, all analyses and notices. The read-only verifier replays ZIP members, source/analysis identities and measured intervals; it also rehashes all **1,429 earlier originals**, with **zero changes or missing files**, and proves the 40 new hashes are distinct from them. It does not replay network transport or authenticate a complete build dependency graph. No CTest or full-suite run is claimed for this unit.
+
+The combined pool is now **1,469 distinct original WAVs**: **65 f1 singing recordings / 685.565396825 seconds** (the earlier 25 plus these 40), **272 growls**, and **1,132 speech recordings**. Those categories retain separate source identities and do not imply singing-bank suitability. Old frozen censuses remain historical and are not rewritten.
+
+The local [manual audition page](../../out/evidence/female-f1-slow-source-extension-2026-10-15/audition.html) offers 40 original-file controls with measurement/clipping facts and no autoplay. Its [worksheet](../../out/evidence/female-f1-slow-source-extension-2026-10-15/review-worksheet.json) leaves every actual actor, source disposition, phonetic, pitch, listening and marker/loop decision null. No playback/listening was performed. Independent review of this new acquisition is pending. Alpha **0/20**, U45 **HELD**, Beta **BLOCKED**, full goal **ACTIVE**.
