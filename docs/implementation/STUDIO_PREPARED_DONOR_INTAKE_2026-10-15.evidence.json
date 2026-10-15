@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "unit": "studio-prepared-donor-intake",
+  "sourceBase": "f819300407a8d762ca7f4d5fc495c1d72ee0d82d",
+  "sourcePatchSha256": "f0e199807e9b8d42a3777bf69d8b72467a508b3bf23d7b53d923b38bf4a50fd1",
+  "implementationSources": [
+    "CMakeLists.txt",
+    "apps/seam-voicebank-cli/source_intake_commands.cpp",
+    "apps/seam-voicebank-studio-native/studio_app.cpp",
+    "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp",
+    "libs/seam-native-ui/src/voicebank_studio_donor_intake.cpp",
+    "libs/seam-native-ui/src/voicebank_studio_production_view.cpp",
+    "libs/seam-native-ui/src/voicebank_studio_sample_review.cpp",
+    "libs/seam-platform/include/seam/platform/file_dialog.hpp",
+    "libs/seam-platform/src/file_dialog_appkit.mm",
+    "libs/seam-voicebank-production/include/seam/voicebank_production/prepared_donor_intake.hpp",
+    "libs/seam-voicebank-production/src/prepared_donor_intake.cpp",
+    "tests/prepared_phone_donor_fixture.hpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp",
+    "tests/test_studio_manifest_draft.cpp",
+    "tests/test_studio_sample_review.cpp",
+    "tests/test_voicebank_studio_app.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/studio-prepared-donor-intake-2026-10-15/manifest.json",
+    "sizeBytes": 22114,
+    "sha256": "b8e1884bdc9dd1d27d14f05e087b61147306e8b21aafbb6dda6ddb6f9fb9033e"
+  },
+  "retainedArtifacts": 94,
+  "preservedBindings": 12,
+  "executions": [
+    {
+      "name": "full-release-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 7.559988791006617
+    },
+    {
+      "name": "release-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-V",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_studio_sample_review_tests|seam_studio_manifest_draft_tests|seam_voicebank_studio_app_tests|seam_studio_generation_bank_tests|seam_studio_recording_import_parity_tests|seam_production_import_outcome_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 32.81422150001163
+    },
+    {
+      "name": "actual-cli",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.5453502500022296
+    },
+    {
+      "name": "focused-sanitized-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_studio_manifest_draft_tests",
+        "seam_prepared_phone_donor_snapshot_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.9151556249998976
+    },
+    {
+      "name": "sanitized-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "-V",
+        "--output-on-failure",
+        "-R",
+        "^(seam_studio_manifest_draft_tests|seam_prepared_phone_donor_snapshot_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 34.233209666010225
+    }
+  ],
+  "releaseNativeCases": 112,
+  "sanitizedNativeCases": 72,
+  "newNativeCases": 5,
+  "actualCliMethods": 6,
+  "skips": 0,
+  "precommitReadOnlyVerification": {
+    "path": "out/evidence/studio-prepared-donor-intake-2026-10-15/verification-precommit.log",
+    "sizeBytes": 193,
+    "sha256": "3c8055660bc861b5c9b1becd1b7d4da4011665c992bb57663f8552cb9b63cdbd"
+  },
+  "independentReview": "PENDING_EXACT_COMMIT",
+  "predecessorReview": {
+    "commit": "f7d2559c1870c53cd55c210841b8928201641bf8",
+    "verdict": "APPROVE",
+    "wrapperCancellationAndCommitFaultItem": "CLOSED",
+    "preExistingP3": "OPEN: schema migration review transition in import commit recognition",
+    "final": {
+      "path": "out/evidence/prepared-donor-transaction-independent-2026-10-15/review-f7d2559c.md",
+      "sizeBytes": 15644,
+      "sha256": "2a3545ca6734f9c7ef94ff1b7f8d38bd03aac5a350130d355e4ae0eced844a74"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-transaction-independent-2026-10-15/metadata.json",
+      "sizeBytes": 605,
+      "sha256": "c9c3ff99ff9e984351e8c644e39ab2e12b1088b48c2deb4b030a987ac746dee3"
+    }
+  },
+  "acceptance": {
+    "downloadedRecordingsImported": 0,
+    "sourceRightsApproved": false,
+    "humanListeningEstablished": false,
+    "alphaAccepted": 0,
+    "alphaTotal": 20,
+    "U45": "HELD",
+    "Beta": "BLOCKED",
+    "goal": "ACTIVE"
+  }
+}

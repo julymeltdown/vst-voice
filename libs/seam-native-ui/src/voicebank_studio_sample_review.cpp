@@ -212,6 +212,7 @@ void VoicebankStudioController::invalidateSampleReview() noexcept {
   sampleReviewerId_.clear();
   sourceQualityInspection_.reset();
   sourceRegistrationInspection_.reset();
+  preparedDonorInspection_.reset();
   // Durable receipts and publication identities remain visible after selection
   // changes. They describe completed work, never a reusable approval token.
 }
@@ -435,6 +436,16 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
     if (!result) { sampleReviewStatus_ = result.error().message; status_ = statusBeforeImport_; return core::Result<void>{result.error()}; }
     auto& value = result.value();
     const auto current = validateSampleReviewContext(value.context);
+    if (value.preparedDonorReceipt) {
+      preparedDonorReceipt_ = std::move(value.preparedDonorReceipt);
+      if (current) { productionProject_ = std::move(value.committedProject); refreshCandidateMarkerPreview(); }
+      invalidateSampleReview();
+      sampleReviewStatus_ = "DONOR IMPORTED / UNAPPROVED / CREATE OR RECREATE EDITABLE DRAFT BEFORE UNIT REVIEW";
+      if (!current) sampleReviewStatus_ += " / CONTEXT CHANGED: REOPEN PRODUCER";
+      if (!preparedDonorReceipt_->durabilityConfirmed) sampleReviewStatus_ += " / DURABILITY UNCONFIRMED: " + preparedDonorReceipt_->diagnostic;
+      status_ = sampleReviewStatus_;
+      return core::success();
+    }
     if (value.sourceRegistrationReceipt) {
       sourceRegistrationReceipt_ = std::move(value.sourceRegistrationReceipt);
       if (current) { productionProject_ = std::move(value.committedProject); refreshCandidateMarkerPreview(); }
@@ -522,6 +533,11 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
     if (value.loadedUnit) {
       adoptLoadedSampleUnit(std::move(*value.loadedUnit));
       sampleReviewStatus_ = status_ = "EDITABLE UNIT LOADED / CAPTURE REVIEW AFTER EDITS";
+      return core::success();
+    }
+    if (value.preparedDonorInspection) {
+      preparedDonorInspection_ = std::move(value.preparedDonorInspection);
+      sampleReviewStatus_ = status_ = "DONOR CAPTURED / INSPECT EXACT NOTICES AND ASSIGNMENT / NO IMPORT OR APPROVAL";
       return core::success();
     }
     if (value.sourceRegistrationInspection) {

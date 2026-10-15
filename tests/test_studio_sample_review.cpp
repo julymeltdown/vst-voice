@@ -423,7 +423,7 @@ TEST_CASE("Studio shutdown collects the actual decision outcome even when cancel
 TEST_CASE("Studio review controls and paged evidence remain bounded at the minimum viewport") {
   Fixture fixture; fixture.capture();
   const auto controls = native_ui::studioSampleReviewControls(fixture.controller, 720.0);
-  CHECK(controls.size() == 22U);
+  CHECK(controls.size() == 24U);
   CHECK(std::any_of(controls.begin(), controls.end(), [](const auto& control) {
     return control.id == "register-reviewer" && control.enabled;
   }));
@@ -439,7 +439,7 @@ TEST_CASE("Studio review controls and paged evidence remain bounded at the minim
   }));
   for (const auto& control : controls) {
     CHECK(control.bounds.x >= 0.0); CHECK(control.bounds.right() <= 720.0);
-    CHECK(control.bounds.y >= 0.0); CHECK(control.bounds.bottom() < 186.0);
+    CHECK(control.bounds.y >= 0.0); CHECK(control.bounds.bottom() < 214.0);
     if (control.id == "accept" || control.id == "reject") CHECK(!control.enabled);
   }
   const auto lines = native_ui::studioSampleReviewDetailLines(fixture.controller, 720.0);

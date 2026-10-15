@@ -6,6 +6,7 @@
 // create -> edit -> save -> publish -> install -> sing path is exercised without an AppKit panel.
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "prepared_phone_donor_fixture.hpp"
 
 #include "studio_app.hpp"
 
@@ -56,6 +57,9 @@ struct DialogScript final {
   std::vector<std::optional<platform::IFileDialog::ProductionWorkspaceInput>> workspaces;
   std::vector<std::optional<platform::SourceRegistrationInput>> sourceRegistrations;
   std::vector<std::string> sourceRegistrationSummaries;
+  std::vector<std::optional<platform::PreparedDonorSelectionInput>> donorSelections;
+  std::vector<bool> donorConfirmations;
+  std::vector<std::string> donorSummaries;
   std::vector<std::optional<std::string>> reviewerRegistrations;
   std::vector<std::string> reviewerRegistrationSummaries;
   std::vector<std::optional<platform::SampleManifestDraftIdentityInput>> sampleDraftIdentities;
@@ -101,6 +105,14 @@ public:
       std::string_view summary) override {
     script_->sourceRegistrationSummaries.emplace_back(summary);
     return nextAnswer(script_->sourceRegistrations);
+  }
+  core::Result<std::optional<platform::PreparedDonorSelectionInput>> choosePreparedDonor(
+      std::string_view, const std::vector<std::string>&) override { return nextAnswer(script_->donorSelections); }
+  core::Result<bool> confirmPreparedDonorImport(std::string_view summary) override {
+    script_->donorSummaries.emplace_back(summary);
+    if (script_->donorConfirmations.empty()) return false;
+    const bool answer=script_->donorConfirmations.front();
+    script_->donorConfirmations.erase(script_->donorConfirmations.begin()); return answer;
   }
   core::Result<std::optional<std::string>> chooseReviewerRegistration(std::string_view summary) override {
     script_->reviewerRegistrationSummaries.emplace_back(summary);
@@ -1777,4 +1789,43 @@ TEST_CASE("Voicebank Studio's stale retained source Play is refused while refere
     if (outputs.size() > openedBeforePress) CHECK(!outputs.back()->running);
     CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
   }
+}
+
+TEST_CASE("Studio application captures and explicitly imports a prepared donor through accessible controls") {
+  test::support::PreparedDonorWorkspaceFixture fixture;
+  StudioHarness studio{fixture.prepared.root/"app"};
+  voicebank_studio_native::Options options; options.startDesigner=true;
+  CHECK(studio.app->open(options)); studio.resize(720,520);
+  studio.dialogs->workspaces={platform::IFileDialog::ProductionWorkspaceInput{
+      .root=fixture.workspace,.inventorySha256=fixture.project.inventorySha256,.operatorId="producer"}};
+  CHECK(studio.activate("back"));
+  CHECK(studio.settle([&] { return studio.app->productionProject()!=nullptr; }));
+  studio.key(NativeKey::Q,{});
+  CHECK(studio.settle([&] { const auto node=studio.node("donor-capture"); return node && node->enabled; }));
+  CHECK(!studio.node("donor-import")->enabled);
+  studio.dialogs->paths[platform::FileDialogPurpose::PreparedDonorPacket]={fixture.prepared.root/"donors.json"};
+  studio.dialogs->donorSelections={platform::PreparedDonorSelectionInput{fixture.prepared.id,1U}};
+  CHECK(studio.activate("donor-capture"));
+  CHECK(studio.settle([&] { const auto node=studio.node("donor-import"); return node && node->enabled; }));
+  CHECK(fixture.repository.recover().value().takes.empty());
+  studio.snapshot("prepared-donor-captured-720x520",720,520);
+  studio.snapshot("prepared-donor-captured-1100x720",1100,720);
+  studio.dialogs->donorConfirmations={false,true};
+  CHECK(studio.activate("donor-import")); CHECK(fixture.repository.recover().value().takes.empty());
+  CHECK(studio.activate("donor-import"));
+  CHECK(studio.settle([&] { return studio.app->productionProject()->takes.size()==1U; }));
+  CHECK(!studio.node("donor-import")->enabled);
+  CHECK(studio.dialogs->donorSummaries.size()==2U);
+  const auto& summary=studio.dialogs->donorSummaries.back();
+  CHECK(summary.find("SYNTHETIC TEST FIXTURE ONLY")!=std::string::npos);
+  CHECK(summary.find("SYNTHETIC PRODUCER DECLARATION")!=std::string::npos);
+  CHECK(summary.find("EXPLICIT TARGET COVERAGE sustain:aa / MIDI 60 / STYLE soft")!=std::string::npos);
+  auto recovered=fixture.repository.recover(); CHECK(recovered); CHECK(fixture.repository.verify(recovered.value()));
+  CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration+1U);
+  CHECK(recovered.value().takes.front().style=="soft");
+  CHECK(recovered.value().takes.front().state==voicebank_production::UnitQueueState::MarkerReview);
+  CHECK(recovered.value().sourceBindings.front().preparedDonor->donorId==fixture.prepared.id);
+  CHECK(recovered.value().reviews.empty()); CHECK(recovered.value().sourceQualityAssessments.empty());
+  CHECK(!voicebank_production::selectedStrategyReady(recovered.value()));
+  studio.snapshot("prepared-donor-imported-720x520",720,520);
 }

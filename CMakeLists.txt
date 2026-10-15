@@ -554,6 +554,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/project_codec_validation.cpp
   libs/seam-voicebank-production/src/repository.cpp
   libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/prepared_donor_intake.cpp
   libs/seam-voicebank-production/src/prepared_phone_donor.cpp
   libs/seam-voicebank-production/src/repository_generation.cpp
   libs/seam-voicebank-production/src/generation_expectation.cpp
@@ -793,6 +794,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/voicebank_studio_sample_review.cpp
     libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp
     libs/seam-native-ui/src/voicebank_studio_source_quality.cpp
+    libs/seam-native-ui/src/voicebank_studio_donor_intake.cpp
     libs/seam-native-ui/src/new_project_dialog.cpp
     libs/seam-native-ui/src/conversion_review_model.cpp
     libs/seam-native-ui/src/arrangement_panel.cpp

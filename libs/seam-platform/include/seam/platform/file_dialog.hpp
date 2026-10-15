@@ -54,6 +54,7 @@ enum class FileDialogPurpose {
   CreateSampleManifestDraft,
   SourceQualityEvidence,
   SourceLicenseEvidence,
+  PreparedDonorPacket,
 };
 
 struct FileDialogRequest final {
@@ -82,6 +83,11 @@ struct SourceRegistrationInput final {
   // Explicit yes/no for source use, transformation, bank redistribution and
   // commercial renders, respectively. No platform may supply permissive defaults.
   std::array<std::string,4U> permissions;
+};
+
+struct PreparedDonorSelectionInput final {
+  std::string donorId;
+  std::size_t assignmentIndex;
 };
 
 class IFileDialog {
@@ -129,6 +135,13 @@ public:
   }
   [[nodiscard]] virtual core::Result<std::optional<NewProducerWorkspaceInput>> chooseNewProducerWorkspace() {
     return core::failure<std::optional<NewProducerWorkspaceInput>>(core::ErrorCode::Unsupported,"Producer workspace creation is unavailable on this platform");
+  }
+  [[nodiscard]] virtual core::Result<std::optional<PreparedDonorSelectionInput>> choosePreparedDonor(
+      std::string_view, const std::vector<std::string>&) {
+    return core::failure<std::optional<PreparedDonorSelectionInput>>(core::ErrorCode::Unsupported,"Prepared donor selection is unavailable");
+  }
+  [[nodiscard]] virtual core::Result<bool> confirmPreparedDonorImport(std::string_view) {
+    return core::failure<bool>(core::ErrorCode::Unsupported,"Prepared donor import confirmation is unavailable");
   }
   [[nodiscard]] virtual core::Result<std::optional<SourceRegistrationInput>> chooseSourceRegistration(std::string_view) {
     return core::failure<std::optional<SourceRegistrationInput>>(core::ErrorCode::Unsupported,"Source registration entry is unavailable");

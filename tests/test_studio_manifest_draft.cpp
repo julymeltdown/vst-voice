@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "prepared_phone_donor_fixture.hpp"
 #include "english_manifest_draft_fixture.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -14,6 +15,138 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+
+namespace {
+struct DonorDialog final : seam::platform::IFileDialog {
+  std::optional<std::filesystem::path> path;
+  std::optional<seam::platform::PreparedDonorSelectionInput> input;
+  bool confirm{false};
+  std::string summary;
+  std::vector<std::string> assignments;
+  std::function<void()> duringChoice, duringConfirmation;
+  seam::core::Result<std::optional<std::filesystem::path>> choose(const seam::platform::FileDialogRequest& request) override {
+    CHECK(request.purpose==seam::platform::FileDialogPurpose::PreparedDonorPacket); return path;
+  }
+  seam::core::Result<std::optional<seam::platform::PreparedDonorSelectionInput>> choosePreparedDonor(
+      std::string_view, const std::vector<std::string>& choices) override {
+    assignments=choices; if (duringChoice) duringChoice(); return input;
+  }
+  seam::core::Result<bool> confirmPreparedDonorImport(std::string_view text) override {
+    summary=text; if (duringConfirmation) duringConfirmation(); return confirm;
+  }
+};
+}
+
+TEST_CASE("Studio captures original donor notices and imports held bytes only after explicit confirmation") {
+  using namespace seam;
+  test::support::PreparedDonorWorkspaceFixture fixture;
+  native_ui::VoicebankStudioController controller;
+  CHECK(controller.openProductionProject(fixture.workspace,fixture.project.inventorySha256,"producer"));
+  DonorDialog dialog; dialog.path=fixture.prepared.root/"donors.json";
+  dialog.input=platform::PreparedDonorSelectionInput{fixture.prepared.id,1U};
+  const auto before=voicebank_production::encodeProductionProject(fixture.project);
+  const auto settle=[&] {
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds{10};
+    while (controller.proceduralImportBusy()) {
+      CHECK(controller.pollProceduralCandidateImport());
+      CHECK(std::chrono::steady_clock::now()<deadline);
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+  };
+  CHECK(native_ui::captureStudioPreparedDonor(controller,dialog)); settle();
+  CHECK(dialog.assignments.size()==2U); CHECK(controller.preparedDonorInspection());
+  const auto capture=*controller.preparedDonorInspection();
+  CHECK(capture.intake->take.style=="soft"); CHECK(capture.intake->take.pitchLayer==60);
+  CHECK(capture.details.find("SYNTHETIC TEST FIXTURE ONLY")!=std::string::npos);
+  CHECK(capture.details.find("Synthetic fixture author; original PCM copied")!=std::string::npos);
+  CHECK(capture.details.find("SYNTHETIC PRODUCER DECLARATION")!=std::string::npos);
+  CHECK(capture.details.find("SOURCE PHONES (AUTOMATIC, UNREVIEWED) [\"aa\"]")!=std::string::npos);
+  CHECK(voicebank_production::encodeProductionProject(fixture.repository.recover().value())==before);
+  CHECK(native_ui::importStudioPreparedDonor(controller,dialog)); CHECK(!controller.proceduralImportBusy());
+  CHECK(!controller.preparedDonorReceipt());
+  CHECK(dialog.summary.find(capture.captureSha256)!=std::string::npos);
+  CHECK(dialog.summary.find("can reopen earlier take reviews")!=std::string::npos);
+  // The importer must consume captured material even if preparation disappears.
+  for (const auto name : {"donors.json","intake-plan.json","license-source.txt","attribution.txt"})
+    CHECK(std::filesystem::remove(fixture.prepared.root/name));
+  CHECK(std::filesystem::remove(fixture.prepared.root/(fixture.prepared.id+".wav")));
+  dialog.confirm=true;
+  CHECK(native_ui::importStudioPreparedDonor(controller,dialog)); settle();
+  CHECK(controller.preparedDonorReceipt()); CHECK(!controller.preparedDonorInspection());
+  auto recovered=fixture.repository.recover(); CHECK(recovered); CHECK(fixture.repository.verify(recovered.value()));
+  CHECK(recovered.value().lastDurableGeneration==fixture.project.lastDurableGeneration+1U);
+  CHECK(recovered.value().takes.size()==1U); CHECK(recovered.value().takes.front().style=="soft");
+  CHECK(recovered.value().takes.front().state==voicebank_production::UnitQueueState::MarkerReview);
+  CHECK(recovered.value().sourceBindings.front().preparedDonor->packetSha256==fixture.prepared.packetSha);
+  CHECK(recovered.value().reviews.empty()); CHECK(recovered.value().sourceQualityAssessments.empty());
+  CHECK(!voicebank_production::selectedStrategyReady(recovered.value()));
+  CHECK(!controller.beginPreparedDonorImport(capture.context,capture.captureSha256));
+  const auto lines=native_ui::studioSampleReviewDetailLines(controller,720);
+  CHECK(std::any_of(lines.begin(),lines.end(),[](const auto& line) { return line.find("LAST DONOR IMPORT")!=std::string::npos; }));
+}
+
+TEST_CASE("Studio donor capture rejects invalid choices, cancelled work and stale modal contexts without imports") {
+  using namespace seam;
+  test::support::PreparedDonorWorkspaceFixture fixture;
+  native_ui::VoicebankStudioController controller;
+  CHECK(controller.openProductionProject(fixture.workspace,fixture.project.inventorySha256,"producer"));
+  const auto before=voicebank_production::encodeProductionProject(fixture.project);
+  DonorDialog dialog;
+  CHECK(native_ui::captureStudioPreparedDonor(controller,dialog)); CHECK(!controller.proceduralImportBusy());
+  dialog.path=fixture.prepared.root/"donors.json";
+  CHECK(native_ui::captureStudioPreparedDonor(controller,dialog)); CHECK(!controller.proceduralImportBusy());
+  const auto context=controller.captureSampleReviewContext().value();
+  CHECK(!controller.beginPreparedDonorCapture(context,*dialog.path,fixture.prepared.id,99U));
+  CHECK(!controller.beginPreparedDonorCapture(context,fixture.prepared.root/"other.json",fixture.prepared.id,0U));
+  CHECK(!controller.beginPreparedDonorImport(context,"uncaptured"));
+  dialog.input=platform::PreparedDonorSelectionInput{fixture.prepared.id,0U};
+  CHECK(native_ui::captureStudioPreparedDonor(controller,dialog));
+  controller.cancelProceduralCandidateImport();
+  bool refused=false;
+  while (controller.proceduralImportBusy()) {
+    if (!controller.pollProceduralCandidateImport()) refused=true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(refused); CHECK(!controller.preparedDonorInspection());
+  dialog.duringChoice=[&] { CHECK(controller.openProductionProject(fixture.workspace,fixture.project.inventorySha256,"producer")); };
+  CHECK(!native_ui::captureStudioPreparedDonor(controller,dialog)); CHECK(!controller.proceduralImportBusy());
+  CHECK(!controller.preparedDonorReceipt());
+  CHECK(voicebank_production::encodeProductionProject(fixture.repository.recover().value())==before);
+}
+
+TEST_CASE("Studio donor confirmation cannot substitute a recaptured assignment under the same context") {
+  using namespace seam;
+  test::support::PreparedDonorWorkspaceFixture fixture;
+  native_ui::VoicebankStudioController controller;
+  CHECK(controller.openProductionProject(fixture.workspace,fixture.project.inventorySha256,"producer"));
+  const auto context=controller.captureSampleReviewContext().value();
+  const auto settle=[&] {
+    while (controller.proceduralImportBusy()) {
+      CHECK(controller.pollProceduralCandidateImport()); std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+  };
+  CHECK(controller.beginPreparedDonorCapture(context,fixture.prepared.root/"donors.json",fixture.prepared.id,0U)); settle();
+  DonorDialog dialog; dialog.confirm=true;
+  dialog.duringConfirmation=[&] {
+    CHECK(controller.beginPreparedDonorCapture(context,fixture.prepared.root/"donors.json",fixture.prepared.id,1U)); settle();
+  };
+  CHECK(!native_ui::importStudioPreparedDonor(controller,dialog));
+  CHECK(controller.preparedDonorInspection()->intake->take.style=="soft"); CHECK(!controller.preparedDonorReceipt());
+  CHECK(fixture.repository.recover().value().takes.empty());
+}
+
+TEST_CASE("Shared donor intake revalidates caller-mutated snapshots before displaying source notices") {
+  using namespace seam;
+  test::support::PreparedDonorWorkspaceFixture fixture;
+  auto held=fixture.prepared.load(); held.evidence.proposalJson="{}"; held.frames=1U;
+  auto captured=voicebank_production::capturePreparedDonorIntake(fixture.workspace,fixture.project,held,
+      fixture.prepared.packetSha,fixture.prepared.id,fixture.project.selectedSourceStrategyId,"sustain:aa",60,"neutral");
+  CHECK(captured); CHECK(captured.value().snapshot.frames==80U);
+  held.evidence.packet.bytes.clear();
+  CHECK(!voicebank_production::capturePreparedDonorIntake(fixture.workspace,fixture.project,std::move(held),
+      fixture.prepared.packetSha,fixture.prepared.id,fixture.project.selectedSourceStrategyId,"sustain:aa",60,"neutral"));
+  CHECK(fixture.repository.recover().value().takes.empty());
+}
 
 namespace {
 using namespace seam;
@@ -732,7 +865,7 @@ TEST_CASE("Studio source quality capture cancellation preserves source history a
   fixture.controller.cancelProceduralCandidateImport(); CHECK(!collectDraft(fixture.controller));
   CHECK(!fixture.controller.sourceQualityInspection()); CHECK(!fixture.controller.sourceQualityReceipt()); fixture.sourceUnchanged();
   for (double width : {720.0,960.0,1440.0}) {
-    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==22U);
+    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==24U);
     for (std::size_t i=0U;i<controls.size();++i) for (std::size_t j=i+1U;j<controls.size();++j) {
       const auto& a=controls[i].bounds; const auto& b=controls[j].bounds;
       CHECK(a.right()<=b.x || b.right()<=a.x || a.bottom()<=b.y || b.bottom()<=a.y);

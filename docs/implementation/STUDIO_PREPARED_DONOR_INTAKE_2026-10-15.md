@@ -1,0 +1,50 @@
+# Studio prepared-donor intake — 2026-10-15
+
+Voicebank Studio can now capture a prepared donor with its original notices, display an explicit existing assignment, and import the held material as an unapproved take after a separate confirmation. This completes the missing Studio entry path identified in the earlier CLI intake report. It establishes an engineering workflow; no downloaded recording was admitted, played or approved. Exact independent review of this unit is pending.
+
+## Actual creator workflow
+
+1. Open a matching English style-owned producer workspace, register the genuine producer/source declaration and save existing manifest edits. The selected source must be a human recording whose declared source-use and transformation permissions pass the existing policy. Registration remains a declaration, not a verified identity or legal finding.
+2. In Sample Review (`Q`), choose **CAPTURE PREPARED DONOR**, select `donors.json`, enter its exact donor ID and explicitly choose an existing coverage/MIDI/style/prompt assignment. Neither phone mapping, pitch nor style is inferred. AppKit supplies no default assignment selection. The packet digest is captured from the explicitly selected file; this is not authentication of its publisher or an out-of-band trusted handoff.
+3. Inspect the first-page donor, automatic source phones and target assignment. Page through the complete original license, attribution/change notice, reviewed producer declaration, source proposal, audio identities and hashes. Capture performs no repository mutation. Other donors' audio is not verified by selecting one donor.
+4. Choose **IMPORT UNAPPROVED TAKE**. A scrollable, selectable, read-only AppKit notice shows the complete captured material and target. Cancel is the default action. A separate explicit confirmation starts the importer. The confirmation also warns that a first schema-4 to schema-5 prepared import can reopen earlier take reviews.
+5. Inspect the retained commit receipt. Create or recreate an editable draft before unit review. Imported material has native inspection evidence and remains unapproved; source quality, pitch/phone correctness, marker review, listening, bank publication, signing and release acceptance remain separate.
+
+The capture digest binds the exact structured CLI-compatible request. It is an integrity/context binding, not a signature or evidence that a human read the notice. Original text bytes remain in that request; Studio quotes nonprinting ASCII controls in its readable presentation. Unicode direction controls are not specially escaped.
+
+## Code and state boundaries
+
+- `libs/seam-voicebank-production/include/seam/voicebank_production/prepared_donor_intake.hpp` and `src/prepared_donor_intake.cpp` extract the CLI capture contract into `capturePreparedDonorIntake()`. The public API revalidates all owned metadata/audio against independent expected packet and donor identities before parsing or displaying cached fields. It returns the structured display, exact take/supersession identity and revalidated owned snapshot. The existing CLI request fields/serialization remain unchanged; strict UTF-8 and the 64 MiB display bound remain enforced.
+- `libs/seam-native-ui/src/voicebank_studio_donor_intake.cpp` implements asynchronous capture/import and injectable modal helpers. Capture verifies the durable project, loads the selected donor, holds immutable material and records the actual registered producer, full Studio context and display digest. Import binds all three and uses the repository importer. It consumes held bytes rather than reopening preparation paths. The existing reviewed declaration path is still required by source policy at import time.
+- `voicebank_studio_sample_review.cpp` invalidates captures on project/manifest/selection changes. A commit receipt is processed before stale-context/cancellation rejection so a late cancellation cannot hide a confirmed commit; stale results do not replace a newer project. Existing importer commit-recognition limitations still apply.
+- `voicebank_studio_production_view.cpp` adds two separate controls, moves the waveform/detail area down 28 points and shows the donor/mapping before unit-review boilerplate. `apps/seam-voicebank-studio-native/studio_app.cpp` routes the actual accessible actions to the new helpers. Dirty manifest edits prevent capture/import.
+- `libs/seam-platform/src/file_dialog_appkit.mm` implements explicit donor/assignment entry and full notice confirmation. Other platform providers retain safe Unsupported defaults. Windows remains TODO.
+- `tests/prepared_phone_donor_fixture.hpp` extracts the existing synthetic packet fixture and adds a synthetic registered producer with two style assignments. Existing native snapshot tests use the same packet fixture; source notices and PCM remain test-only.
+
+Four controller/shared-API cases cover full notice presentation and assignment, read-only capture, cancellation at both modals, precommit cancellation, invalid input, stale project context, recapture during confirmation, immutable material after preparation deletion, unapproved persistence, duplicate/stale refusal and caller-mutated snapshot revalidation. One actual application case drives the accessible controls, cancels then confirms import and reads the real recovered repository. Dialogs are scripted and audio is silent. This is not a live AppKit panel, screen-reader, musician or listening acceptance test.
+
+## Execution evidence
+
+Source base: `f819300407a8d762ca7f4d5fc495c1d72ee0d82d`. Sixteen source/test/build files have patch SHA-256 `f0e199807e9b8d42a3777bf69d8b72467a508b3bf23d7b53d923b38bf4a50fd1`.
+
+| Run | Result | Wall time |
+|---|---|---:|
+| Full Release dependency build | PASS; final changed sources/dependents rebuilt | 7.560 s |
+| Seven Release CTest lanes | 112 cases: snapshot 24, sample review 14, manifest draft 48, actual app 15, generation/bank 2, recording parity 1, import outcomes 8 | 32.814 s |
+| Actual CLI intake integration | 6 methods PASS, zero skips | 1.545 s |
+| Focused ASan/UBSan build | Both tested targets and dependencies rebuilt | 5.915 s |
+| ASan/UBSan snapshot + manifest-draft lanes | 72 cases PASS | 34.233 s |
+
+Release and sanitizer runs overlapped; these are observations, not benchmarks. ASan used `detect_leaks=0:abort_on_error=1:strict_string_checks=1`; UBSan used `print_stacktrace=1:halt_on_error=1`. No leak, TSan, complete suite or complete sanitizer build is claimed. The actual app case ran in Release; it is not one of the two sanitized lanes.
+
+Frozen root: `out/evidence/studio-prepared-donor-intake-2026-10-15`. Manifest: **22,114 bytes**, SHA-256 **`b8e1884bdc9dd1d27d14f05e087b61147306e8b21aafbb6dda6ddb6f9fb9033e`**, **94 artifacts and 12 pins**. The root retains exact sources, patch, scripts, final command receipts/logs, stable source and executable hashes, ten binary copies, generated build identities, and 26 snapshot files. Three new capture/import screenshots were converted losslessly from PPM to PNG; remaining snapshots come from existing app cases. The visually inspected 720×520 capture shows the donor, source phones and explicit assignment without control overlap using the harness bitmap face. This does not establish shipping system-font or AppKit-modal rendering.
+
+An initial controller assertion expected compact JSON while the display used the pretty default. It failed before import; the corrected compact display and final tests pass. Earlier failing/presentation-order/warning stages are retained separately, not used as final acceptance. Untimed initial compilation logs are also retained. The read-only verifier checks exact artifact/pin/source identities, final case counts, new traces and stable binaries without rerunning retained tests or scripts.
+
+## Review and next work
+
+The exact predecessor `f7d2559c` independent verdict is retained at `out/evidence/prepared-donor-transaction-independent-2026-10-15/review-f7d2559c.md`: **15,644 bytes**, SHA-256 `2a3545ca6734f9c7ef94ff1b7f8d38bd03aac5a350130d355e4ae0eced844a74`. Its metadata is **605 bytes**, SHA-256 `c9c3ff99ff9e984351e8c644e39ab2e12b1088b48c2deb4b030a987ac746dee3`. The verdict approves the engineering change and closes the originating importer-wrapper mid-operation cancellation/commit-fault item. It is not approval of this newer Studio implementation.
+
+The reviewer identified a pre-existing P3: a first prepared import can lower existing approvals during the schema transition. If the pointer write then fails, commit recognition compares recovered post-transition state with the earlier draft and misclassifies its own recoverable commit as different work. This unit warns before import; **the recognition repair remains OPEN and is the next implementation priority**. Preserve strict generation/hash matching and add a pointer-obstruction regression with an earlier approved take. The same-shaped style-migration comparison needs examination. Owned-reader cancellation, wrapper helper/fsync faults, cancellation after publication begins and OS/power-loss evidence also remain open within their recorded scopes.
+
+Real producer/reviewer identity, performer/source-rights disposition, explicit phonetic and pitch/style decisions, failed-QC policy, listening and remaining product/host/release evidence are still required. The downloaded source pool remains unchanged and unadmitted. All four canonical gate files remain pinned unchanged: Alpha **0/20**, U45 **HELD**, Beta **BLOCKED**, full goal **ACTIVE**. `.github`, README and the pre-existing stash are unchanged; Windows remains TODO.

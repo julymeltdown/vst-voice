@@ -374,6 +374,60 @@ public:
       return Output{std::string{text}};
     }
   }
+  core::Result<std::optional<PreparedDonorSelectionInput>> choosePreparedDonor(
+      std::string_view summary, const std::vector<std::string>& assignments) override {
+    using Output = std::optional<PreparedDonorSelectionInput>;
+    if (![NSThread isMainThread] || assignments.empty() || assignments.size()>4096U)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,"Donor assignments are unavailable or oversized");
+    @autoreleasepool {
+      NSAlert* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Capture a prepared donor";
+      alert.informativeText = nsString(summary);
+      [alert addButtonWithTitle:@"Capture Only"]; [alert addButtonWithTitle:@"Cancel"];
+      NSView* fields = [[NSView alloc] initWithFrame:NSMakeRect(0,0,600,66)];
+      NSTextField* donor = [[NSTextField alloc] initWithFrame:NSMakeRect(0,36,600,26)];
+      donor.placeholderString = @"Exact donor ID from donors.json";
+      [donor setAccessibilityLabel:@"Prepared donor ID"];
+      NSPopUpButton* choices = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,0,600,28) pullsDown:NO];
+      [choices setAccessibilityLabel:@"Explicit coverage, MIDI pitch and style assignment"];
+      for (const auto& item : assignments) {
+        NSString* label = nsString(item);
+        if (label==nil || item.empty() || item.size()>1024U)
+          return core::failure<Output>(core::ErrorCode::InvalidArgument,"Invalid donor assignment label");
+        [choices addItemWithTitle:label];
+      }
+      [choices selectItemAtIndex:-1];
+      [fields addSubview:donor]; [fields addSubview:choices]; alert.accessoryView = fields;
+      if (runModalRestoringFocus(alert)!=NSAlertFirstButtonReturn) return Output{};
+      const auto selected = choices.indexOfSelectedItem;
+      if (donor.stringValue.length==0U || donor.stringValue.length>128U || donor.stringValue.UTF8String==nullptr ||
+          selected<0 || static_cast<std::size_t>(selected)>=assignments.size())
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,"Enter an exact donor ID and explicitly choose its assignment");
+      return Output{PreparedDonorSelectionInput{donor.stringValue.UTF8String,static_cast<std::size_t>(selected)}};
+    }
+  }
+  core::Result<bool> confirmPreparedDonorImport(std::string_view summary) override {
+    if (![NSThread isMainThread]) return core::failure<bool>(core::ErrorCode::InvalidState,"Donor confirmation must run on the main thread");
+    @autoreleasepool {
+      NSString* text = nsString(summary);
+      if (text==nil) return core::failure<bool>(core::ErrorCode::InvalidArgument,"Donor notice display is not UTF-8");
+      NSAlert* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Import this exact unapproved take?";
+      alert.informativeText = @"Inspect the full source proposal, explicit target assignment, original license, attribution and producer declaration below. Import grants no rights, listening or bank approval.";
+      [alert addButtonWithTitle:@"Cancel"]; [alert addButtonWithTitle:@"Import Unapproved Take"];
+      NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0,0,680,420)];
+      scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
+      NSTextView* notice = [[NSTextView alloc] initWithFrame:NSMakeRect(0,0,660,420)];
+      notice.editable = NO; notice.selectable = YES; notice.richText = NO;
+      notice.verticallyResizable = YES; notice.horizontallyResizable = NO;
+      notice.autoresizingMask = NSViewWidthSizable;
+      notice.textContainer.widthTracksTextView = YES;
+      notice.font = [NSFont systemFontOfSize:13]; notice.string = text;
+      [notice setAccessibilityLabel:@"Exact donor assignment and original source notices"];
+      scroll.documentView = notice; alert.accessoryView = scroll;
+      return runModalRestoringFocus(alert)==NSAlertSecondButtonReturn;
+    }
+  }
   core::Result<bool> confirmSampleReview(std::string_view summary, bool accept) override {
     if (![NSThread isMainThread]) return core::failure<bool>(core::ErrorCode::InvalidState, "Review confirmation must run on the main thread");
     @autoreleasepool {

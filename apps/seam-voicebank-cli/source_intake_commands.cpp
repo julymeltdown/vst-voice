@@ -2,7 +2,7 @@
 #include "signal_cancellation.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
-#include "seam/voicebank_production/prepared_phone_donor.hpp"
+#include "seam/voicebank_production/prepared_donor_intake.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/formats/json_value.hpp"
@@ -59,60 +59,6 @@ int print(const J::Object& value) {
   std::cout << formats::stringifyJson(value, true) << '\n';
   return std::cout ? 0 : 2;
 }
-struct Intake final { J display; p::RawTakeInput take; };
-core::Result<Intake> describe(const std::filesystem::path& workspace, const p::VoicebankProductionProject& project,
-    const p::PreparedPhoneDonorSnapshot& held, std::string_view sourceId, std::string_view coverage,
-    std::int32_t pitch, std::string_view style, std::stop_token stop) {
-  if (stop.stop_requested()) return core::failure<Intake>(core::ErrorCode::Conflict, "Prepared intake cancelled");
-  if (project.schemaVersion < p::kProductionStyleSchemaVersion || project.language != "en" || sourceId != project.selectedSourceStrategyId)
-    return core::failure<Intake>(core::ErrorCode::Conflict, "Prepared intake requires the exact English style-owned producer and selected source");
-  const auto source = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
-      [&](const auto& value) { return value.id == sourceId; });
-  const auto authorization = p::requireSelectedSourceExecution(project);
-  if (!authorization) return core::Result<Intake>{authorization.error()};
-  if (source == project.sourceStrategies.end() || source->kind != p::SourceStrategyKind::HumanRecording)
-    return core::failure<Intake>(core::ErrorCode::InvalidArgument, "Prepared intake requires a human-recording source declaration");
-  const auto row = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
-    return value.coverageKey == coverage && value.pitchLayer == pitch && value.style == style;
-  });
-  if (row == project.unitAssignments.end())
-    return core::failure<Intake>(core::ErrorCode::Conflict, "Prepared intake requires an explicit existing coverage/pitch/style assignment");
-  const auto declaration = core::readFileBytesLimited(workspace / "source-evidence" / (source->licenseSha256 + ".txt"), 4U * MiB);
-  if (!declaration) return core::Result<Intake>{declaration.error()};
-  if (core::sha256Hex(declaration.value()) != source->licenseSha256)
-    return core::failure<Intake>(core::ErrorCode::Conflict, "Reviewed source declaration differs from its retained identity");
-  const auto proposal = formats::parseJson(held.evidence.proposalJson);
-  const auto packet = formats::parseJson(bytesText(held.evidence.packet.bytes));
-  if (!proposal || !packet) return core::failure<Intake>(core::ErrorCode::ParseError, "Prepared intake metadata is malformed");
-  // The existing worker helper computes only take/supersession identity; it
-  // does not synthesize material or infer a phone, pitch, style or source.
-  const auto identity = p::nextProceduralTakeIdentity(project, *row);
-  p::RawTakeInput take{.takeId = identity.takeId, .promptId = row->promptId, .coverageKey = row->coverageKey,
-      .pitchLayer = row->pitchLayer, .supersedesTakeId = identity.supersedesTakeId, .style = row->style};
-  J display = J::Object{{"format", "com.project-seam.prepared-donor-intake"}, {"schemaVersion", std::int64_t{1}},
-      {"status", "UNAPPROVED"}, {"qualification", "NOT_QUALIFIED"}, {"releaseEligible", false}, {"sourceRightsApproved", false},
-      {"language", project.language}, {"projectId", project.projectId},
-      {"projectSha256", core::sha256Hex(p::encodeProductionProject(project))}, {"sourceStrategyId", source->id},
-      {"packetSha256", held.evidence.packet.sha256}, {"donorId", held.evidence.donorId},
-      {"intakePlanSha256", held.evidence.plan.sha256},
-      {"sourcePhones", *proposal.value().find("sourcePhones")}, {"unreviewedProposal", proposal.value()},
-      {"assignment", J::Object{{"coverageKey", take.coverageKey}, {"pitchLayer", static_cast<std::int64_t>(take.pitchLayer)},
-          {"style", take.style}, {"promptId", take.promptId}, {"takeId", take.takeId}, {"supersedesTakeId", take.supersedesTakeId}}},
-      {"reviewedSourceDeclaration", J::Object{{"sha256", source->licenseSha256}, {"text", bytesText(declaration.value())},
-          {"declaredRights", std::string{p::toString(source->rights)}}, {"sourceUse", source->permissions.sourceUse},
-          {"transformation", source->permissions.transformation}, {"singingBankRedistribution", source->permissions.singingBankRedistribution},
-          {"commercialRenders", source->permissions.commercialRenders}}},
-      {"originalLicense", J::Object{{"sha256", held.evidence.license.sha256}, {"text", bytesText(held.evidence.license.bytes)},
-          {"source", *packet.value().find("license")}}},
-      {"attribution", J::Object{{"sha256", held.evidence.attribution.sha256}, {"text", bytesText(held.evidence.attribution.bytes)}}},
-      {"audio", J::Object{{"sha256", held.audio.sha256}, {"pcmSha256", held.pcmSha256},
-          {"sampleRate", static_cast<std::int64_t>(held.sampleRate)}, {"frames", static_cast<std::int64_t>(held.frames)},
-          {"nonzeroPcm", held.nonzeroPcm}}}};
-  const auto serialized = formats::stringifyJson(display, true) + "\n";
-  if (serialized.size() > 64U * MiB || !utf8(serialized))
-    return core::failure<Intake>(core::ErrorCode::Unsupported, "Prepared intake display requires bounded UTF-8 notice and assignment text");
-  return Intake{std::move(display), std::move(take)};
-}
 bool inside(const std::filesystem::path& path, const std::filesystem::path& root) {
   const auto relative = path.lexically_relative(root);
   return !relative.empty() && *relative.begin() != "..";
@@ -130,7 +76,7 @@ int prepare(int argc, char** argv) {
   const auto project = repository.recover(); if (!project) return fail(project.error(), &cancellation);
   const auto held = p::loadPreparedPhoneDonor(argv[3], argv[4], argv[5], cancellation.token());
   if (!held) return fail(held.error(), &cancellation);
-  const auto intake = describe(argv[2], project.value(), held.value(), argv[6], argv[7], pitch, argv[9], cancellation.token());
+  const auto intake = p::capturePreparedDonorIntake(argv[2], project.value(), held.value(), argv[4], argv[5], argv[6], argv[7], pitch, argv[9], cancellation.token());
   if (!intake) return fail(intake.error(), &cancellation);
   std::error_code error;
   const auto output = std::filesystem::absolute(argv[10], error).lexically_normal();
@@ -179,7 +125,7 @@ int importPrepared(int argc, char** argv) {
   if (*projectHash != core::sha256Hex(p::encodeProductionProject(project.value()))) return invalid("Prepared intake producer snapshot is stale");
   auto held = p::loadPreparedPhoneDonor(argv[3], *packetHash, *donor, cancellation.token());
   if (!held) return fail(held.error(), &cancellation);
-  const auto intake = describe(argv[2], project.value(), held.value(), *source, *coverage,
+  const auto intake = p::capturePreparedDonorIntake(argv[2], project.value(), held.value(), *packetHash, *donor, *source, *coverage,
       static_cast<std::int32_t>(pitch->asInt64()), *style, cancellation.token());
   if (!intake) return fail(intake.error(), &cancellation);
   if (intake.value().display != request.value()) return invalid("Prepared intake differs from its displayed notices, donor or assignment");

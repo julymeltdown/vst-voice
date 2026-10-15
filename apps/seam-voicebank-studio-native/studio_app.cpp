@@ -1978,6 +1978,8 @@ public:
     if (action == "open-manifest") return openStudioSampleManifest(controller_, *dialog);
     if (action == "source-evidence") { sampleReviewFirstLine_ = 0U; return captureStudioSourceQuality(controller_, *dialog); }
     if (action == "source-decision") { sampleReviewFirstLine_ = 0U; return confirmStudioSourceQuality(controller_, *dialog); }
+    if (action == "donor-capture") { sampleReviewFirstLine_ = 0U; return captureStudioPreparedDonor(controller_, *dialog); }
+    if (action == "donor-import") { sampleReviewFirstLine_ = 0U; return importStudioPreparedDonor(controller_, *dialog); }
     if (action == "source-license") { sampleReviewFirstLine_ = 0U; return captureStudioSourceLicense(controller_, *dialog); }
     if (action == "source-register") { sampleReviewFirstLine_ = 0U; return registerStudioSource(controller_, *dialog); }
     if (action == "register-reviewer") { sampleReviewFirstLine_ = 0U; return registerStudioReviewer(controller_, *dialog); }

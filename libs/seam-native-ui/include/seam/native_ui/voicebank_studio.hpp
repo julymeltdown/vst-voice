@@ -17,6 +17,7 @@
 #include "seam/voicebank/pitch.hpp"
 #include "seam/native_ui/pitch_contour.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/prepared_donor_intake.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/generation_request.hpp"
@@ -135,6 +136,16 @@ public:
     std::string evidenceSha256, producerId;
     friend bool operator==(const SourceRegistrationInspection&, const SourceRegistrationInspection&) = default;
   };
+  struct PreparedDonorInspection final {
+    SampleReviewContext context;
+    std::string producerId, captureSha256, details;
+    std::shared_ptr<const voicebank_production::PreparedDonorIntake> intake;
+  };
+  [[nodiscard]] core::Result<void> beginPreparedDonorCapture(const SampleReviewContext& context,
+      std::filesystem::path packetPath, std::string donorId, std::size_t assignmentIndex);
+  [[nodiscard]] core::Result<void> beginPreparedDonorImport(const SampleReviewContext& context, std::string captureSha256);
+  [[nodiscard]] const std::optional<PreparedDonorInspection>& preparedDonorInspection() const noexcept { return preparedDonorInspection_; }
+  [[nodiscard]] const std::optional<voicebank_production::CommittedAssetRecord>& preparedDonorReceipt() const noexcept { return preparedDonorReceipt_; }
   [[nodiscard]] core::Result<void> beginSourceLicenseCapture(const SampleReviewContext& context, std::filesystem::path path);
   [[nodiscard]] core::Result<void> beginSourceRegistration(const SourceRegistrationInspection& expected,
       voicebank_production::SourceStrategyAssessment source);
@@ -534,6 +545,8 @@ private:
     std::optional<LoadedUnit> loadedUnit;
     std::optional<voicebank_production::CreatedSampleManifestDraft> createdDraft;
     std::string draftLoadDiagnostic;
+    std::optional<PreparedDonorInspection> preparedDonorInspection;
+    std::optional<voicebank_production::CommittedAssetRecord> preparedDonorReceipt;
     std::optional<SourceQualityInspection> sourceQualityInspection;
     std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt;
     std::optional<SourceRegistrationInspection> sourceRegistrationInspection;
@@ -558,6 +571,8 @@ private:
   [[nodiscard]] core::Result<void> pollEditableUnitLoad();
   std::future<core::Result<EditableUnitLoad>> editableUnitLoad_;
   std::optional<SampleReviewInspection> sampleReview_;
+  std::optional<PreparedDonorInspection> preparedDonorInspection_;
+  std::optional<voicebank_production::CommittedAssetRecord> preparedDonorReceipt_;
   std::optional<SourceQualityInspection> sourceQualityInspection_;
   std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt_;
   std::optional<SourceRegistrationInspection> sourceRegistrationInspection_;
@@ -760,6 +775,8 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
 [[nodiscard]] core::Result<void> createStudioSampleManifestDraft(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> captureStudioSourceQuality(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> confirmStudioSourceQuality(VoicebankStudioController& controller, platform::IFileDialog& dialog);
+[[nodiscard]] core::Result<void> captureStudioPreparedDonor(VoicebankStudioController& controller, platform::IFileDialog& dialog);
+[[nodiscard]] core::Result<void> importStudioPreparedDonor(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> captureStudioSourceLicense(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> registerStudioSource(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> registerStudioReviewer(VoicebankStudioController& controller, platform::IFileDialog& dialog);

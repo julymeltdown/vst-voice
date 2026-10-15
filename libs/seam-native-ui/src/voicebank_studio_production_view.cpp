@@ -46,7 +46,7 @@ constexpr double kSampleReviewText = 12.0;
 constexpr double kSampleReviewLine = 17.0;
 constexpr double kSampleReviewPitch = 22.0;
 // Where the first detail row is drawn, and the gap left below the last one for the status line.
-constexpr double kSampleReviewDetailTop = 302.0;
+constexpr double kSampleReviewDetailTop = 330.0;
 constexpr double kSampleReviewStatusInset = 28.0;
 std::string_view sourceQualificationLabel(const voicebank_production::VoicebankProductionProject& project) {
   return voicebank_production::selectedStrategyReady(project)
@@ -188,6 +188,12 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
       available && signedBank != nullptr && installedBank == nullptr, "P INSTALL"});
   controls.push_back({"open-bank-in-song-editor", "Y NEW SONG", {32.0+2.0*quarter,154.0,quarter,24.0},
       available && installedBank != nullptr, "Y SONG"});
+  const auto half = std::max(1.0,(width-52.0)/2.0);
+  controls.push_back({"donor-capture","CAPTURE PREPARED DONOR",{24.0,182.0,half,24.0},
+      available && project && project->language=="en" && project->schemaVersion>=4 && !controller.dirty(),"CAPTURE DONOR"});
+  const auto& donor = controller.preparedDonorInspection();
+  controls.push_back({"donor-import","IMPORT UNAPPROVED TAKE",{28.0+half,182.0,half,24.0},
+      available && donor && controller.validateSampleReviewContext(donor->context) && !controller.dirty(),"IMPORT UNAPPROVED"});
   return controls;
 }
 
@@ -209,6 +215,13 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
       "Capture is read-only. Choose the actual registered reviewer, inspect/listen, then explicitly accept or reject.",
       "Publication requires complete accepted coverage; it creates a new engineering directory, not a signed release.",
       "Template export remains a separate preparation operation; it is not this publication workflow."};
+  if (const auto& donor = controller.preparedDonorInspection()) {
+    const auto& intake = *donor->intake;
+    values = {"DONOR " + intake.snapshot.evidence.donorId,
+        "SOURCE PHONES (UNREVIEWED) " + formats::stringifyJson(*intake.display.find("sourcePhones"),false),
+        "EXPLICIT TARGET " + intake.take.coverageKey + " / MIDI " + std::to_string(intake.take.pitchLayer) + " / STYLE " + intake.take.style,
+        "CAPTURE ONLY / IMPORT REQUIRES SEPARATE CONFIRMATION / NO APPROVAL"};
+  }
   if (const auto* project = controller.productionProject()) values.emplace_back(sourceQualificationLabel(*project));
   if (const auto* project = controller.productionProject()) {
     std::string reviewers;
@@ -216,6 +229,22 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
       if (actor.role == "REVIEWER") reviewers += (reviewers.empty() ? "" : ", ") + actor.operatorId;
     values.push_back(reviewers.empty() ? "REVIEWERS NONE REGISTERED / V REGISTER REVIEWER BEFORE ANY UNIT OR SOURCE REVIEW"
                                        : "REVIEWERS " + reviewers);
+  }
+  if (const auto& donor = controller.preparedDonorInspection()) {
+    values.push_back("CAPTURE SHA256 " + donor->captureSha256);
+    // Split paragraphs before wrapping so full original notices are paged.
+    std::size_t offset = 0U;
+    while (offset < donor->details.size()) {
+      const auto end = donor->details.find('\n',offset);
+      values.push_back(donor->details.substr(offset,end==std::string::npos?end:end-offset));
+      if (end==std::string::npos) break;
+      offset=end+1U;
+    }
+  }
+  if (const auto& receipt = controller.preparedDonorReceipt()) {
+    values.push_back("LAST DONOR IMPORT " + std::to_string(receipt->committedGeneration) + " / " + receipt->committedProjectSha256);
+    values.push_back("UNAPPROVED / RECREATE EDITABLE DRAFT BEFORE UNIT REVIEW");
+    if (!receipt->diagnostic.empty()) values.push_back(receipt->diagnostic);
   }
   if (const auto& registration = controller.sourceRegistrationInspection()) {
     values.push_back("CAPTURED SOURCE LICENSE / PRODUCER " + registration->producerId);
@@ -318,10 +347,10 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
         studioControlPaintLabel(canvas, control, kSampleReviewText),
         control.enabled ? theme.primaryText : theme.secondaryText, kSampleReviewText);
   }
-  canvas.drawText({24.0, 186.0, width - 48.0, 18.0},
+  canvas.drawText({24.0, 214.0, width - 48.0, 18.0},
       "UNIT " + std::to_string(controller.selectableUnitCount() == 0U ? 0U : controller.selectedIndex() + 1U) + " / " + std::to_string(controller.selectableUnitCount()) +
       " | N DRAFT | O OPEN | C CAPTURE | R REVIEWER | A/X REVIEW | I/D SOURCE | E PUBLISH | B/P/Y BANK | SPACE PLAY", theme.secondaryText, kSampleReviewText);
-  const ui::Rect wave{24.0, 212.0, width - 48.0, 54.0};
+  const ui::Rect wave{24.0, 240.0, width - 48.0, 54.0};
   canvas.fillRect(wave, theme.panelAlternate);
   if (const auto& inspection = controller.sampleReviewInspection(); inspection && !inspection->peaks.empty()) {
     const auto step = wave.width / static_cast<double>(inspection->peaks.size());
@@ -349,7 +378,7 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
   const auto lines = studioSampleReviewDetailLines(controller, width);
   const auto first = std::min(firstDetailLine, lines.empty() ? 0U : lines.size() - 1U);
   const auto count = std::min(studioSampleReviewVisibleLines(height), lines.size() - first);
-  canvas.drawText({24.0, 274.0, width - 48.0, 16.0},
+  canvas.drawText({24.0, 302.0, width - 48.0, 16.0},
       "REVIEW DATA " + std::to_string(first + 1U) + "-" + std::to_string(first + count) + " / " + std::to_string(lines.size()) +
           " | LEFT/RIGHT PAGE | UP/DOWN UNIT", theme.secondaryText, kSampleReviewText);
   for (std::size_t i = 0U; i < count; ++i)
