@@ -187,6 +187,28 @@ class PhoneDonorIntakeTests(unittest.TestCase):
                 prepare(self.plan_path,output)
         self.assertTrue((output/"INCOMPLETE").is_file())
 
+    def test_invalid_unicode_provenance_leaves_output_absent_and_allows_corrected_retry(self) -> None:
+        original=copy.deepcopy(self.plan)
+        output=self.root/"encoding-refusal"
+        for key in ["attribution","sourceUrl"]:
+            for invalid in [chr(0xd800),chr(0xdfff)]:
+                self.plan=copy.deepcopy(original)
+                self.plan["license"][key]="invalid-"+invalid
+                self.save()
+                with self.assertRaises(UnicodeEncodeError):prepare(self.plan_path,output)
+                self.assertFalse(output.exists())
+        run=subprocess.run([sys.executable,str(Path(donor_tool.__file__)),"--plan",str(self.plan_path),
+                            "--output",str(output)],capture_output=True,text=True,timeout=10)
+        self.assertEqual(2,run.returncode)
+        self.assertIn("Preparation refused",run.stderr)
+        self.assertNotIn("Traceback",run.stderr)
+        self.assertFalse(output.exists())
+        self.plan=original;self.save()
+        result=prepare(self.plan_path,output)
+        expected=hashlib.sha256((output/"donors.json").read_bytes()).hexdigest()
+        self.assertEqual(result,donor_tool.verify_prepared_phone_donors(output,expected))
+        self.assertFalse((output/"INCOMPLETE").exists())
+
     def test_silent_pause_is_preserved_and_reported_without_acceptance(self) -> None:
         with wave.open(str(self.audio), "wb") as wav:
             wav.setnchannels(1)

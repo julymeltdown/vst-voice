@@ -9349,3 +9349,6 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 
 2026-10-15 — Independent APPROVE exact f5d967da, no findings; missing output attribution digest CLOSED for new packets. Lead rehashed16 artifacts/4pins; exact final retained in separate review root and index. Later21c04d3a packet preflight awaits separate review; downstream durable import enforcement remains OPEN. Alpha0/20; U45HELD; BetaBLOCKED.
+
+
+2026-10-15 — Early provenance UTF8 encoding issue repaired: unchanged notice computation precedes output.mkdir. Unchanged-production regression left directory; final38 direct Python methods PASS, covering both fields/high-low surrogates, CLI refusal and corrected same-path retry/preflight. See PHONE_DONOR_EARLY_ENCODING_2026-10-15.md/index. Independent closure/durable admission pending. Alpha0/20; U45HELD; BetaBLOCKED.

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "unit": "phone-donor-early-provenance-encoding",
+  "sourceBase": "5b406fa1e30d3ce85904735b539d3a04f30d11a9",
+  "manifest": {
+    "path": "out/evidence/phone-donor-early-encoding-2026-10-15/manifest.json",
+    "sizeBytes": 3676,
+    "sha256": "04a0629d03cbb158050becd0d5fa820b9a3cb658e8f4ea176ff62ef34cf19cfa"
+  },
+  "retainedArtifacts": 14,
+  "preservedBindings": 6,
+  "reproduction": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake.PhoneDonorIntakeTests.test_invalid_unicode_provenance_leaves_output_absent_and_allows_corrected_retry",
+      "-v"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.07619675001478754,
+    "diffSha256": "5dd022010146bf08a7b698c30ca92a7fe5ded4a7ae563f37745d83b90bd3a119"
+  },
+  "final": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake",
+      "tests.test_voicebank_source_intake",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.574163832992781,
+    "diffSha256": "56eea99af9092ea2a765dbbe6aa95d2046d36c326bc654aab21b0721f8288439",
+    "stableTrackedDiff": true
+  },
+  "passingPythonMethods": 38,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/phone-donor-early-encoding-2026-10-15/verification.log",
+      "sizeBytes": 287,
+      "sha256": "594e28beb734844f0e1b64d8d3481a3dcf8ee76c5cc8272e30b118da24bb7577"
+    }
+  },
+  "independentReview": "PENDING",
+  "nativeOrCtestExecution": false,
+  "newOriginalAudio": 0,
+  "sourceOrHumanApproval": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

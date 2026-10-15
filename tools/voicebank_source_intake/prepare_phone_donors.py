@@ -238,12 +238,6 @@ def prepare(plan_path: Path, output: Path) -> dict:
         require(donor_bytes <= MAXIMUM_TOTAL_DONOR_BYTES, "Total donor audio exceeds bounds")
         prepared.append((source, pcm[start * 2:end * 2], rate, labels, first, count))
 
-    # Every input and requested span is checked before the exclusively owned directory is created.
-    output.mkdir()
-    marker = output / "INCOMPLETE"
-    marker.write_text("Preparation has not completed. Do not import or approve this directory.\n")
-    (output / "license-source.txt").write_bytes(license_bytes)
-    (output / "intake-plan.json").write_bytes(raw_plan)
     change_notice = "Source label spans copied into new mono PCM16 WAV containers. Ancillary chunks removed; " \
                     "no resampling, normalization, pitch shift, phone alias or bank assignment."
     # Keep the caller's explicit attribution beside the derived audio, including original author
@@ -252,6 +246,13 @@ def prepare(plan_path: Path, output: Path) -> dict:
         license_record["attribution"] + "\nSource license: " + license_record["sourceUrl"] +
         "\nOriginal license text: license-source.txt\nModifications: " + change_notice +
         "\nUnassigned and unapproved. Supplied attribution does not establish performer rights.\n").encode("utf-8")
+
+    # Every input and requested span is checked before the exclusively owned directory is created.
+    output.mkdir()
+    marker = output / "INCOMPLETE"
+    marker.write_text("Preparation has not completed. Do not import or approve this directory.\n")
+    (output / "license-source.txt").write_bytes(license_bytes)
+    (output / "intake-plan.json").write_bytes(raw_plan)
     (output / "attribution.txt").write_bytes(attribution_bytes)
     proposals = []
     for source, pcm, rate, labels, first, count in prepared:
