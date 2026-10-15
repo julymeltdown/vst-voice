@@ -135,9 +135,30 @@
       "sha256": "c9c3ff99ff9e984351e8c644e39ab2e12b1088b48c2deb4b030a987ac746dee3"
     },
     "preExistingP3": {
-      "status": "REPAIRED_LOCALLY_REVIEW_PENDING",
+      "status": "CLOSED_BY_EXACT_029CC6A9_REVIEW",
       "summary": "Post-transition committed import can differ from the pre-transition draft during pointer-failure recognition; preserve exact generation and digest identity when repairing.",
-      "followupReport": "docs/implementation/IMPORT_PUBLICATION_IDENTITY_2026-10-15.md"
+      "followupReport": "docs/implementation/IMPORT_PUBLICATION_IDENTITY_2026-10-15.md",
+      "followupIndependentReview": {
+        "commit": "029cc6a9c27af967873fc317a70d3401e0890495",
+        "verdict": "APPROVE_ENGINEERING",
+        "originatingF7P3": "CLOSED_IMPORT_AND_STYLE_MIGRATION",
+        "final": {
+          "path": "out/evidence/import-publication-identity-independent-2026-10-15/review-029cc6a9.md",
+          "sizeBytes": 14252,
+          "sha256": "89022c2d77a3c7ed6bef6aff19526a3eeb47ee05dfd5bd24888154adf3a6d985"
+        },
+        "metadata": {
+          "path": "out/evidence/import-publication-identity-independent-2026-10-15/metadata.json",
+          "sizeBytes": 552,
+          "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
+        },
+        "newPreExistingWriterP3": {
+          "status": "OPEN",
+          "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
+          "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
+          "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression."
+        }
+      }
     }
   },
   "preparedImporterCancellationCommitFaultCoverage": "LOCALLY_VERIFIED_EXACT_REVIEW_PENDING",

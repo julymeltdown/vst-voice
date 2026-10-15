@@ -112,11 +112,31 @@
     "sizeBytes": 224,
     "sha256": "54aafdb81f7b3ef7001fb802912fa56fe87856973ce6c18f576a67b0931e4dfb"
   },
-  "independentReview": "PENDING_EXACT_COMMIT_AFTER_ACTIVE_STUDIO_REVIEW",
+  "independentReview": {
+    "commit": "029cc6a9c27af967873fc317a70d3401e0890495",
+    "verdict": "APPROVE_ENGINEERING",
+    "originatingF7P3": "CLOSED_IMPORT_AND_STYLE_MIGRATION",
+    "final": {
+      "path": "out/evidence/import-publication-identity-independent-2026-10-15/review-029cc6a9.md",
+      "sizeBytes": 14252,
+      "sha256": "89022c2d77a3c7ed6bef6aff19526a3eeb47ee05dfd5bd24888154adf3a6d985"
+    },
+    "metadata": {
+      "path": "out/evidence/import-publication-identity-independent-2026-10-15/metadata.json",
+      "sizeBytes": 552,
+      "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
+    },
+    "newPreExistingWriterP3": {
+      "status": "OPEN",
+      "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
+      "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
+      "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression."
+    }
+  },
   "originatingFinding": {
     "commit": "f7d2559c1870c53cd55c210841b8928201641bf8",
     "priority": "P3",
-    "status": "REPAIRED_LOCALLY_REVIEW_PENDING",
+    "status": "CLOSED_BY_EXACT_029CC6A9_REVIEW",
     "scope": "Commit recognition after schema-triggered review lowering; strict attempted generation and complete post-transition digest"
   },
   "acceptance": {
@@ -128,5 +148,11 @@
     "U45": "HELD",
     "Beta": "BLOCKED",
     "goal": "ACTIVE"
+  },
+  "implementationCommit": "029cc6a9c27af967873fc317a70d3401e0890495",
+  "postcommitReadOnlyVerification": {
+    "path": "out/evidence/import-publication-identity-2026-10-15/verification-postcommit.log",
+    "sizeBytes": 262,
+    "sha256": "cacf8f3e8b2c1ba125b303963284621ce46ade0460fe53a8633c1ef22b667151"
   }
 }

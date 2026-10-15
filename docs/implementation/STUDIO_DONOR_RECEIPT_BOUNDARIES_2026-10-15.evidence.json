@@ -120,7 +120,7 @@
     }
   },
   "originatingP3": "LOCALLY_ADDRESSED_REVIEW_PENDING",
-  "independentReview": "PENDING_EXACT_COMMIT",
+  "independentReview": "ACTIVE_EXACT_7EC877F7_REVIEW",
   "liveAppKit": "BLOCKED_MAC_LOCKED",
   "nativeExecutionScope": "Synthetic native tests; scripted dialogs and silent audio",
   "sourceAdmission": false,
@@ -128,5 +128,11 @@
   "Alpha": "0/20",
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "fullGoal": "ACTIVE"
+  "fullGoal": "ACTIVE",
+  "implementationCommit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
+  "postcommitReadOnlyVerification": {
+    "path": "out/evidence/studio-donor-receipt-boundaries-2026-10-15/verification-postcommit.log",
+    "sizeBytes": 257,
+    "sha256": "751ac4e7d9e41143ce0a35afe8859914360ca69ab40266d889c03f0cbf0d35e0"
+  }
 }
