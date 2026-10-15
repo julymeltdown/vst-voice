@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-declared-geometry",
+  "sourceBase": "7e141c0fdd997df6b98b46db8b7d1e7fe4f7c5f3",
+  "sourcePatchSha256": "e465afd3dbd9e08da11a9697269625d3918c98cd201d29d0d79cc5b49df420b9",
+  "manifest": {
+    "path": "out/evidence/prepared-donor-declared-geometry-2026-10-15/manifest.json",
+    "sizeBytes": 8123,
+    "sha256": "2b3e2fe9d83e53d3b4c401ec24eaa53de2f19f5da407cd4a05565339408a50cc"
+  },
+  "retainedArtifacts": 28,
+  "preservedBindings": 8,
+  "baselineBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "--target",
+      "seam_prepared_phone_donor_snapshot_tests",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.198543792008422,
+    "sourceBase": "7e141c0fdd997df6b98b46db8b7d1e7fe4f7c5f3",
+    "sourcePatchSha256": "345a41411eb55d22f4d06271cc741af6242171514d5e8ab4392f918389a82b8a",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "baselineNative": {
+    "argv": [
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/prepared-donor-declared-geometry-2026-10-15/baseline/seam_prepared_phone_donor_snapshot_tests",
+      "inconsistent declared PCM geometry"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.3500998750096187,
+    "sourceBase": "7e141c0fdd997df6b98b46db8b7d1e7fe4f7c5f3",
+    "sourcePatchSha256": "345a41411eb55d22f4d06271cc741af6242171514d5e8ab4392f918389a82b8a",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeSha256": "a0fcd5e0af4df2cc5d8ee795be7b544dc59d414f5915d12a266db95d532a7dc9",
+    "nativeAfterSha256": "a0fcd5e0af4df2cc5d8ee795be7b544dc59d414f5915d12a266db95d532a7dc9",
+    "nativeBeforeEqualsAfter": true
+  },
+  "baselinePass": 0,
+  "baselineFail": 1,
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 33.20055991699337,
+    "sourceBase": "7e141c0fdd997df6b98b46db8b7d1e7fe4f7c5f3",
+    "sourcePatchSha256": "e465afd3dbd9e08da11a9697269625d3918c98cd201d29d0d79cc5b49df420b9",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_vocal_source_intake_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 2.295578833000036,
+    "sourceBase": "7e141c0fdd997df6b98b46db8b7d1e7fe4f7c5f3",
+    "sourcePatchSha256": "e465afd3dbd9e08da11a9697269625d3918c98cd201d29d0d79cc5b49df420b9",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "cppCases": 9,
+  "pythonMethods": 41,
+  "pythonSkips": 0,
+  "newUniqueCases": 1,
+  "malformedForms": 9,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-declared-geometry-2026-10-15/verification.log",
+      "sizeBytes": 344,
+      "sha256": "c8faa426f72ae3d9eb75ce209edab0e57d8c276b2d5d187471687a32d279ea5c"
+    }
+  },
+  "independentImplementationReview": "PENDING",
+  "sourceRegistrationOrRealImport": false,
+  "measuredAudioClaimByEvidenceOnlyReader": false,
+  "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
+  "fullSuite": "NOT_RUN",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

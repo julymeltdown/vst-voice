@@ -161,6 +161,31 @@ TEST_CASE("Prepared donor selected fact types are checked before JSON normalizat
   }
 }
 
+TEST_CASE("Prepared donor evidence refuses inconsistent declared PCM geometry without reading audio") {
+  for (const auto& [key, value] : {std::pair{"sampleRate", std::int64_t{0}}, {"sampleRate", std::int64_t{192001}},
+      {"frames", std::int64_t{0}}, {"frames", std::int64_t{-1}}, {"startFrame", std::int64_t{-1}},
+      {"startFrame", std::int64_t{1}}, {"endFrameExclusive", std::int64_t{81}}, {"endFrameExclusive", std::int64_t{0}},
+      {"durationSeconds", std::int64_t{1}}}) {
+    Fixture f; auto snapshot = f.load();
+    auto packet = seam::formats::parseJson(std::string_view{reinterpret_cast<const char*>(snapshot.evidence.packet.bytes.data()),
+        snapshot.evidence.packet.bytes.size()}); CHECK(packet);
+    packet.value().asObject()["proposals"].asArray()[0].asObject()[key] = value;
+    const auto text = seam::formats::stringifyJson(packet.value());
+    const auto expected = seam::core::sha256Hex(text);
+    CHECK(seam::core::durableAtomicWriteText(f.root / "donors.json", text));
+    // A missing WAV must not be needed to reject inconsistent metadata.
+    CHECK(std::filesystem::remove(f.root / (f.id + ".wav")));
+    const auto evidence = p::loadPreparedPhoneDonorEvidence(f.root, expected, f.id); CHECK(!evidence);
+    CHECK(evidence.error().code == seam::core::ErrorCode::InvalidArgument);
+    CHECK(evidence.error().message.find("declared PCM facts") != std::string::npos);
+    snapshot.evidence.packet.bytes.assign(reinterpret_cast<const std::byte*>(text.data()),
+        reinterpret_cast<const std::byte*>(text.data() + text.size()));
+    snapshot.evidence.packet.sha256 = expected;
+    const auto owned = p::validatePreparedPhoneDonorSnapshot(std::move(snapshot), expected, f.id); CHECK(!owned);
+    CHECK(owned.error().message.find("declared PCM facts") != std::string::npos);
+  }
+}
+
 namespace {
 // Deliberately constructs a synthetic persisted model. This is not the future
 // inspected prepared-donor importer and does not establish admission or QC.

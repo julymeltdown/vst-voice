@@ -222,6 +222,14 @@ PreparedPhoneDonorEvidence evidenceFrom(Reader&& reader, std::string expectedPac
     (void)integer(*selected, key);
   require(field(*selected, "nonzeroPcm").isBool(), "Expected prepared donor boolean: nonzeroPcm");
   require(field(*selected, "durationSeconds").isNumber(), "Expected prepared donor number: durationSeconds");
+  // Metadata can be internally checked without claiming to have measured WAV
+  // bytes. The later full/owned paths still compare all facts with the audio.
+  const auto rate = integer(*selected, "sampleRate"), frames = integer(*selected, "frames");
+  const auto start = integer(*selected, "startFrame"), end = integer(*selected, "endFrameExclusive");
+  require(rate >= 8000 && rate <= 192000 && frames > 0 && frames <= (64LL * 1024LL * 1024LL - 44LL) / 2LL &&
+      start >= 0 && end > start && end - start == frames &&
+      field(*selected, "durationSeconds").asNumber() == static_cast<double>(frames) / static_cast<double>(rate),
+      "Prepared donor declared PCM facts are inconsistent or exceed canonical WAV bounds");
   result.derivedAudioSha256 = text(*selected, "derivedSha256");
   result.proposalJson = formats::stringifyJson(*selected, false);
   checkpoint(stopToken);
