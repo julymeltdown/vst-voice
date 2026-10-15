@@ -9308,3 +9308,8 @@ Five fresh publisher HTTP-200 responses and body hashes verified: VocalSet origi
 ## 2026-10-15 — English draft layout help and direct guard tests
 
 [Layout/help dossier](ENGLISH_DRAFT_LAYOUT_HELP_2026-10-15.md) implements the exact 210688b0 review P3 follow-up: explicit bound inventory/producer layout and new-producer-workspace remedy in refusal/help; authority conditions unchanged. Two new meaningful cases verify a renamed otherwise-valid producer and actual arbitrary init-production CLI route refuse sample drafting without output or project/authority mutation. Full dependent Release rebuild and four focused lanes/86 native cases PASS; actual before/after CLI help checked; 37 artifacts/8 bindings retained. Independent P3 closure pending; prior full suite 240/240 at3b3388df, not rerun after this unit. Source permissions unchanged; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+## 2026-10-15 — Duplicate Python CTest discovery removed
+
+[Deduplication dossier](PYTHON_CTEST_DEDUPLICATION_2026-10-15.md): explicit/default discovery load identical 443 unique IDs. Removed root duplicate; Phase13A canonical registration retained. Full dependent Release rebuild, 443 surviving Python cases and 17 CMake identity cases PASS. Before/after registration inventory 240→239, every other name/command/property identical; 65 artifacts/6 bindings retained. Prior removed lane cost71.57s; fresh full239 suite/saving not measured. Independent review pending; Alpha0/20, U45HELD, BetaBLOCKED; full goalACTIVE; .github untouched.

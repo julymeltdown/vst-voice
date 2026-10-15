@@ -2752,9 +2752,6 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_engineering_remediation_evidence_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_engineering_remediation_evidence.py)
-    add_test(NAME seam_external_beta_python_contract_tests
-      COMMAND ${Python3_EXECUTABLE} -m unittest discover
-        -s tests/external_beta -p test_*.py)
     add_test(NAME seam_usable_alpha_contract_tests
       COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_usable_alpha_contract.py)
@@ -2769,7 +2766,7 @@ if(SEAM_BUILD_TESTS)
         tests/production/test_beta_voicebank_lock.py)
     set_tests_properties(
       seam_tracked_source_closure_unit seam_tracked_source_closure
-      seam_engineering_remediation_evidence_unit seam_external_beta_python_contract_tests
+      seam_engineering_remediation_evidence_unit
       seam_voice_source_admission_tests seam_beta_voicebank_lock_tests
       PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   endif()

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "unit": "python-ctest-deduplication",
+  "sourceBase": "05fe461d2ab280cf288beed785fc5757f3d503f7",
+  "manifest": {
+    "path": "out/evidence/python-ctest-deduplication-2026-10-15/manifest.json",
+    "sizeBytes": 13164,
+    "sha256": "1451b075fc64f127158f588ed4319befc1ef0bd247180c6c080335cfcbf49751"
+  },
+  "retainedArtifacts": 65,
+  "preservedBindings": 6,
+  "build": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 24.78076350002084,
+    "before": {
+      "head": "05fe461d2ab280cf288beed785fc5757f3d503f7",
+      "diffSha256": "542193db7e54f46c0b89957bb59f6eada4ae1910eff2615f38537e16110cdaff"
+    },
+    "after": {
+      "head": "05fe461d2ab280cf288beed785fc5757f3d503f7",
+      "diffSha256": "542193db7e54f46c0b89957bb59f6eada4ae1910eff2615f38537e16110cdaff"
+    }
+  },
+  "ctest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "--parallel",
+      "1",
+      "-R",
+      "^(seam_external_beta_contract_tests|seam_cmake_source_commit_identity)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 78.57141104197945,
+    "before": {
+      "head": "05fe461d2ab280cf288beed785fc5757f3d503f7",
+      "diffSha256": "542193db7e54f46c0b89957bb59f6eada4ae1910eff2615f38537e16110cdaff"
+    },
+    "after": {
+      "head": "05fe461d2ab280cf288beed785fc5757f3d503f7",
+      "diffSha256": "542193db7e54f46c0b89957bb59f6eada4ae1910eff2615f38537e16110cdaff"
+    }
+  },
+  "registeredBefore": 240,
+  "registeredAfter": 239,
+  "remainingCommandsAndPropertiesUnchanged": true,
+  "survivingPythonCasesPassed": 443,
+  "cmakeIdentityCasesPassed": 17,
+  "full239LaneSuite": "NOT_RUN",
+  "previousObservedDuplicateSeconds": 71.57,
+  "freshWholeSuiteSavingMeasured": false,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/python-ctest-deduplication-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/python-ctest-deduplication-2026-10-15/verification.log",
+      "sizeBytes": 297,
+      "sha256": "510fde25a51142bc489a50a8cce39f2feed2ad6dbb647c261faf9e574fb19edc"
+    }
+  },
+  "independentReview": "PENDING",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}
