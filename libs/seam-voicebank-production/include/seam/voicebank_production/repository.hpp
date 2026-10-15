@@ -262,7 +262,8 @@ private:
       std::uint64_t generation) const;
   [[nodiscard]] core::Result<void> verifyGeneration(
       const VoicebankProductionProject& project,
-      bool requireCurrentPointer, bool* unsupportedInspectionPolicy = nullptr) const;
+      bool requireCurrentPointer, bool* unsupportedInspectionPolicy = nullptr,
+      bool* retainedEvidenceFailure = nullptr) const;
 
   std::filesystem::path root_;
   ImmutableAssetStore assetStore_;

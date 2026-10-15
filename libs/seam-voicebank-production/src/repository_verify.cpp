@@ -233,23 +233,13 @@ core::Result<void> ProductionProjectRepository::verify(
 
 core::Result<void> ProductionProjectRepository::verifyGeneration(
     const VoicebankProductionProject& project,
-    bool requireCurrentPointer, bool* unsupportedInspectionPolicy) const {
+    bool requireCurrentPointer, bool* unsupportedInspectionPolicy, bool* retainedEvidenceFailure) const {
   if (unsupportedInspectionPolicy) *unsupportedInspectionPolicy = false;
+  if (retainedEvidenceFailure) *retainedEvidenceFailure = false;
   auto valid = validateProductionProject(project);
   if (!valid) return valid;
-  if (project.schemaVersion == 1) {
-    auto licenseDigest = core::sha256File(project.licenseLocator);
-    if (!licenseDigest) return core::Result<void>{licenseDigest.error()};
-    if (licenseDigest.value() != project.licenseSha256)
-      return core::failure(core::ErrorCode::InvariantViolation, "Production source-license digest changed");
-  } else {
-    const auto evidence = source_internal::verifySnapshots(root_, project);
-    if (!evidence) return evidence;
-  }
-  for (const auto& asset : project.assets) {
-    auto verified = assetStore_.verify(asset);
-    if (!verified) return verified;
-  }
+  // Certify this generation and its journal before classifying external evidence
+  // failures. An interrupted or incorrectly bound write still permits fallback.
   auto generation = core::readTextFileLimited(
       generationPath(project.lastDurableGeneration), 64U * 1024U * 1024U);
   if (!generation) return core::Result<void>{generation.error()};
@@ -317,6 +307,24 @@ core::Result<void> ProductionProjectRepository::verifyGeneration(
   }
   const auto ancestry = history_internal::verifyAncestry(root_, parsed.value(), project.projectId, project.lastDurableGeneration);
   if (!ancestry) return core::Result<void>{ancestry.error()};
+  if (project.schemaVersion == 1) {
+    auto licenseDigest = core::sha256File(project.licenseLocator);
+    if (!licenseDigest) return core::Result<void>{licenseDigest.error()};
+    if (licenseDigest.value() != project.licenseSha256)
+      return core::failure(core::ErrorCode::InvariantViolation, "Production source-license digest changed");
+  } else {
+    const auto evidence = source_internal::verifySnapshots(root_, project);
+    if (!evidence) {
+      // This generation has a complete binding. Losing its captured declaration
+      // or reviewer evidence must not silently hide it behind older work.
+      if (retainedEvidenceFailure) *retainedEvidenceFailure = true;
+      return evidence;
+    }
+  }
+  for (const auto& asset : project.assets) {
+    auto verified = assetStore_.verify(asset);
+    if (!verified) return verified;
+  }
   return core::success();
 }
 

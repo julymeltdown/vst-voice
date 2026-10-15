@@ -208,6 +208,90 @@ TEST_CASE("source quality material edits invalidate the prior decision without c
   CHECK(!production::ProductionProjectRepository{fixture.root/"workspace"}.verify(fixture.project));
 }
 
+namespace {
+std::map<std::string, std::string> workspaceBytes(const std::filesystem::path& root) {
+  std::map<std::string, std::string> result;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
+    const auto name = entry.path().lexically_relative(root).generic_string();
+    if (entry.is_symlink()) result[name] = "link:" + std::filesystem::read_symlink(entry.path()).string();
+    else if (entry.is_regular_file()) {
+      const auto digest = seam::core::sha256File(entry.path()); CHECK(digest); result[name] = digest.value();
+    }
+  }
+  return result;
+}
+void damageRetainedEvidence(const std::filesystem::path& file, int mode) {
+  if (mode == 0) CHECK(std::filesystem::remove(file));
+  else if (mode == 1) CHECK(seam::core::durableAtomicWriteText(file, "changed retained test evidence"));
+  else {
+    const auto backup = file.string() + ".backup";
+    std::filesystem::rename(file, backup); std::filesystem::create_symlink(backup, file);
+  }
+}
+std::string generationName(std::uint64_t generation) {
+  const auto number = std::to_string(generation); return std::string(20U - number.size(), '0') + number + ".json";
+}
+}
+
+TEST_CASE("retained source evidence recovery refuses a damaged captured declaration without rollback") {
+  for (int mode = 0; mode < 3; ++mode) {
+    DraftFixture fixture; fixture.source("original", true); fixture.assignment("a"); CHECK(fixture.importTake("a"));
+    production::ProductionProjectRepository repository{fixture.root / "workspace"};
+    const auto projectBefore = production::encodeProductionProject(fixture.project);
+    damageRetainedEvidence(fixture.root / "workspace" / fixture.project.sourceBindings.front().licenseSnapshotPath, mode);
+    const auto filesBefore = workspaceBytes(fixture.root / "workspace");
+    const auto recovered = repository.recover(); CHECK(!recovered);
+    CHECK(recovered.error().message.find("Retained source evidence") != std::string::npos);
+    CHECK(!repository.save(fixture.project, {"save", "blocked-by-evidence", "producer", "2026-09-09T10:04:00Z"}));
+    CHECK(production::encodeProductionProject(fixture.project) == projectBefore);
+    CHECK(workspaceBytes(fixture.root / "workspace") == filesBefore);
+  }
+}
+
+TEST_CASE("retained source evidence recovery refuses a damaged quality record without rollback") {
+  for (int mode = 0; mode < 3; ++mode) {
+    DraftFixture fixture; fixture.source("original", true); fixture.assignment("a"); CHECK(fixture.importTake("a"));
+    const auto record = fixture.quality(); CHECK(fixture.assess(record));
+    production::ProductionProjectRepository repository{fixture.root / "workspace"};
+    const auto projectBefore = production::encodeProductionProject(fixture.project);
+    damageRetainedEvidence(fixture.root / "workspace/source-evidence" / (record.evidenceSha256 + ".quality.txt"), mode);
+    const auto filesBefore = workspaceBytes(fixture.root / "workspace");
+    const auto recovered = repository.recover(); CHECK(!recovered);
+    CHECK(recovered.error().message.find("Retained source evidence") != std::string::npos);
+    CHECK(!repository.save(fixture.project, {"save", "blocked-by-evidence", "producer", "2026-09-09T10:04:00Z"}));
+    CHECK(production::encodeProductionProject(fixture.project) == projectBefore);
+    CHECK(workspaceBytes(fixture.root / "workspace") == filesBefore);
+  }
+}
+
+TEST_CASE("retained source evidence failure is terminal only after a generation has a valid journal binding") {
+  for (const bool partialJournal : {true, false}) {
+    DraftFixture fixture; fixture.source("original", true); fixture.assignment("a"); CHECK(fixture.importTake("a"));
+    const auto workspace = fixture.root / "workspace";
+    auto incomplete = fixture.project; ++incomplete.lastDurableGeneration;
+    auto& captured = incomplete.sourceBindings.front();
+    captured.strategy.licenseSha256 = std::string(64U, 'f');
+    captured.licenseSnapshotPath = "source-evidence/" + captured.strategy.licenseSha256 + ".txt";
+    const auto text = production::encodeProductionProject(incomplete);
+    CHECK(production::decodeProductionProject(text));
+    const auto name = generationName(incomplete.lastDurableGeneration);
+    CHECK(seam::core::durableAtomicWriteTextNew(workspace / "generations" / name, text));
+    std::string journal = "{";
+    if (!partialJournal) {
+      const auto prior = seam::core::readTextFileLimited(workspace / "journal" / generationName(fixture.project.lastDurableGeneration), 1024U * 1024U);
+      CHECK(prior); auto parsed = seam::formats::parseJson(prior.value()); CHECK(parsed);
+      parsed.value().asObject()["generation"] = static_cast<std::int64_t>(incomplete.lastDurableGeneration);
+      parsed.value().asObject()["projectSha256"] = std::string(64U, '0');
+      journal = seam::formats::stringifyJson(parsed.value());
+    }
+    CHECK(seam::core::durableAtomicWriteTextNew(workspace / "journal" / name, journal));
+    const auto before = workspaceBytes(workspace);
+    const auto recovered = production::ProductionProjectRepository{workspace}.recover(); CHECK(recovered);
+    CHECK(production::encodeProductionProject(recovered.value()) == production::encodeProductionProject(fixture.project));
+    CHECK(workspaceBytes(workspace) == before);
+  }
+}
+
 TEST_CASE("empty source-free production drafts persist without feasibility claims") {
   DraftFixture fixture;
   CHECK(fixture.project.schemaVersion == 2);

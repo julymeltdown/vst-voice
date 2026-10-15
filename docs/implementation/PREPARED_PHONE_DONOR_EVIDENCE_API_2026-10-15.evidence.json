@@ -121,7 +121,34 @@
       "sha256": "973404d187cff93ebbda9c0e4d4271b509fb4d806cd487434064e4516440c60a"
     }
   },
-  "originalLicenseVsRightsDeclarationClarification": "REQUESTED_PENDING",
+  "originalLicenseVsRightsDeclarationClarification": {
+    "status": "CORRECTED_ACCEPTED_DESIGN_ADVICE",
+    "metadata": {
+      "path": "out/evidence/prepared-phone-donor-bridge-independent-2026-10-15/correction.json",
+      "sizeBytes": 789,
+      "sha256": "7d362e86656c7b4a83637df36ee55689e66a595627466dfe9ccf4926704e078a"
+    },
+    "review": {
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "title": "Review in English",
+      "turnId": "01a13dd5-1060-7791-be41-1130c6a1230b",
+      "messageId": "msg_6c3db170bc704ea78ea906a370cc9e81",
+      "completedAtUnixSeconds": 1792038945,
+      "durationMs": 209210,
+      "commit": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+      "scope": "ORIGINAL_LICENSE_VS_RIGHTS_DECLARATION_DESIGN_CORRECTION",
+      "verdict": "KEEP_BOTH_DISTINCT_LICENSE_IDENTITIES",
+      "schema5RecommendationRetained": true,
+      "recoveryP2Retained": true,
+      "sourceOrHumanOrBetaApproval": false,
+      "finalAnswer": {
+        "path": "out/evidence/prepared-phone-donor-bridge-independent-2026-10-15/review-07496e8a-correction.md",
+        "sizeBytes": 5840,
+        "sha256": "1cc3070a61cc7815fda1a144eb348e5937310d88c9061170b84b60ecc948d0b4"
+      }
+    },
+    "implementationApproval": false
+  },
   "implementationIndependentReview": "PENDING",
   "durableImport": "NOT_IMPLEMENTED",
   "sourceRegistration": false,
