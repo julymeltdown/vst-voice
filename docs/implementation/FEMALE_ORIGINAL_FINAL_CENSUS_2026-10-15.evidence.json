@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "unit": "internet-female-original-final-census",
+  "manifest": {
+    "path": "out/evidence/internet-female-original-census-final-2026-10-15/manifest.json",
+    "sizeBytes": 314694,
+    "sha256": "9b3616f224898762d25d8cac1284185265475c57c914a6496ed62b171a20673a"
+  },
+  "retainedArtifacts": 3,
+  "preservedBindings": 1436,
+  "report": {
+    "schemaVersion": 1,
+    "sourceCommit": "f5d967da2e53137ed6285c3d07c8dd48389022c7",
+    "startedAtUnixSeconds": 1792029271.715721,
+    "completedAtUnixSeconds": 1792029272.35601,
+    "checkedOriginals": 1429,
+    "uniqueFileHashes": 1429,
+    "missingOrChangedFiles": 0,
+    "summary": {
+      "clean-singing": {
+        "originalWavs": 25,
+        "totalFrames": 11694386,
+        "durationSeconds": 265.17882086167793,
+        "totalBytes": 23389872
+      },
+      "female-growls": {
+        "originalWavs": 272,
+        "totalFrames": 14926677,
+        "durationSeconds": 338.473401360544,
+        "totalBytes": 45542218
+      },
+      "female-speech": {
+        "originalWavs": 1132,
+        "totalFrames": 54328943,
+        "durationSeconds": 3395.5589374999995,
+        "totalBytes": 108707694
+      }
+    },
+    "newAudioDownloads": 0,
+    "scope": "Fresh SHA256/size/PCM header census of existing originals; no playback, clipping/F0/phonetic qualification or rights admission",
+    "fullVocalSetArchiveMd5Verified": false,
+    "sourceOrHumanApproval": false,
+    "Alpha": [
+      0,
+      20
+    ],
+    "U45": "HELD",
+    "Beta": "BLOCKED",
+    "stableHead": true
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/internet-female-original-census-final-2026-10-15/verification.log",
+      "sizeBytes": 209,
+      "sha256": "5bf3d266a0262e16ce7c5893f9570db6ec4e03095b6c9b4feed14e3a7f6bf24b"
+    }
+  },
+  "independentReview": "PENDING_FOR_THIS_CENSUS",
+  "authorizesRelease": false
+}
