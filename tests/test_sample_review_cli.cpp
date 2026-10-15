@@ -67,6 +67,46 @@ TEST_CASE("observed CLI refusal oracle rejects signals wrong streams and sanitiz
   }
 }
 
+TEST_CASE("CLI English arbitrary initialization remains a Draft and explains missing sample draft layout") {
+#if defined(SEAM_TEST_VOICEBANK_CLI)
+  using namespace seam;
+  namespace production = seam::voicebank_production;
+  test::support::EnglishManifestDraftFixture fixture;
+  production::VoicebankProductionProject definition{.projectId = "cli-english-layout"};
+  definition.schemaVersion = production::kProductionStyleSchemaVersion;
+  definition.language = "en";
+  definition.inventoryId = fixture.project.inventoryId;
+  definition.inventorySha256 = fixture.project.inventorySha256;
+  definition.declaredPitchLayers = fixture.project.declaredPitchLayers;
+  definition.operators = {{"producer", "PRODUCER"}};
+  definition.unitAssignments = fixture.project.unitAssignments;
+  for (auto& row : definition.unitAssignments) {
+    row.takeId.clear(); row.state = production::UnitQueueState::Missing;
+    row.markerReviewed = false; row.pitchReviewed = false;
+  }
+  const auto text = production::encodeProductionProject(definition);
+  const auto file = fixture.root / "empty-english.json";
+  CHECK(core::durableAtomicWriteTextNew(file, text));
+  const auto arbitrary = fixture.producerRoot.parent_path() / "arbitrary-init";
+  const auto initialized = authoring::runBoundedHelperProcess({.executable = SEAM_TEST_VOICEBANK_CLI,
+      .arguments = {"init-production", arbitrary.string(), file.string(), core::sha256Hex(text),
+          "producer", "2026-10-15T00:03:00Z"}});
+  CHECK(initialized);
+  production::ProductionProjectRepository repository{arbitrary};
+  const auto recovered = repository.recover(); CHECK(recovered);
+  CHECK(repository.verify(recovered.value()));
+  CHECK(recovered.value().sourceStrategies.empty()); CHECK(recovered.value().takes.empty());
+  CHECK(recovered.value().reviews.empty());
+  const auto before = production::encodeProductionProject(recovered.value());
+  const auto destination = fixture.root / "refused-cli-layout";
+  requireCliRefusal({"create-sample-draft", arbitrary.string(), fixture.identity.id,
+      fixture.identity.version, fixture.identity.displayName, "en", "neutral", destination.string()},
+      2U, "use new-producer-workspace with a captured English profile");
+  CHECK(!std::filesystem::exists(destination));
+  CHECK(production::encodeProductionProject(repository.recover().value()) == before);
+#endif
+}
+
 TEST_CASE("CLI English generated producer draft carries inventory contract and refuses lost authority") {
 #if defined(SEAM_TEST_VOICEBANK_CLI)
   using namespace seam;

@@ -9303,3 +9303,8 @@ Full dependent Release rebuild PASS at exact 3b3388df; serial 240/240 registered
 ## 2026-10-15 — Original publisher license checkpoint
 
 Five fresh publisher HTTP-200 responses and body hashes verified: VocalSet original/current record APIs CC-BY 4.0, Karoryfer female Merry Orks/CC0 except Marie Ork, SLT female publisher page and unchanged commercial/copy/modify COPYING. [Source refresh](FEMALE_INTERNET_SOURCE_REFRESH_2026-10-15.md) and its new license evidence index retain 9 artifacts/7 bindings; read-only checks PASS. No new audio, bank rights/actor/QC approval or acceptance advancement. Existing 1,429 originals preserved; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+## 2026-10-15 — English draft layout help and direct guard tests
+
+[Layout/help dossier](ENGLISH_DRAFT_LAYOUT_HELP_2026-10-15.md) implements the exact 210688b0 review P3 follow-up: explicit bound inventory/producer layout and new-producer-workspace remedy in refusal/help; authority conditions unchanged. Two new meaningful cases verify a renamed otherwise-valid producer and actual arbitrary init-production CLI route refuse sample drafting without output or project/authority mutation. Full dependent Release rebuild and four focused lanes/86 native cases PASS; actual before/after CLI help checked; 37 artifacts/8 bindings retained. Independent P3 closure pending; prior full suite 240/240 at3b3388df, not rerun after this unit. Source permissions unchanged; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.

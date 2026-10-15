@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-draft-layout-help",
+  "sourceBase": "89d77b5854deef61e3feccfbf74fec951ff3bed8",
+  "manifest": {
+    "path": "out/evidence/english-draft-layout-help-2026-10-15/manifest.json",
+    "sizeBytes": 7976,
+    "sha256": "4ae56aa7f207cad28d8d63a84c4d8d2401e4d495abb8707792904e812e3720af"
+  },
+  "retainedArtifacts": 37,
+  "preservedBindings": 8,
+  "build": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 9.477905874984572,
+    "before": {
+      "head": "89d77b5854deef61e3feccfbf74fec951ff3bed8",
+      "diffSha256": "b23d95a6d044a62c2fa77ce1495a4e7a5e0e8d2f83b23c4379d1cf8b6c52e03c"
+    },
+    "after": {
+      "head": "89d77b5854deef61e3feccfbf74fec951ff3bed8",
+      "diffSha256": "b23d95a6d044a62c2fa77ce1495a4e7a5e0e8d2f83b23c4379d1cf8b6c52e03c"
+    }
+  },
+  "ctest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "--parallel",
+      "1",
+      "-R",
+      "^(seam_manifest_draft_tests|seam_studio_manifest_draft_tests|seam_studio_producer_workspace_tests|seam_sample_review_cli_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 19.403846500004875,
+    "before": {
+      "head": "89d77b5854deef61e3feccfbf74fec951ff3bed8",
+      "diffSha256": "b23d95a6d044a62c2fa77ce1495a4e7a5e0e8d2f83b23c4379d1cf8b6c52e03c"
+    },
+    "after": {
+      "head": "89d77b5854deef61e3feccfbf74fec951ff3bed8",
+      "diffSha256": "b23d95a6d044a62c2fa77ce1495a4e7a5e0e8d2f83b23c4379d1cf8b6c52e03c"
+    }
+  },
+  "nativeCases": 86,
+  "addedCases": 2,
+  "actualCliHelp": "PASS",
+  "verification": {
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/english-draft-layout-help-2026-10-15/verify.py"
+    ],
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/english-draft-layout-help-2026-10-15/verification.log",
+      "sizeBytes": 230,
+      "sha256": "44e03b45641cfdbac3bb013e1d212064e41396d0e257215a2eb69551ff0eb82c"
+    }
+  },
+  "independentReview": "PENDING",
+  "fullSuiteAfterUnit": "NOT_RERUN",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

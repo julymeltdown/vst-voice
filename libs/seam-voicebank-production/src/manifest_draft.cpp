@@ -47,7 +47,8 @@ core::Result<std::optional<voicebank::Manifest::EnglishPhoneContract>> englishIn
   if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en") return Output{};
   if (workspace.filename() != kDraftProducerWorkspaceDirectory)
     return core::failure<Output>(core::ErrorCode::Conflict,
-        "English style-owned drafts require their generated inventory/producer workspace");
+        "English style-owned drafts require DESTINATION/producer beside its bound DESTINATION/inventory.json; "
+        "use new-producer-workspace with a captured English profile, then create-sample-draft DESTINATION/producer");
   std::error_code error;
   const auto status = std::filesystem::symlink_status(workspace.parent_path() / kDraftProducerInventoryFile, error);
   if (error || !std::filesystem::is_regular_file(status))

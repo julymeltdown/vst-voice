@@ -102,3 +102,8 @@ The reviewer APPROVED exact 210688b0a254c6069448ad5543aef55315391764 for enginee
 The P3 remains open: the refusal and init-production/create-sample-draft help need to explain the bound inventory.json + producer/ layout, and a direct layout-guard regression should cover the documented arbitrary-workspace route. The dossier wording above is corrected; product help/behavior is not changed by this review-record checkpoint. The reviewer withdrew the broad claim that DISTINGUISH cannot use stressed labels: it can; a profile containing only bare vowels is the narrower hazard.
 
 This verdict approves neither the later lifecycle/coverage/UI repairs nor source/rights/quality/human acceptance. Lifecycle review attempts ended with HTTP 429 retry-limit errors, without a verdict; its review remains PENDING. Alpha 0/20, U45 HELD and Beta BLOCKED.
+
+
+### 2026-10-15 — P3 implementation follow-up
+
+The [English draft layout/help unit](ENGLISH_DRAFT_LAYOUT_HELP_2026-10-15.md) now supplies the required inventory/producer layout and supported remedy in refusal/help, plus direct native and actual CLI arbitrary-layout tests. Full dependent rebuild/four focused lanes/86 native cases pass. Exact 210688b0 review remains historical approval with one P3; independent closure of this later implementation remains pending. Source/human/Beta approval is unchanged.

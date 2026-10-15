@@ -84,6 +84,29 @@ TEST_CASE("English generated producer drafts preserve declared folding or exact 
   CHECK(!manifest.value().languageContract); CHECK(manifest.value().matchedPhone("iy1") == "iy1");
 }
 
+TEST_CASE("English draft layout guard refuses a verified renamed producer without changing its authority") {
+  test::support::EnglishManifestDraftFixture fixture;
+  const auto before = production::encodeProductionProject(fixture.project);
+  const auto inventory = fixture.producerRoot.parent_path() / "inventory.json";
+  const auto inventoryHash = core::sha256File(inventory); CHECK(inventoryHash);
+  const auto arbitrary = fixture.producerRoot.parent_path() / "arbitrary-workspace";
+  std::filesystem::rename(fixture.producerRoot, arbitrary);
+  production::ProductionProjectRepository repository{arbitrary};
+  CHECK(repository.verify(fixture.project));
+  const auto raw = repository.assetPath(fixture.project.assets.front());
+  const auto rawHash = core::sha256File(raw); CHECK(rawHash);
+  const auto destination = std::filesystem::absolute(fixture.root / "refused-layout");
+  const auto result = production::createSampleManifestDraft(arbitrary, fixture.project, fixture.identity, destination);
+  CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+  CHECK(result.error().message.find("DESTINATION/producer") != std::string::npos);
+  CHECK(result.error().message.find("new-producer-workspace") != std::string::npos);
+  CHECK(!std::filesystem::exists(destination));
+  CHECK(production::encodeProductionProject(repository.recover().value()) == before);
+  CHECK(core::sha256File(raw).value() == rawHash.value());
+  CHECK(core::sha256File(inventory).value() == inventoryHash.value());
+  CHECK(fixture.project.reviews.empty());
+}
+
 TEST_CASE("English producer drafts refuse absent tampered mismatched linked or out of inventory authority") {
   test::support::EnglishManifestDraftFixture fixture;
   const auto inventory = fixture.root / "workspace" / "inventory.json";

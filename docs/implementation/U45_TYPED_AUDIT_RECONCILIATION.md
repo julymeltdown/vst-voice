@@ -533,3 +533,8 @@ Independent review APPROVED exact 210688b0 for engineering scope, one P3 follow-
 ## 2026-10-15 — Full Release suite after repairs
 
 Full dependent Release rebuild PASS at exact 3b3388df; serial 240/240 registered CTest lanes PASS, exit 0, 779.707128 seconds. All 189 selected executing identities and clean Git state remained stable. [Full-suite dossier](RELEASE_SUITE_AFTER_LAYOUT_REPAIRS_2026-10-15.md) binds 31 retained artifacts/8 preserved bindings, five native executables and ten selected source files. Earlier four failed registrations now pass; duplicate Python discovery and stale historical LastTestsFailed.log are explicitly distinguished. Independent repair approval remains pending. No source admission or gate advancement: Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+## 2026-10-15 — English draft layout help and direct guard tests
+
+[Layout/help dossier](ENGLISH_DRAFT_LAYOUT_HELP_2026-10-15.md) implements the exact 210688b0 review P3 follow-up: explicit bound inventory/producer layout and new-producer-workspace remedy in refusal/help; authority conditions unchanged. Two new meaningful cases verify a renamed otherwise-valid producer and actual arbitrary init-production CLI route refuse sample drafting without output or project/authority mutation. Full dependent Release rebuild and four focused lanes/86 native cases PASS; actual before/after CLI help checked; 37 artifacts/8 bindings retained. Independent P3 closure pending; prior full suite 240/240 at3b3388df, not rerun after this unit. Source permissions unchanged; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
