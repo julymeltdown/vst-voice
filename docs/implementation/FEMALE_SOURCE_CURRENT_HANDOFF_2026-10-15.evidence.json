@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "unit": "Current female source handoff and stale entry-point correction",
+  "sourceCommit": "029cc6a9c27af967873fc317a70d3401e0890495",
+  "manifest": {
+    "path": "out/evidence/female-source-current-handoff-2026-10-15/manifest.json",
+    "sizeBytes": 2534,
+    "sha256": "570d30f94c8bbcfd8d1a9f60e61e137a4ec5f3e7b0518d4944bacfdd25d9f34f"
+  },
+  "retainedArtifacts": 4,
+  "preservedBindings": 8,
+  "originalWavs": 1469,
+  "distinctOriginalDigests": 1469,
+  "missingOrChangedOriginals": 0,
+  "cohorts": {
+    "VocalSet f1 singing": {
+      "originalWavs": 65,
+      "durationSeconds": 685.5653968253969,
+      "exactDuration": "2159531/3150"
+    },
+    "Merry Orks female growls": {
+      "originalWavs": 272,
+      "durationSeconds": 338.47340136054424,
+      "exactDuration": "4975559/14700"
+    },
+    "CMU ARCTIC SLT female speech": {
+      "originalWavs": 1132,
+      "durationSeconds": 3395.5589375,
+      "exactDuration": "54328943/16000"
+    }
+  },
+  "newDownloads": 0,
+  "nativeExecution": false,
+  "humanAcceptance": false,
+  "sourceAdmission": false,
+  "alphaRecordedPasses": 0,
+  "Beta": "BLOCKED",
+  "liveAppKitCheck": {
+    "status": "BLOCKED",
+    "reason": "Mac locked; inventory failed before window selection. User unlock requested."
+  },
+  "implementationReviews": {
+    "a7f81e0776ba5d1e903ec2c74b9cdcea85242426": "APPROVE_ENGINEERING_ONE_P3_RECEIPT_TEST_OPEN",
+    "029cc6a9c27af967873fc317a70d3401e0890495": "ACTIVE_INDEPENDENT_REVIEW"
+  },
+  "testsRun": [],
+  "verificationScope": "Rehash all originals and PCM headers; existing canonical gates; changed local Markdown links and JSON; git diff --check.",
+  "studioIndependentReview": {
+    "commit": "a7f81e0776ba5d1e903ec2c74b9cdcea85242426",
+    "verdict": "APPROVE_ENGINEERING",
+    "newP3": "OPEN: donor-import committed-receipt controller path untested; capture-worker cancellation coverage wording corrected.",
+    "final": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/review-a7f81e07.md",
+      "sizeBytes": 14727,
+      "sha256": "ae997a7cfafa5db95468d6fe2d506cc7dbfe9922d7ac13c15188bf85a792625a"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/metadata.json",
+      "sizeBytes": 464,
+      "sha256": "7eec00b087f20b2ca51f746edce8aae2dd5b2b81d76ba10fbf1acca2c15da293"
+    }
+  },
+  "verificationLog": {
+    "path": "out/evidence/female-source-current-handoff-2026-10-15/verification.log",
+    "sizeBytes": 157,
+    "sha256": "670c684d21104437711b3bdbb46a821a2a76fa8281abff36eb6272c825ee6a21"
+  }
+}

@@ -105,7 +105,21 @@
     "sizeBytes": 193,
     "sha256": "3c8055660bc861b5c9b1becd1b7d4da4011665c992bb57663f8552cb9b63cdbd"
   },
-  "independentReview": "PENDING_EXACT_COMMIT",
+  "independentReview": {
+    "commit": "a7f81e0776ba5d1e903ec2c74b9cdcea85242426",
+    "verdict": "APPROVE_ENGINEERING",
+    "newP3": "OPEN: donor-import committed-receipt controller path untested; capture-worker cancellation coverage wording corrected.",
+    "final": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/review-a7f81e07.md",
+      "sizeBytes": 14727,
+      "sha256": "ae997a7cfafa5db95468d6fe2d506cc7dbfe9922d7ac13c15188bf85a792625a"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/metadata.json",
+      "sizeBytes": 464,
+      "sha256": "7eec00b087f20b2ca51f746edce8aae2dd5b2b81d76ba10fbf1acca2c15da293"
+    }
+  },
   "predecessorReview": {
     "commit": "f7d2559c1870c53cd55c210841b8928201641bf8",
     "verdict": "APPROVE",

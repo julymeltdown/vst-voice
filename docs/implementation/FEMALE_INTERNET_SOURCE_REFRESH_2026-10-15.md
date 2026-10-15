@@ -1,5 +1,7 @@
 # Female internet sources: current license and original-file verification
 
+**Historical scope:** The [current handoff](FEMALE_SOURCE_CURRENT_HANDOFF_2026-10-15.md) records 1,469 verified original WAVs: 65 f1 singing, 272 growls and 1,132 SLT speech recordings. Earlier dated counts and frozen evidence below retain their original scope. No source, bank or human acceptance is approved.
+
 Date: 2026-10-15, Asia/Seoul. Result: **297 existing original WAVs verified against historical acquisition hashes; no production bank or Beta approval**. Source base: `ae90c8e6638f89fd944b358ec21b99cb9c067e97`. The internet route supersedes the earlier generated-sample choice. This update refreshes publisher metadata and local original bytes; it downloads no additional audio and changes no recording.
 
 | Internet source | Original WAVs available locally | Current primary license evidence | Appropriate current use |
