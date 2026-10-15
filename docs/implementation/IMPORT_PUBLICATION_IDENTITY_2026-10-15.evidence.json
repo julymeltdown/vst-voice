@@ -127,10 +127,11 @@
       "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
     },
     "newPreExistingWriterP3": {
-      "status": "OPEN",
+      "status": "LOCALLY_REPAIRED_REVIEW_PENDING",
       "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
       "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
-      "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression."
+      "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression.",
+      "followupReport": "docs/implementation/SOURCE_ASSESSMENT_PUBLICATION_IDENTITY_2026-10-15.md"
     }
   },
   "originatingFinding": {

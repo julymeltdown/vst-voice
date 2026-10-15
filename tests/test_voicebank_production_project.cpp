@@ -138,6 +138,72 @@ void addSecondReviewUnit(CandidateFixture& fixture, std::string importer = "prod
 }
 }  // namespace
 
+TEST_CASE("Source assessment recognizes post-transition publication with an approval under another strategy") {
+  namespace p = seam::voicebank_production;
+  for (const bool obstructPointer : {false, true}) {
+    auto fixture = reviewedCandidateFixture(false);
+    auto& project = fixture.project;
+    const auto workspace = fixture.root / "workspace";
+    p::ProductionProjectRepository repository{workspace};
+    CHECK(project.schemaVersion == 2); CHECK(project.takes.front().state == p::UnitQueueState::Approved);
+    auto second = project.sourceStrategies.front(); second.id = "second-synthetic-source";
+    second.coverage = p::Feasibility::NotAssessed; second.listening = p::Feasibility::NotAssessed;
+    CHECK(repository.registerSource(project, second, seam::core::sha256Hex(p::encodeProductionProject(project)),
+        "producer", "2026-10-15T00:01:00Z"));
+    CHECK(project.takes.front().state == p::UnitQueueState::Approved);
+    project.unitAssignments.push_back({.coverageKey = "sustain:i", .pitchLayer = 69,
+        .promptId = "prompt-i", .plannedTakeId = "take-i"});
+    CHECK(repository.importRaw(project, fixture.root / "raw.wav",
+        {.takeId = "take-i", .promptId = "prompt-i", .coverageKey = "sustain:i", .pitchLayer = 69},
+        {"import", "take-i", "producer", "2026-10-15T00:02:00Z"}));
+    CHECK(project.schemaVersion == 2); CHECK(project.takes.front().state == p::UnitQueueState::Approved);
+    CHECK(project.sourceBindings.front().strategy.id == "test-synthesis");
+    CHECK(project.sourceBindings.back().strategy.id == second.id);
+    const auto generation = project.lastDurableGeneration;
+    const auto before = p::encodeProductionProject(project);
+    const auto reviews = *seam::formats::parseJson(before).value().find("reviews");
+    const auto evidence = fixture.root / "synthetic-quality.txt";
+    CHECK(seam::core::durableAtomicWriteTextNew(evidence, "SYNTHETIC SOFTWARE QUALITY FIXTURE; NO HUMAN OR SINGER ACCEPTANCE"));
+    const auto material = p::sourceQualityMaterialIdentity(project, second.id); CHECK(material);
+    const p::SourceQualityAssessment assessment{"second-source-quality", second.id, p::sourceQualityPolicyIdentity(second),
+        material.value(), seam::core::sha256File(evidence).value(), "reviewer", "2026-10-15T00:03:00Z",
+        p::Feasibility::Pass, p::Feasibility::Pass};
+    const p::SourceQualityAssessmentOptions options{.beforePublication = [workspace, obstructPointer] {
+      if (obstructPointer) {
+        CHECK(std::filesystem::remove(workspace / "project.json"));
+        CHECK(std::filesystem::create_directory(workspace / "project.json"));
+      }
+      return seam::core::success();
+    }};
+    const auto result = repository.recordSourceQualityAssessment(project, assessment, evidence,
+        seam::core::sha256Hex(before), {}, options);
+    if (!result) std::cout << "[SOURCE-ASSESSMENT] REFUSED: " << result.error().message << '\n';
+    CHECK(result); CHECK(result.value().durabilityConfirmed == !obstructPointer);
+    auto recovered = repository.recover(); CHECK(recovered);
+    CHECK(project.schemaVersion == 3); CHECK(project.lastDurableGeneration == generation + 1U);
+    CHECK(result.value().committedGeneration == project.lastDurableGeneration);
+    CHECK(result.value().committedProjectSha256 == seam::core::sha256Hex(p::encodeProductionProject(project)));
+    CHECK(p::encodeProductionProject(project) == p::encodeProductionProject(recovered.value()));
+    CHECK(project.takes.front().state == p::UnitQueueState::MarkerReview);
+    CHECK(!project.unitAssignments.front().markerReviewed); CHECK(!project.unitAssignments.front().pitchReviewed);
+    CHECK(project.sourceQualityAssessments.size() == 1U);
+    CHECK(project.sourceQualityAssessments.front().strategyId == second.id);
+    CHECK(*seam::formats::parseJson(p::encodeProductionProject(project)).value().find("reviews") == reviews);
+    if (obstructPointer) {
+      CHECK(!result.value().diagnostic.empty()); CHECK(!repository.verify(project));
+      CHECK(std::filesystem::remove(workspace / "project.json"));
+      CHECK(repository.reconcileCurrentPointer(result.value().committedGeneration, result.value().committedProjectSha256));
+    }
+    CHECK(repository.verify(project));
+    const auto committed = p::encodeProductionProject(project);
+    CHECK(!repository.recordSourceQualityAssessment(project, assessment, evidence, seam::core::sha256Hex(committed)));
+    CHECK(p::encodeProductionProject(repository.recover().value()) == committed);
+    std::cout << "[SOURCE-ASSESSMENT] " << (obstructPointer ? "POINTER_COMMIT_RECOGNIZED" : "NORMAL_COMMIT")
+              << " / OTHER_SOURCE_REVIEW_REOPENED_HISTORY_RETAINED\n";
+    std::filesystem::remove_all(fixture.root);
+  }
+}
+
 TEST_CASE("sample review packet roundtrips bounded material and rejects tampering") {
   namespace production = seam::voicebank_production;
   auto fixture = reviewedCandidateFixture(false, "producer", false);

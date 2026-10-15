@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "unit": "Exact source-assessment post-transition publication recognition",
+  "sourceBase": "b9849150b35451cc866cdc198f1df855fb7e4218",
+  "implementationSources": [
+    {
+      "path": "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp",
+      "sizeBytes": 17835,
+      "sha256": "4b42ca589311c916638bfc5b0cf1b55d802d95f788ad35ba51bfd5919dd7014b"
+    },
+    {
+      "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
+      "sizeBytes": 13026,
+      "sha256": "705ea0ee9fb5c5d17f3b951ac356d0a78a7db7906db73b3ee9d84c6a92cc9066"
+    },
+    {
+      "path": "tests/test_voicebank_production_project.cpp",
+      "sizeBytes": 100535,
+      "sha256": "324c835685e8475489b6acb4e329da3f8995da6a20ef93ebbca3acbe3dd875c2"
+    }
+  ],
+  "sourcePatch": {
+    "path": "out/evidence/source-assessment-publication-2026-10-15/source.patch",
+    "sizeBytes": 9808,
+    "sha256": "a228f0802dd02f2c3545a70ae11bfc7d06d15c6424d9fdad124fd98d38005186"
+  },
+  "manifest": {
+    "path": "out/evidence/source-assessment-publication-2026-10-15/manifest.json",
+    "sizeBytes": 9111,
+    "sha256": "22d7803232116cbef388f7471130bacb02a42b2a5d9cff210e2b1cfc1e10d02e"
+  },
+  "retainedArtifacts": 35,
+  "preservedBindings": 12,
+  "beforeRepair": {
+    "scope": "Base recognition logic plus deterministic prepublication test hook; not pristine parent runtime",
+    "result": {
+      "command": [
+        "build/release/seam_voicebank_production_tests",
+        "Source assessment recognizes post-transition publication"
+      ],
+      "exitCode": 1,
+      "wallSeconds": 0.4437873330025468,
+      "binarySha256": "57f0dadf68aa28540a5dba95363ce533dc014120c978b7bdb90aaca2eba72e0b"
+    },
+    "log": {
+      "path": "out/evidence/source-assessment-publication-2026-10-15/before-repair-test.log",
+      "sizeBytes": 541,
+      "sha256": "3e4af260edb3a249b4129e6f459b356a0583c43014823b767e440bd2bc1acc41"
+    },
+    "identicalFinalRegressionAndHeader": true,
+    "baseSourceReconstructedByRemovingHook": true
+  },
+  "executions": [
+    {
+      "name": "release-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 66.45178362500155,
+      "sanitizers": {}
+    },
+    {
+      "name": "release-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-V",
+        "-R",
+        "^seam_(voicebank_production_tests|production_review_tests|studio_manifest_draft_tests)$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 6.211003417003667,
+      "sanitizers": {}
+    },
+    {
+      "name": "sanitize-build",
+      "command": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_voicebank_production_tests",
+        "seam_production_review_tests",
+        "-j4"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 20.235402124992106,
+      "sanitizers": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "sanitize-ctest",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "-V",
+        "-R",
+        "^seam_(voicebank_production_tests|production_review_tests)$"
+      ],
+      "exitCode": 0,
+      "wallSeconds": 87.69486716701067,
+      "sanitizers": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    }
+  ],
+  "releaseNativeCases": 140,
+  "sanitizedNativeCases": 89,
+  "newNativeCases": 1,
+  "newPositiveForms": 2,
+  "verification": {
+    "path": "out/evidence/source-assessment-publication-2026-10-15/verification.log",
+    "sizeBytes": 409,
+    "sha256": "71e4284a955b4091ce59da4c58242896405aa7ddf1bb7b71bb422add9b765837"
+  },
+  "originatingReview": {
+    "commit": "029cc6a9c27af967873fc317a70d3401e0890495",
+    "verdict": "APPROVE_ENGINEERING",
+    "originatingF7P3": "CLOSED_IMPORT_AND_STYLE_MIGRATION",
+    "final": {
+      "path": "out/evidence/import-publication-identity-independent-2026-10-15/review-029cc6a9.md",
+      "sizeBytes": 14252,
+      "sha256": "89022c2d77a3c7ed6bef6aff19526a3eeb47ee05dfd5bd24888154adf3a6d985"
+    },
+    "metadata": {
+      "path": "out/evidence/import-publication-identity-independent-2026-10-15/metadata.json",
+      "sizeBytes": 552,
+      "sha256": "aec47b318418cb3942a60962e7d0109fc68a7a671b8e286a9fea315453597575"
+    },
+    "newPreExistingWriterP3": {
+      "status": "OPEN",
+      "path": "libs/seam-voicebank-production/src/source_assessment.cpp",
+      "summary": "Source assessment still normalizes recovery to its pre-transition draft. Schema 2 to 3 can reopen approved takes bound to a different source; pointer failure then misreports its own committed generation.",
+      "nextWork": "Use exact saveWithAttempt generation and full digest, with a real two-strategy/earlier-approval pointer-obstruction regression."
+    }
+  },
+  "originatingP3": "LOCALLY_REPAIRED_REVIEW_PENDING",
+  "independentReview": "PENDING_EXACT_COMMIT",
+  "predecessorReceiptReview": {
+    "commit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "originatingA7ReceiptP3": "CLOSED",
+    "final": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/review-7ec877f7.md",
+      "sizeBytes": 9424,
+      "sha256": "4b3dbba606539f2ebe3c2cbce4d9ff409eeaeb8a5d9651f29ed60fe2fda3b2c6"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/metadata.json",
+      "sizeBytes": 471,
+      "sha256": "3776752005532dddf17f7f2064f4da9a7e9df39c7ff92450cba3c488ce9295ac"
+    }
+  },
+  "sourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": "0/20",
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "fullGoal": "ACTIVE"
+}

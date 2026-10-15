@@ -137,6 +137,12 @@ struct PreparedDonorImportOptions final {
   std::function<core::Result<void>(PreparedDonorImportStage)> faultInjector;
 };
 
+struct SourceQualityAssessmentOptions final {
+  // Deterministic tests after evidence retention, before save/publication.
+  // Production callers leave this empty. There is no postpublication hook.
+  std::function<core::Result<void>()> beforePublication;
+};
+
 class ProductionProjectRepository final {
 public:
   explicit ProductionProjectRepository(std::filesystem::path root);
@@ -234,7 +240,7 @@ public:
   [[nodiscard]] core::Result<ProductionCommitReceipt> recordSourceQualityAssessment(
       VoicebankProductionProject& project, const SourceQualityAssessment& assessment,
       const std::filesystem::path& evidenceFile, std::string_view expectedProjectSha256,
-      std::stop_token stopToken = {});
+      std::stop_token stopToken = {}, const SourceQualityAssessmentOptions& options = {});
   // Append and select a new, explicitly declared source. Never rewrites an
   // existing policy or attributes legacy takes; musical outcomes stay unassessed.
   [[nodiscard]] core::Result<ProductionCommitReceipt> registerSource(

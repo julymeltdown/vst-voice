@@ -103,7 +103,8 @@ core::Result<void> validateSourceQualityReviewer(const VoicebankProductionProjec
 
 core::Result<ProductionCommitReceipt> ProductionProjectRepository::recordSourceQualityAssessment(
     VoicebankProductionProject& project, const SourceQualityAssessment& assessment,
-    const std::filesystem::path& evidenceFile, std::string_view expectedProjectSha256, std::stop_token stop) {
+    const std::filesystem::path& evidenceFile, std::string_view expectedProjectSha256, std::stop_token stop,
+    const SourceQualityAssessmentOptions& options) {
   using Output = ProductionCommitReceipt;
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Source assessment cancelled");
   const auto current = verify(project); if (!current) return core::Result<Output>{current.error()};
@@ -151,15 +152,19 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::recordSourceQ
     const auto existing = resolved ? core::readFileBytesLimited(resolved.value(),4ULL*1024ULL*1024ULL) : core::Result<std::vector<std::byte>>{resolved.error()};
     if (!existing || existing.value() != bytes.value()) return core::Result<Output>{written.error()};
   }
+  if (options.beforePublication) {
+    const auto injected = options.beforePublication(); if (!injected) return core::Result<Output>{injected.error()};
+  }
   const ProductionJournalEvent event{"source-quality-assessment",assessment.id,assessment.reviewerId,assessment.reviewedAtUtc};
-  const auto saved = save(draft,event,stop);
+  ProductionPublicationAttempt attempt;
+  const auto saved = saveWithAttempt(draft,event,attempt,stop);
   bool durable = true; std::string diagnostic;
   if (!saved) {
     const auto recovered = recover();
     if (!recovered || recovered.value().lastDurableGeneration <= project.lastDurableGeneration)
       return core::Result<Output>{saved.error()};
-    auto comparison = recovered.value(); comparison.lastDurableGeneration = draft.lastDurableGeneration;
-    if (encodeProductionProject(comparison) != encodeProductionProject(draft))
+    if (attempt.generation == 0U || recovered.value().lastDurableGeneration != attempt.generation ||
+        core::sha256Hex(encodeProductionProject(recovered.value())) != attempt.projectSha256)
       return core::failure<Output>(core::ErrorCode::Conflict,"Assessment commit was not confirmed; recovery found different work");
     draft = recovered.value(); durable = false;
     diagnostic = "Exact assessment is recoverably committed; inspect before further work and do not repeat. " + saved.error().message;
