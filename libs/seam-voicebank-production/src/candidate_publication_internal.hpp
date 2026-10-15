@@ -3,6 +3,7 @@
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string_view>
 #include <vector>
@@ -36,6 +37,10 @@ void cleanupOwnedDirectory(const std::filesystem::path& stage,
     const std::filesystem::path& destination, const DirectoryIdentity& parentIdentity,
     const DirectoryIdentity& stageIdentity);
 [[nodiscard]] core::Result<std::string> boundedManifest(const voicebank::Manifest& manifest);
+// Style-owned English drafts and review capture/commit share the same inventory
+// authority. Legacy and non-English producers have no English contract here.
+[[nodiscard]] core::Result<std::optional<voicebank::Manifest::EnglishPhoneContract>> englishInventoryContract(
+    const std::filesystem::path& workspace, const VoicebankProductionProject& project);
 [[nodiscard]] std::string coverageKey(const voicebank::Unit& unit);
 // Review decisions and their bound material; every other metadata revision is take material.
 [[nodiscard]] bool reviewMetadata(std::string_view kind);

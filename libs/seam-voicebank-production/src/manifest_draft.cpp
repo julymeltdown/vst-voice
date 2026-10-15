@@ -40,38 +40,6 @@ struct Cleanup final {
   DirectoryIdentity parentIdentity, stageIdentity;
   ~Cleanup() { cleanupOwnedDirectory(path, parentIdentity, stageIdentity); }
 };
-core::Result<std::optional<voicebank::Manifest::EnglishPhoneContract>> englishInventoryContract(
-    const std::filesystem::path& workspace, const VoicebankProductionProject& project) {
-  using Output = std::optional<voicebank::Manifest::EnglishPhoneContract>;
-  // Legacy projects have no policy authority and retain exact resource matching.
-  if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en") return Output{};
-  if (workspace.filename() != kDraftProducerWorkspaceDirectory)
-    return core::failure<Output>(core::ErrorCode::Conflict,
-        "English style-owned drafts require DESTINATION/producer beside its bound DESTINATION/inventory.json; "
-        "use new-producer-workspace with a captured English profile, then create-sample-draft DESTINATION/producer");
-  std::error_code error;
-  const auto status = std::filesystem::symlink_status(workspace.parent_path() / kDraftProducerInventoryFile, error);
-  if (error || !std::filesystem::is_regular_file(status))
-    return core::failure<Output>(core::ErrorCode::Conflict,
-        "English draft inventory must be a retained regular file, not missing or linked");
-  const auto loaded = readDraftProducerWorkspaceInventory(workspace.parent_path());
-  if (!loaded) return core::Result<Output>{loaded.error()};
-  const auto& inventory = loaded.value().inventory;
-  const auto& profile = inventory.profile;
-  if (loaded.value().producerRoot != workspace || profile.language != "en" ||
-      profile.profileId != project.inventoryId || inventory.inventorySha256 != project.inventorySha256)
-    return core::failure<Output>(core::ErrorCode::Conflict,
-        "English draft inventory identity, language and digest must match its producer");
-  std::set<std::tuple<std::string, std::string, std::int64_t>> planned;
-  for (const auto& row : inventory.units) planned.emplace(row.style, row.coverageKey, row.pitchLayer);
-  for (const auto& row : project.unitAssignments) {
-    if (!planned.contains({row.style, row.coverageKey, row.pitchLayer}))
-      return core::failure<Output>(core::ErrorCode::Conflict,
-          "English draft assignment is outside its bound inventory", row.coverageKey);
-  }
-  return Output{voicebank::Manifest::EnglishPhoneContract{
-      profile.vocabularyId, profile.vocabularySha256, profile.stressPolicy}};
-}
 core::Result<voicebank::Unit> unitFromAssignment(const UnitAssignment& assignment,
     const VoicebankProductionProject& project, const SampleManifestDraftIdentity& identity) {
   const auto separator = assignment.coverageKey.find(':');
@@ -155,6 +123,41 @@ void estimateMarkers(voicebank::Unit& unit, const AudioFacts& facts) {
   unit.renderer = voicebank::RendererHint::ClassicPsola;
 }
 } // namespace
+
+namespace candidate_publication_internal {
+core::Result<std::optional<voicebank::Manifest::EnglishPhoneContract>> englishInventoryContract(
+    const std::filesystem::path& workspace, const VoicebankProductionProject& project) {
+  using Output = std::optional<voicebank::Manifest::EnglishPhoneContract>;
+  // Legacy projects have no policy authority and retain exact resource matching.
+  if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en") return Output{};
+  if (workspace.filename() != kDraftProducerWorkspaceDirectory)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English style-owned drafts require DESTINATION/producer beside its bound DESTINATION/inventory.json; "
+        "use new-producer-workspace with a captured English profile, then create-sample-draft DESTINATION/producer");
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(workspace.parent_path() / kDraftProducerInventoryFile, error);
+  if (error || !std::filesystem::is_regular_file(status))
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English draft inventory must be a retained regular file, not missing or linked");
+  const auto loaded = readDraftProducerWorkspaceInventory(workspace.parent_path());
+  if (!loaded) return core::Result<Output>{loaded.error()};
+  const auto& inventory = loaded.value().inventory;
+  const auto& profile = inventory.profile;
+  if (loaded.value().producerRoot != workspace || profile.language != "en" ||
+      profile.profileId != project.inventoryId || inventory.inventorySha256 != project.inventorySha256)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English draft inventory identity, language and digest must match its producer");
+  std::set<std::tuple<std::string, std::string, std::int64_t>> planned;
+  for (const auto& row : inventory.units) planned.emplace(row.style, row.coverageKey, row.pitchLayer);
+  for (const auto& row : project.unitAssignments) {
+    if (!planned.contains({row.style, row.coverageKey, row.pitchLayer}))
+      return core::failure<Output>(core::ErrorCode::Conflict,
+          "English draft assignment is outside its bound inventory", row.coverageKey);
+  }
+  return Output{voicebank::Manifest::EnglishPhoneContract{
+      profile.vocabularyId, profile.vocabularySha256, profile.stressPolicy}};
+}
+} // namespace candidate_publication_internal
 
 core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
     const std::filesystem::path& repositoryRoot, const VoicebankProductionProject& project,

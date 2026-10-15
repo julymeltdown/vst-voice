@@ -67,6 +67,33 @@ TEST_CASE("observed CLI refusal oracle rejects signals wrong streams and sanitiz
   }
 }
 
+TEST_CASE("CLI review refuses changed or removed English contracts before writing a packet") {
+#if defined(SEAM_TEST_VOICEBANK_CLI)
+  using namespace seam;
+  for (const bool distinguish : {false, true}) {
+    test::support::EnglishManifestDraftFixture fixture{distinguish, true};
+    const auto created = fixture.create("editable"); CHECK(created);
+    const auto file = created.value().root / "manifest.json";
+    const auto loaded = voicebank::ManifestJsonCodec{}.load(file); CHECK(loaded);
+    const auto before = voicebank_production::encodeProductionProject(fixture.project);
+    for (const bool remove : {false, true}) {
+      auto changed = loaded.value();
+      if (remove) changed.languageContract.reset();
+      else changed.languageContract->stressPolicy = distinguish ? "FOLD_LEXICAL_STRESS" : "DISTINGUISH_LEXICAL_STRESS";
+      CHECK(changed.validate());
+      const auto encoded = voicebank::ManifestJsonCodec{}.encode(changed); CHECK(encoded);
+      CHECK(core::durableAtomicWriteText(file, encoded.value()));
+      CHECK(!std::filesystem::exists(file.string() + ".bak"));
+      const auto packet = fixture.root / (remove ? "removed-packet.json" : "changed-packet.json");
+      requireCliRefusal({"prepare-sample-review", fixture.producerRoot.string(), file.string(), packet.string()},
+          2U, "English review contract must match the bound producer inventory");
+      CHECK(!std::filesystem::exists(packet));
+      CHECK(voicebank_production::encodeProductionProject(fixture.repository.recover().value()) == before);
+    }
+  }
+#endif
+}
+
 TEST_CASE("CLI English arbitrary initialization remains a Draft and explains missing sample draft layout") {
 #if defined(SEAM_TEST_VOICEBANK_CLI)
   using namespace seam;

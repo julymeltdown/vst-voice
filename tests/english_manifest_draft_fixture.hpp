@@ -19,10 +19,10 @@ struct EnglishManifestDraftFixture final {
   voicebank_production::DraftInventoryProfile profile;
   voicebank_production::SampleManifestDraftIdentity identity{
       "engineering.english", "0.1.0", "Synthetic English draft", domain::Language::English, "neutral"};
-  explicit EnglishManifestDraftFixture(bool distinguish = false) {
+  explicit EnglishManifestDraftFixture(bool distinguish = false, bool bareVowel = false) {
     namespace production = voicebank_production;
     profile = production::draftInventoryPresetProfile(production::DraftInventoryPreset::EnglishFull, "english-fixture");
-    profile.vowels = {distinguish ? "iy1" : "iy"}; profile.includeKinds = {"sustain"};
+    profile.vowels = {distinguish && !bareVowel ? "iy1" : "iy"}; profile.includeKinds = {"sustain"};
     profile.pitchLayers = {69, 70}; profile.requestedMinMidi = 68; profile.requestedMaxMidi = 70;
     profile.alternateTakes = 1;
     if (distinguish) profile.stressPolicy = "DISTINGUISH_LEXICAL_STRESS";

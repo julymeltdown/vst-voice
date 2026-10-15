@@ -133,13 +133,25 @@ TEST_CASE("English generated candidates preserve declared stress through signed 
     CHECK(installed.value().packageDigest == packaged.value().packageDigest);
     CHECK(installed.value().candidate.manifest.languageContract == contract);
     if (!distinguish) {
-      const auto altered = fixture.root / "altered-candidate";
-      std::filesystem::copy(candidate, altered, std::filesystem::copy_options::recursive);
-      auto changed = candidateManifest.value(); changed.languageContract->stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
-      CHECK(changed.validate()); CHECK(voicebank::ManifestJsonCodec{}.save(changed, altered / "manifest.json"));
-      CHECK(!candidate_packaging::packageResourceCandidate(altered, fixture.root / "altered.seambank", key.value(),
-          {.expectedCandidateSha256 = published.find("candidateSha256")->asString()}));
-      CHECK(!std::filesystem::exists(fixture.root / "altered.seambank"));
+      for (const bool remove : {false, true}) {
+        const auto altered = fixture.root / (remove ? "removed-contract-candidate" : "altered-candidate");
+        std::filesystem::copy(candidate, altered, std::filesystem::copy_options::recursive);
+        auto changed = candidateManifest.value();
+        if (remove) changed.languageContract.reset();
+        else changed.languageContract->stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
+        CHECK(changed.validate());
+        const auto encoded = voicebank::ManifestJsonCodec{}.encode(changed); CHECK(encoded);
+        CHECK(core::durableAtomicWriteText(altered / "manifest.json", encoded.value()));
+        CHECK(!std::filesystem::exists(altered / "manifest.json.bak"));
+        const auto output = fixture.root / (remove ? "removed-contract.seambank" : "altered.seambank");
+        const auto refused = candidate_packaging::packageResourceCandidate(altered, output, key.value(),
+            {.expectedCandidateSha256 = published.find("candidateSha256")->asString()});
+        CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::Conflict);
+        CHECK(refused.error().context == "manifest.json");
+        CHECK(refused.error().message == "Candidate file is missing or differs in size" ||
+            refused.error().message == "Candidate file differs from its listed digest");
+        CHECK(!std::filesystem::exists(output));
+      }
     }
     application::ProjectFactory factory{994000U}; auto song = factory.createProject("English dictionary from installed bank");
     const auto track = factory.addVocalTrack(song, "English fixture");

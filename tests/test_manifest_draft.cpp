@@ -84,6 +84,51 @@ TEST_CASE("English generated producer drafts preserve declared folding or exact 
   CHECK(!manifest.value().languageContract); CHECK(manifest.value().matchedPhone("iy1") == "iy1");
 }
 
+TEST_CASE("English review capture refuses valid altered or removed inventory contracts") {
+  for (const bool distinguish : {false, true}) {
+    test::support::EnglishManifestDraftFixture fixture{distinguish, true};
+    const auto created = fixture.create("editable"); CHECK(created);
+    const auto loaded = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(loaded);
+    CHECK(production::prepareSampleCandidateReview(fixture.producerRoot, fixture.project, loaded.value()));
+    const auto before = production::encodeProductionProject(fixture.project);
+    for (const bool remove : {false, true}) {
+      auto changed = loaded.value();
+      if (remove) changed.languageContract.reset();
+      else changed.languageContract->stressPolicy = distinguish ? "FOLD_LEXICAL_STRESS" : "DISTINGUISH_LEXICAL_STRESS";
+      CHECK(changed.validate());
+      const auto result = production::prepareSampleCandidateReview(fixture.producerRoot, fixture.project, changed);
+      CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+      CHECK(result.error().message == "English review contract must match the bound producer inventory");
+      CHECK(result.error().context == "languageContract");
+      CHECK(production::encodeProductionProject(fixture.repository.recover().value()) == before);
+      CHECK(fixture.project.reviews.empty());
+    }
+  }
+}
+
+TEST_CASE("English review commit rechecks retained inventory before any review mutation") {
+  test::support::EnglishManifestDraftFixture fixture;
+  CHECK(fixture.repository.registerReviewer(fixture.project, "reviewer",
+      core::sha256Hex(production::encodeProductionProject(fixture.project)), "producer", "2026-10-15T00:03:00Z"));
+  const auto created = fixture.create("editable"); CHECK(created);
+  const auto manifest = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(manifest);
+  const auto packet = production::prepareSampleCandidateReview(fixture.producerRoot, fixture.project, manifest.value()); CHECK(packet);
+  const auto before = production::encodeProductionProject(fixture.project);
+  std::filesystem::rename(fixture.producerRoot.parent_path() / "inventory.json", fixture.root / "inventory-backup.json");
+  const auto result = production::commitSampleCandidateReview(fixture.producerRoot, fixture.project, packet.value(),
+      "reviewer", "2026-10-15T00:04:00Z", production::SampleCandidateReviewDecision::Reject);
+  CHECK(!result);
+  CHECK(result.error().message == "English draft inventory must be a retained regular file, not missing or linked");
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value()) == before);
+  CHECK(fixture.project.reviews.empty());
+  std::filesystem::rename(fixture.root / "inventory-backup.json", fixture.producerRoot.parent_path() / "inventory.json");
+  // Restoring only the inventory makes the exact same packet and registered
+  // reviewer eligible for a rejection. No source or take approval is granted.
+  CHECK(production::commitSampleCandidateReview(fixture.producerRoot, fixture.project, packet.value(),
+      "reviewer", "2026-10-15T00:04:00Z", production::SampleCandidateReviewDecision::Reject));
+  CHECK(!fixture.project.reviews.empty());
+}
+
 TEST_CASE("English draft layout guard refuses a verified renamed producer without changing its authority") {
   test::support::EnglishManifestDraftFixture fixture;
   const auto before = production::encodeProductionProject(fixture.project);

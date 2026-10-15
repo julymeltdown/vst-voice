@@ -174,6 +174,11 @@ core::Result<SampleCandidateReviewPacket> prepareSampleCandidateReview(
   if (project.schemaVersion >= kProductionStyleSchemaVersion && project.language !=
       (manifest.language == domain::Language::Japanese ? "ja" : manifest.language == domain::Language::English ? "en" : "ko"))
     return core::failure<Output>(core::ErrorCode::Conflict, "Review language differs from the producer workspace");
+  const auto contract = englishInventoryContract(workspace.value(), project);
+  if (!contract) return core::Result<Output>{contract.error()};
+  if (contract.value() && manifest.languageContract != contract.value())
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "English review contract must match the bound producer inventory", "languageContract");
   if (manifest.units.empty() || manifest.units.size() > kMaximumReviewUnits || manifest.units.size() > project.unitAssignments.size())
     return core::failure<Output>(core::ErrorCode::Conflict, "Review manifest must name a bounded subset of current producer assignments");
   Output packet{project.projectId, project.lastDurableGeneration, core::sha256Hex(encodeProductionProject(project)),

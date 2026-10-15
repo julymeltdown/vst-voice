@@ -148,3 +148,8 @@ Independent reviewer **APPROVE exact `a0259814d7e61a7745dd7481ed86f7c404417baa`*
 P3 findings remain open: (1) remove the stray backup or write without it, require the manifest-specific size/digest diagnostic and add removed-contract packaging coverage; (2) validate editable English contracts against the bound producer inventory before review capture and review commit. The second gap predates this test commit: a changed/missing declaration can enter review/publication as supplied, including silently successful cases. Exact post-review/package integrity checks do not close this earlier authority boundary. This corrects the earlier refusal interpretation; the positive preservation/render results remain valid.
 
 Later commits are not approved by this verdict. Producer/layout P3 implementation and coverage P2 closure retain their own review status. Alpha 0/20, U45 HELD, Beta BLOCKED; mock signing/actors/rights/quality and one-word/one-vowel rendering provide no human, source, platform or full-product acceptance.
+
+
+### 2026-10-15 — Both P3 follow-ups implemented
+
+The [English inventory-authority unit](ENGLISH_REVIEW_INVENTORY_AUTHORITY_2026-10-15.md) now binds capture/commit to the retained inventory and replaces backup-confounded packaging coverage with manifest-specific changed/removed-contract refusals. Five focused lanes/101 native cases pass across two final batches. Exact independent closure remains pending. The historical a0259814 root/result and corrected limits above remain unchanged; no human/source/Beta approval is granted.

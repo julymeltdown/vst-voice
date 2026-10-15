@@ -126,5 +126,13 @@
       "sizeBytes": 1435,
       "sha256": "d233dfbc09af3742459585d0513d523f85ac2a4d301dfa6ba5c2291bba092c03"
     }
+  },
+  "followUp": {
+    "unit": "english-review-inventory-authority",
+    "implementation": "IMPLEMENTED_FOCUSED_PASS",
+    "independentClosure": "PENDING",
+    "evidenceIndex": "docs/implementation/ENGLISH_REVIEW_INVENTORY_AUTHORITY_2026-10-15.evidence.json",
+    "historicalRootChanged": false,
+    "historicalRefusalConfoundRemainsHistorical": true
   }
 }

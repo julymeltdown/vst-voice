@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "unit": "english-review-inventory-authority",
+  "sourceBase": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+  "manifest": {
+    "path": "out/evidence/english-review-inventory-authority-2026-10-15/manifest.json",
+    "sizeBytes": 14860,
+    "sha256": "2cc3531eaa1e4b2a634a2461454dbf83f5dc684cb49f96adae336cff200a3de5"
+  },
+  "retainedArtifacts": 73,
+  "preservedBindings": 8,
+  "reproduction": {
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 9.532924583996646,
+      "before": {
+        "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+        "diffSha256": "83094e52d6ef7ad19410fe5fe77cdeab01aef90535ba03f27dbaf2f9c280d67b"
+      },
+      "after": {
+        "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+        "diffSha256": "83094e52d6ef7ad19410fe5fe77cdeab01aef90535ba03f27dbaf2f9c280d67b"
+      }
+    },
+    "ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "--parallel",
+        "1",
+        "-R",
+        "^(seam_manifest_draft_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 8,
+      "elapsedSeconds": 18.898706874984782,
+      "before": {
+        "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+        "diffSha256": "83094e52d6ef7ad19410fe5fe77cdeab01aef90535ba03f27dbaf2f9c280d67b"
+      },
+      "after": {
+        "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+        "diffSha256": "83094e52d6ef7ad19410fe5fe77cdeab01aef90535ba03f27dbaf2f9c280d67b"
+      }
+    },
+    "distinctNativeFailures": 3
+  },
+  "finalBatches": {
+    "final": {
+      "build": {
+        "argv": [
+          "cmake",
+          "--build",
+          "build/release",
+          "-j6"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 6.240688833000604,
+        "before": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7128af404bc96f45a77d0e78f7bedbf5689bf40e97f04d132ec259990be58bdc"
+        },
+        "after": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7128af404bc96f45a77d0e78f7bedbf5689bf40e97f04d132ec259990be58bdc"
+        }
+      },
+      "ctest": {
+        "argv": [
+          "ctest",
+          "--test-dir",
+          "build/release",
+          "--output-on-failure",
+          "--parallel",
+          "1",
+          "-R",
+          "^(seam_manifest_draft_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 18.902012625010684,
+        "before": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7128af404bc96f45a77d0e78f7bedbf5689bf40e97f04d132ec259990be58bdc"
+        },
+        "after": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7128af404bc96f45a77d0e78f7bedbf5689bf40e97f04d132ec259990be58bdc"
+        }
+      }
+    },
+    "refined": {
+      "build": {
+        "argv": [
+          "cmake",
+          "--build",
+          "build/release",
+          "-j6"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 2.4442280829825904,
+        "before": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7c492a861ac3d69296d416cb6cad8424a94716264d56bb81ce3d7a1af0590a50"
+        },
+        "after": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7c492a861ac3d69296d416cb6cad8424a94716264d56bb81ce3d7a1af0590a50"
+        }
+      },
+      "ctest": {
+        "argv": [
+          "ctest",
+          "--test-dir",
+          "build/release",
+          "--output-on-failure",
+          "--parallel",
+          "1",
+          "-R",
+          "^(seam_manifest_draft_tests|seam_studio_sample_review_tests|seam_studio_manifest_draft_tests)$"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 2.7220564169983845,
+        "before": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7c492a861ac3d69296d416cb6cad8424a94716264d56bb81ce3d7a1af0590a50"
+        },
+        "after": {
+          "head": "079b788bafaf6a48134900be7f701f7a8aa6655c",
+          "diffSha256": "7c492a861ac3d69296d416cb6cad8424a94716264d56bb81ce3d7a1af0590a50"
+        }
+      }
+    }
+  },
+  "uniqueNativeCases": 101,
+  "uniqueFocusedCTestLanes": 5,
+  "latestManifestCaseIncludesRegisteredMockReviewerRestorationControl": true,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/english-review-inventory-authority-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/english-review-inventory-authority-2026-10-15/verification.log",
+      "sizeBytes": 337,
+      "sha256": "a3fd9be9a1b0e8b7b4765517a744994c2db411081f9cbe664c58d16e74b0d42e"
+    }
+  },
+  "independentClosure": "PENDING",
+  "full239SuiteAfterUnit": "NOT_RUN",
+  "sourceOrHumanApproval": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}
