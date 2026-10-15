@@ -42,7 +42,7 @@ The adjacent evidence index binds the frozen root `out/evidence/prepared-donor-i
 
 | Final execution | Result | Recorded wall time |
 |---|---|---:|
-| Full Release rebuild | PASS; dependency-complete incremental build | 1.491 s |
+| Full Release dependency check | PASS; graph up to date, no objects compiled in this frozen stage | 1.491 s |
 | Release Python/native integration | 40/40 methods, zero skips: 6 new CLI, 8 persistence parity, 26 preparation/verification | 8.516 s |
 | Focused Release CTest | 3/3 lanes; 20 snapshot + 30 sample-review CLI + 2 candidate lifecycle = 52 existing native cases | 22.390 s |
 | ASan/UBSan CLI target/dependency rebuild | PASS; `seam_voicebank_cli` target only | 8.746 s |
@@ -56,6 +56,8 @@ Preliminary logs are retained and do not replace final evidence. The first build
 
 ## Independent review and admission state
 
-Exact candidate commit `01e78a0c` is now independently APPROVED for engineering. Its retained final answer closes the schema-4 per-take declaration P3, with one new P3 remaining open: existing negative cases stop at listing checks before the deeper packet-fact, per-binding, unreferenced-entry and no-prepared-binding checks. The exact answer/metadata are pinned here. The sibling-writer repair at `bce11b9a` is independently APPROVED with zero findings, closing that P3. Its exact 12,571-byte final answer and metadata arrived after this CLI manifest froze and are bound by the tracked index, leaving the manifest unchanged. This CLI unit requires its own post-commit review; neither prior approval covers these new commands.
+Exact candidate commit `01e78a0c` is now independently APPROVED for engineering. Its retained final answer closes the schema-4 per-take declaration P3, with one new P3 remaining open: existing negative cases stop at listing checks before the deeper packet-fact, per-binding, unreferenced-entry and no-prepared-binding checks. The exact answer/metadata are pinned here. The sibling-writer repair at `bce11b9a` is independently APPROVED with zero findings, closing that P3. Its exact 12,571-byte final answer and metadata arrived after this CLI manifest froze and are bound by the tracked index, leaving the manifest unchanged. Exact CLI commit `166833ef` has now received its own independent APPROVE with zero findings. The exact final answer and metadata are retained under `out/evidence/prepared-donor-intake-cli-independent-2026-10-15` and separately bound by the tracked index after the manifest freeze; the original frozen evidence remains unchanged.
 
 The source pool remains 1,469 distinct downloaded originals, separated as 65 same-female f1 singing, 272 growls and 1,132 female SLT speech recordings. The 312 prepared speech donors remain unreviewed and unassigned. This unit registers/imports/plays/approves no real source. Genuine owner source/EULA/performer decisions, producer and distinct reviewer, phone mapping/missing coverage, pitch/style choices, failed-QC policy and listening remain outstanding. No terminal-output test proves any human reviewed the notices. Canonical Alpha remains 0/20, U45 HELD, Beta BLOCKED; the full goal remains active. Windows remains TODO and `.github` is untouched.
+
+The reviewer confirms the frozen Release stage is an up-to-date graph check. Actual compilation appears only in the preliminary build log, without the final source/binary inventory; the historical commit wording “dependency rebuild” must not be read as a newly inventoried compile. The focused sanitized CLI stage did compile. Optional follow-ups cover readable display of C1/bidirectional controls and superseded-take queue state, additional linked-output/source-selection/cancellation cases, and retained-declaration fallback. None is claimed implemented here.

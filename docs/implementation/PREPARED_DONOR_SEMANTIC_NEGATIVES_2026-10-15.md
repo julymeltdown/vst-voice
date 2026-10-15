@@ -36,7 +36,7 @@ Base commit is `166833ef330cdea484ed475305c1a03d6f7b72a8`. The only implementati
 
 | Source-bound run | Result | Recorded wall time |
 |---|---|---:|
-| Release lifecycle target and dependency rebuild | PASS; dependency-complete incremental target build | 0.070 s |
+| Release lifecycle target and dependency check | PASS; graph up to date, no objects compiled in this frozen stage | 0.070 s |
 | Release CTest lifecycle lane | 1/1 lane, both existing native cases PASS; new control + all eight exact refusal traces present | 2.702 s |
 | ASan/UBSan lifecycle target and dependency rebuild | PASS, including dependent actual CLI | 12.596 s |
 | Sanitized CTest lifecycle lane | 1/1 lane, both existing native cases PASS; same nine traces | 33.753 s |
@@ -47,6 +47,6 @@ A preliminary focused Release build/test passed before the final source/binary-i
 
 ## Review and Beta boundaries
 
-The originating `01e78a0c` exact review remains APPROVE for engineering; it closed schema-4 declaration completeness and raised this coverage P3. The test repair requires its own exact post-commit review. The independent review of CLI commit `166833ef` is separate and in progress when this evidence freezes. Existing Python present-donor/history-isolation gaps, native PCM range-clause isolation, wrapper cancellation/commit-fault coverage and the lower-impact style-migration follow-up remain open.
+The originating `01e78a0c` exact review remains APPROVE for engineering; it closed schema-4 declaration completeness and raised this coverage P3. The test repair requires its own exact post-commit review. The independent review of CLI commit `166833ef` was separate and in progress at this evidence freeze. It has since APPROVED that exact commit with zero findings; the adjacent index binds the retained final answer after the manifest freeze. Exact `874c5fa2` test-repair review is now in progress. Existing Python present-donor/history-isolation gaps, native PCM range-clause isolation, wrapper cancellation/commit-fault coverage and the lower-impact style-migration follow-up remain open.
 
 No original or prepared real recording was modified, registered, imported, played or approved. Actual owner source/performer disposition, producer and distinct reviewer, coverage/pitch/style choices, failed-QC policy and listening remain required. Canonical Alpha stays **0/20**, U45 **HELD**, Beta **BLOCKED**, full goal **ACTIVE**. `.github` and README are untouched; Windows stays TODO.
