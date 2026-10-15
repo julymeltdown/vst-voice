@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "unit": "phone-donor-packet-integrity",
+  "sourceBase": "4e009b1e3b02253365041b84e26b5b9a9349020b",
+  "manifest": {
+    "path": "out/evidence/phone-donor-packet-integrity-2026-10-15/manifest.json",
+    "sizeBytes": 126726,
+    "sha256": "69235896fef84347e57ec0785df6a7a9aee9c6c94b866dd35243907db25f55e2"
+  },
+  "retainedArtifacts": 678,
+  "preservedBindings": 7,
+  "reproduction": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake",
+      "-v"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.17983166701742448,
+    "diffSha256": "c74d8897c4fbe9f919e78e237c6dfa9919942ec285edeb9f4db2fd1283eecfad"
+  },
+  "final": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake",
+      "tests.test_voicebank_source_intake",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.5175865000055637,
+    "diffSha256": "9934f9172cdaed031baf664f5e302d5bc2ac5b2fc2e69448069495fe6590e2b2",
+    "stableTrackedDiff": true
+  },
+  "passingPythonMethods": 37,
+  "reproductionDistinctNewMethods": 4,
+  "reproductionOneFailureAnd18SubtestErrors": true,
+  "actualDonorWavsPerOutput": 312,
+  "actualOriginalSourceCount": 4,
+  "actualByteIdenticalOutputCopies": 2,
+  "actualComparison": {
+    "newPacketSha256": "a73a4da7ab25d743c5af45f2fd33c9fae71b9f55ec8d4aa3696e9929e5b49457",
+    "derivedWavs": 312,
+    "distinctOriginalSources": 4,
+    "rowsAndAudioEqualToEarlierAttributedPacket": true,
+    "attributionBytesEqualToEarlierAttributedPacket": true,
+    "onlyNewPacketField": "retainedAttributionSha256",
+    "historicalArtifactsRehashed": 346,
+    "historicalPinsRehashed": 7,
+    "oldPacketPreservedAndRefused": true,
+    "newOriginalAudio": 0,
+    "sourceOrHumanOrBankApproval": false
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/phone-donor-packet-integrity-2026-10-15/verification.log",
+      "sizeBytes": 302,
+      "sha256": "3f9eecee47890299f3f1e35b2ddabeb4622336e927be2a44f8b3fe238d3bc39b"
+    }
+  },
+  "independentReview": "PENDING",
+  "nativeOrCtestExecution": false,
+  "newOriginalAudio": 0,
+  "existingPacketsRewritten": false,
+  "downstreamAtomicBankAdmission": "OPEN",
+  "sourceOrHumanApproval": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

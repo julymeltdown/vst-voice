@@ -573,3 +573,6 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 
 2026-10-15 — Independent APPROVE exact ce9113d7, no findings; legacy-English P3 from4bafec5e CLOSED. Lead rehashed33 artifacts/7pins and matched6 binary observation hashes plus exact baseline/final lines. Frozen verdict bound in LEGACY_ENGLISH_REVIEW_AUTHORITY_2026-10-15.evidence.json. Focused102 cases remain execution evidence; full239 belongs to 50f5b1d9. Alpha0/20; U45HELD; BetaBLOCKED.
+
+
+2026-10-15 — Prepared donor integrity boundary implemented: external packet digest, retained attribution/license/plan/WAV checks and unapproved shape, plus verification before removing INCOMPLETE. Late replacement reproduced on unchanged code; final37 direct Python methods PASS. Actual312-donor trial from4 existing sources passes preflight and independent PCM replay; original/old packets preserved. See PHONE_DONOR_PACKET_INTEGRITY_2026-10-15.md/index. Downstream durable bank admission/independent review remain open. Alpha0/20; U45HELD; BetaBLOCKED.

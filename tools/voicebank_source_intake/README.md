@@ -41,3 +41,13 @@ Output contains canonical mono WAVs, `donors.json`, the unchanged `intake-plan.j
 Run `python3 -m unittest tests.test_phone_donor_intake -v`. The existing CTest intake entry now runs both preparation suites. The [actual SLT cohort report](../../docs/implementation/FEMALE_PHONE_DONOR_PREPARATION_2026-10-15.md) records real source copies, deterministic outputs and native reader checks.
 
 Fresh phone-donor outputs also carry `attribution.txt`, referenced by `retainedAttributionPath` in `donors.json`. It retains the supplied license attribution and source URL beside the unchanged license text and explicit modification notice. Include original author names when the source license requires them; the tool cannot infer or authenticate them. For CMU ARCTIC SLT, the attribution record must preserve Carnegie Mellon University's 2003 notice and the original author names Alan W Black and Kevin A. Lenzo, verified from retained archive references; the publisher page names Black as maintainer and does not name Lenzo. Existing frozen donor outputs remain historical; create a new plan/output for corrected attribution. This adds no performer-rights or bank approval.
+
+New outputs bind the exact UTF-8 notice bytes with `retainedAttributionSha256`. Preparation checks the packet, notice, license, plan and derived WAVs before removing `INCOMPLETE`. To verify a completed output without changing it:
+
+```sh
+python3 tools/voicebank_source_intake/prepare_phone_donors.py \
+  --verify --output /absolute/path/to/prepared-donors \
+  --expected-donors-sha256 DIGEST_FROM_THE_RETAINED_HANDOFF
+```
+
+Use the `donors.json` digest captured by the trusted handoff; computing a new digest from an unknown replacement does not authenticate it. Missing notice bindings require regeneration into a new output. Verification refuses incomplete packets, changed/missing/linked retained files and relabelled approval fields. It checks the prepared artifact snapshots, not the factual author names, performer clearance, original annotations, acoustic suitability or source rights. The original source inputs remain separately retained. Passing this read-only preflight grants no import or bank approval, and a later importer must recheck the bytes it actually consumes.

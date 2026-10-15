@@ -88,6 +88,87 @@ def read_labels(raw: bytes, rate: int, frames: int) -> list[dict]:
     return rows
 
 
+def _verify_prepared(output: Path, expected_sha256: str, *, allow_incomplete: bool) -> dict:
+    require(output.is_dir() and not output.is_symlink(), "Missing or linked donor directory")
+    marker = output / "INCOMPLETE"
+    if not allow_incomplete:
+        require(not marker.exists() and not marker.is_symlink(), "Donor preparation is incomplete")
+    require(isinstance(expected_sha256, str) and re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is not None,
+            "An external donors.json SHA-256 is required")
+    root = output.resolve()
+    _, raw = bound_file(root, {"path": "donors.json", "sha256": expected_sha256}, 16 * MAXIMUM_PLAN_BYTES)
+    result = strict_json(raw)
+    require(result.get("retainedAttributionPath") == "attribution.txt" and
+            isinstance(result.get("retainedAttributionSha256"), str),
+            "Missing retained attribution binding; regenerate this unapproved donor packet")
+    require(set(result) == {"schemaVersion", "documentKind", "status", "language", "planSha256", "labelContract",
+            "license", "retainedLicensePath", "retainedAttributionPath", "retainedAttributionSha256", "changeNotice",
+            "producerRegistration", "performerRights", "rightsClearance", "bankAdmission", "proposals"},
+            "Donor packet has missing or unknown fields")
+    require(type(result.get("schemaVersion")) is int and result["schemaVersion"] == 1 and
+            result.get("documentKind") == "UnassignedPhoneDonorProposals" and result.get("language") == "en" and
+            result.get("labelContract") == LABEL_CONTRACT and
+            all(result.get(key) == value for key, value in {
+                "status": "UNAPPROVED", "producerRegistration": "NOT_REGISTERED",
+                "performerRights": "NOT_ESTABLISHED", "rightsClearance": "NOT_APPROVED",
+                "bankAdmission": "NOT_APPROVED"}.items()), "Expected an unapproved donor proposal packet")
+    license_record = result.get("license")
+    require(isinstance(license_record, dict) and set(license_record) == {"path", "sha256", "sourceUrl", "attribution"}
+            and result.get("retainedLicensePath") == "license-source.txt", "Invalid retained source license")
+    bound_file(root, {"path": "license-source.txt", "sha256": license_record["sha256"]}, MAXIMUM_PLAN_BYTES)
+    bound_file(root, {"path": "attribution.txt", "sha256": result["retainedAttributionSha256"]},
+               2 * MAXIMUM_PLAN_BYTES)
+    _, raw_plan = bound_file(root, {"path": "intake-plan.json", "sha256": result.get("planSha256")}, MAXIMUM_PLAN_BYTES)
+    plan = strict_json(raw_plan)
+    require(plan.get("license") == license_record and plan.get("language") == "en" and
+            plan.get("labelContract") == LABEL_CONTRACT, "Retained plan provenance differs from donor packet")
+    proposals, spans, sources = result.get("proposals"), plan.get("spans"), plan.get("sources")
+    require(isinstance(proposals, list) and 1 <= len(proposals) <= MAXIMUM_SPANS and
+            isinstance(spans, list) and len(proposals) == len(spans) and
+            isinstance(sources, list) and 1 <= len(sources) <= 32, "Invalid donor proposal/plan bounds")
+    require(all(isinstance(source, dict) and isinstance(source.get("id"), str) for source in sources),
+            "Invalid donor source records")
+    by_id = {source["id"]: source for source in sources}
+    require(len(by_id) == len(sources), "Duplicate donor source ids")
+    paths, total_bytes = set(), 0
+    for row, span in zip(proposals, spans):
+        require(isinstance(row, dict) and isinstance(span, dict), "Invalid donor proposal/span")
+        require(set(row) == {"id", "derivedPath", "derivedSha256", "pcmSha256", "sourceId", "sourceType",
+                "sourceAudio", "sourceLabels", "firstLabelIndex", "labelCount", "sourceAnnotations", "sourcePhones",
+                "startFrame", "endFrameExclusive", "sampleRate", "frames", "durationSeconds", "nonzeroPcm",
+                "assignment", "pitchReview", "phoneticReview", "listeningReview"},
+                "Donor proposal has missing or unknown fields")
+        source_id, first, count = span.get("sourceId"), span.get("firstLabelIndex"), span.get("labelCount")
+        require(isinstance(source_id, str) and ID.fullmatch(source_id) is not None and source_id in by_id and
+                type(first) is int and 0 <= first < MAXIMUM_LABEL_ROWS and type(count) is int and 1 <= count <= 3,
+                "Invalid donor span identity")
+        identifier = f"{source_id}_l{first:05d}_n{count}"
+        name = identifier + ".wav"
+        source = by_id[source_id]
+        require(row.get("id") == identifier and row.get("derivedPath") == name and name not in paths and
+                row.get("sourceId") == source_id and row.get("firstLabelIndex") == first and row.get("labelCount") == count and
+                row.get("sourceAudio") == source.get("audio") and row.get("sourceLabels") == source.get("labels") and
+                row.get("sourceType") == source.get("sourceType") == "speech", "Donor identity differs from retained plan")
+        paths.add(name)
+        require(all(row.get(key) == value for key, value in {
+            "assignment": "NOT_ASSIGNED", "pitchReview": "NOT_REVIEWED",
+            "phoneticReview": "NOT_REVIEWED", "listeningReview": "NOT_REVIEWED"}.items()),
+            "Expected unapproved donor review fields")
+        _, audio = bound_file(root, {"path": name, "sha256": row.get("derivedSha256")}, MAXIMUM_AUDIO_BYTES)
+        total_bytes += len(audio)
+        require(total_bytes <= MAXIMUM_TOTAL_DONOR_BYTES + 44 * MAXIMUM_SPANS, "Total donor packet audio exceeds bounds")
+        pcm, rate, frames = pcm16_snapshot(audio)
+        require(digest(pcm) == row.get("pcmSha256") and type(row.get("frames")) is int and row["frames"] == frames and
+                row.get("sampleRate") == rate and row.get("durationSeconds") == frames / rate and
+                type(row.get("nonzeroPcm")) is bool and row["nonzeroPcm"] == any(pcm), "Donor PCM facts differ")
+    return result
+
+
+def verify_prepared_phone_donors(output: Path, expected_sha256: str) -> dict:
+    """Read-only packet integrity preflight; never source, performer or bank approval."""
+    return _verify_prepared(output, expected_sha256, allow_incomplete=False)
+
+
 def prepare(plan_path: Path, output: Path) -> dict:
     require(not output.exists() and not output.is_symlink(), "Output already exists; no overwrite")
     require(plan_path.is_file() and not plan_path.is_symlink() and
@@ -199,22 +280,34 @@ def prepare(plan_path: Path, output: Path) -> dict:
               "changeNotice": change_notice,
               "producerRegistration": "NOT_REGISTERED", "performerRights": "NOT_ESTABLISHED",
               "rightsClearance": "NOT_APPROVED", "bankAdmission": "NOT_APPROVED", "proposals": proposals}
-    (output / "donors.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+    encoded = json.dumps(result, indent=2, allow_nan=False) + "\n"
+    (output / "donors.json").write_bytes(encoded.encode("utf-8"))
+    _verify_prepared(output, digest(encoded.encode("utf-8")), allow_incomplete=True)
     marker.unlink()
     return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--plan", type=Path)
+    mode.add_argument("--verify", action="store_true", help="Verify an existing unapproved packet without changing it")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--expected-donors-sha256", help="Required external donors.json digest in verification mode")
     args = parser.parse_args()
     try:
-        result = prepare(args.plan, args.output)
+        if args.verify:
+            result = verify_prepared_phone_donors(args.output, args.expected_donors_sha256)
+        else:
+            require(args.expected_donors_sha256 is None, "Expected digest is only valid with --verify")
+            result = prepare(args.plan, args.output)
     except (ValueError, OSError, KeyError, TypeError, EOFError, ArithmeticError, RecursionError, wave.Error) as error:
         print(f"Preparation refused: {error}", file=sys.stderr)
         return 2
-    print(f"Prepared {len(result['proposals'])} unassigned, unreviewed phone donors")
+    if args.verify:
+        print(f"Verified {len(result['proposals'])} unapproved phone donors; no source or bank approval")
+    else:
+        print(f"Prepared {len(result['proposals'])} unassigned, unreviewed phone donors")
     return 0
 
 

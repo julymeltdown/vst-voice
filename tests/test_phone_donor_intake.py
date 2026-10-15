@@ -13,6 +13,7 @@ import wave
 from unittest.mock import patch
 
 from tools.voicebank_source_intake.prepare_phone_donors import LABEL_CONTRACT, prepare
+from tools.voicebank_source_intake import prepare_phone_donors as donor_tool
 
 
 class PhoneDonorIntakeTests(unittest.TestCase):
@@ -116,6 +117,75 @@ class PhoneDonorIntakeTests(unittest.TestCase):
             self.assertEqual("NOT_APPROVED",result["bankAdmission"])
         self.assertEqual((self.root/"original-notice/license-source.txt").read_bytes(),
                          (self.root/"changed-notice/license-source.txt").read_bytes())
+
+    def test_packet_verification_and_cli_preserve_unapproved_material(self) -> None:
+        output=self.root/"verified"
+        result=prepare(self.plan_path,output)
+        held={p.name:p.read_bytes() for p in output.iterdir()}
+        expected=hashlib.sha256((output/"donors.json").read_bytes()).hexdigest()
+        self.assertEqual(result,donor_tool.verify_prepared_phone_donors(output,expected))
+        script=Path(donor_tool.__file__)
+        run=subprocess.run([sys.executable,str(script),"--verify","--output",str(output),
+                            "--expected-donors-sha256",expected],capture_output=True,text=True,timeout=10)
+        self.assertEqual(0,run.returncode,run.stderr)
+        self.assertIn("Verified 4 unapproved phone donors",run.stdout)
+        self.assertEqual(held,{p.name:p.read_bytes() for p in output.iterdir()})
+
+    def test_packet_verification_refuses_changed_missing_linked_and_incomplete_material(self) -> None:
+        output=self.root/"tampered"
+        result=prepare(self.plan_path,output)
+        expected=hashlib.sha256((output/"donors.json").read_bytes()).hexdigest()
+        paths=[output/"attribution.txt",output/"license-source.txt",output/"intake-plan.json",
+               output/result["proposals"][0]["derivedPath"]]
+        for path in paths:
+            original=path.read_bytes()
+            with self.subTest(path=path.name,mode="changed"):
+                path.write_bytes(original+b"changed")
+                with self.assertRaises(ValueError):donor_tool.verify_prepared_phone_donors(output,expected)
+            path.unlink()
+            with self.subTest(path=path.name,mode="missing"):
+                with self.assertRaises(ValueError):donor_tool.verify_prepared_phone_donors(output,expected)
+            path.symlink_to(self.license)
+            with self.subTest(path=path.name,mode="linked"):
+                with self.assertRaisesRegex(ValueError,"Symlink"):donor_tool.verify_prepared_phone_donors(output,expected)
+            path.unlink();path.write_bytes(original)
+        (output/"INCOMPLETE").write_text("unfinished")
+        with self.assertRaisesRegex(ValueError,"incomplete"):donor_tool.verify_prepared_phone_donors(output,expected)
+
+    def test_packet_verification_requires_external_digest_and_refuses_relabelled_approval(self) -> None:
+        output=self.root/"binding"
+        prepare(self.plan_path,output)
+        packet=output/"donors.json"
+        original=packet.read_bytes()
+        for expected in ["", "a"*64, "not-a-hash"]:
+            with self.subTest(expected=expected),self.assertRaises(ValueError):
+                donor_tool.verify_prepared_phone_donors(output,expected)
+        changed=json.loads(original);changed["bankAdmission"]="APPROVED"
+        packet.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,"unapproved"):
+            donor_tool.verify_prepared_phone_donors(output,hashlib.sha256(packet.read_bytes()).hexdigest())
+        for inject in [lambda p:p.update(sourceApproved=True),
+                       lambda p:p["proposals"][0].update(accepted=True)]:
+            changed=json.loads(original);inject(changed)
+            packet.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError,"unknown fields"):
+                donor_tool.verify_prepared_phone_donors(output,hashlib.sha256(packet.read_bytes()).hexdigest())
+        changed=json.loads(original);changed.pop("retainedAttributionSha256")
+        packet.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,"attribution"):
+            donor_tool.verify_prepared_phone_donors(output,hashlib.sha256(packet.read_bytes()).hexdigest())
+
+    def test_late_attribution_change_keeps_preparation_incomplete(self) -> None:
+        output=self.root/"late-change"
+        original_write=Path.write_bytes
+        def changed_notice(path,data,*args,**kwargs):
+            result=original_write(path,data,*args,**kwargs)
+            if path.name=="donors.json":(path.parent/"attribution.txt").write_bytes(b"notice replaced")
+            return result
+        with patch.object(Path,"write_bytes",changed_notice):
+            with self.assertRaisesRegex(ValueError,"SHA-256 mismatch"):
+                prepare(self.plan_path,output)
+        self.assertTrue((output/"INCOMPLETE").is_file())
 
     def test_silent_pause_is_preserved_and_reported_without_acceptance(self) -> None:
         with wave.open(str(self.audio), "wb") as wav:

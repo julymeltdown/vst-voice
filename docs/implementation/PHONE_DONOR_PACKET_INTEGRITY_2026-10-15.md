@@ -1,0 +1,31 @@
+# Verify prepared donor packets before a complete handoff
+
+Date: 2026-10-15, Asia/Seoul. **Implemented and locally verified; independent review pending.** Source base: `4e009b1e3b02253365041b84e26b5b9a9349020b`. This unit advances prepared-artifact integrity, not production bank admission.
+
+## Concrete defect and resulting behavior
+
+The attribution-digest unit supplied a notice hash but no consumer checked it. A controlled replacement of attribution.txt after donors.json was written still let preparation remove INCOMPLETE. A folder could therefore look complete while its retained notice differed from its packet. Existing complete historical packets without the new field also had no explicit readiness check.
+
+`tools/voicebank_source_intake/prepare_phone_donors.py` now exposes `verify_prepared_phone_donors(output, expected_sha256)` and a read-only `--verify` mode. The expected donors.json digest is required from the separately retained handoff. Supplying a newly computed digest of an unknown replacement does not authenticate it. Verification uses bounded byte snapshots and the existing strict JSON/relative-path reader; it writes nothing and does not touch producer state.
+
+The check refuses missing/linked directories, INCOMPLETE markers, stale packet bytes, missing attribution bindings and unsupported packet shape. It requires the exact unapproved producer/performer/rights/admission and per-proposal review fields. It checks the retained license and attribution hashes, the plan hash and matching source-license/language/annotation contract, proposal-to-plan source/span identities, unique canonical WAV names, bounded PCM16 containers, derived/PCM hashes and declared rate/frame/duration/nonzero facts. Unknown fields cannot introduce an apparent approval. Original source records are retained references; this verification does not reread or qualify their original annotations.
+
+Preparation invokes the same check privately while its owned INCOMPLETE marker is still present. It removes that marker only after a successful check. donors.json is written as the exact UTF-8 bytes whose digest is checked, avoiding platform newline translation. Later changes are detected only when a consumer rechecks them; this is not a lock or transaction across a future bank import.
+
+Use the [tool instructions](../../tools/voicebank_source_intake/README.md) for the command. Old packets lacking the attribution binding must be regenerated into a separate output. No old packet or original recording is modified.
+
+## Execution evidence
+
+Four new test methods were added before changing preparation. Against unchanged code, the late-change case failed because no refusal occurred; three methods had no verification API. The run retained 18 passing existing methods, one failure and 18 recorded error/subtest entries across 22 methods. The number of error entries is not a count of distinct implementations.
+
+After implementation and two bounded refinements (strict field sets and exact byte writing), the final direct invocation of both source-intake suites passed **37 methods**: 22 phone-donor and 15 sustain-intake methods. It covers successful API/real Python CLI verification with unchanged output bytes; changed, missing or linked attribution/license/plan/WAVs; incomplete material; absent/wrong external hashes; injected known and unknown approval fields; missing notice hashes; and the preparation-time replacement refusal. The earlier passing receipts are retained separately; 37 is the unique final method count, not the sum across repeated batches. No native binary or CTest suite was executed for this Python-only unit.
+
+The actual existing SLT plan was then prepared and verified, with a second trial after the byte-writer refinement. Each output contains **312 proposals from four existing originals**. Both output directories are byte-identical, including notices and JSON. All donor rows and WAVs equal the earlier corrected-attribution packet; the sole new packet field is retainedAttributionSha256. The original author/CMU notice is unchanged. The old correctly attributed but unbound packet is refused by the new preflight, remains unmodified, and retains its historical engineering approval scope. The earlier misattributed packet remains unsuitable.
+
+The original 346-artifact/seven-pin attribution root was rehashed before and after the first actual trial. The read-only verifier independently replays each of the 312 final PCM intervals from the four source WAVs and checks original/derived hashes and equality to both prior output variants. These are speech donors with automatic labels, not 312 qualified singing units. No new original audio was acquired.
+
+## Retained evidence and remaining boundary
+
+The [evidence index](PHONE_DONOR_PACKET_INTEGRITY_2026-10-15.evidence.json) binds **678 artifacts and seven preserved files**. It retains baseline/initial/final source patches and sources, direct test receipts/output, actual CLI receipts, both real output copies, comparison records and interpreter identity. The read-only verifier rehashes the root/pins, checks expected baseline/final outcomes and patch bindings, replays actual PCM intervals, and can bind the three changed source/document files with `--commit SHA`. It neither executes the tool/tests nor archives every dependency. It does not authenticate arbitrary caller-supplied hashes or source assertions.
+
+A downstream importer must still verify the exact bytes it consumes and bind attribution/source notices to its durable source/operation records. This unit does not register actors, set source permissions, assign phones or pitches, run stored-audio QC, approve listening, import a bank or publish a candidate. Genuine producer/distinct reviewer, source-rights/EULA disposition, acoustic qualification and the installed/signed/platform/DAW/full-product contract remain required. Alpha **0/20**, U45 **HELD**, Beta **BLOCKED**, goal **ACTIVE**; `.github` and Windows TODO untouched. Windows behavior is not claimed from macOS execution.
