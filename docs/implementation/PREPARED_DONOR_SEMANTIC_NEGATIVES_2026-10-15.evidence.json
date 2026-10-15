@@ -122,7 +122,7 @@
       "sha256": "a9ec362c53a71d796c24aafcb0b25d050962a75759dd4777644543bfa771c197"
     }
   },
-  "candidateNegativeCoverageP3": "EXACT_874C5FA2_REVIEW_IN_PROGRESS",
+  "candidateNegativeCoverageP3": "CLOSED_BY_EXACT_874C5FA2_INDEPENDENT_REVIEW",
   "cli166833efIndependentReview": {
     "commit": "166833ef330cdea484ed475305c1a03d6f7b72a8",
     "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
@@ -155,5 +155,20 @@
     20
   ],
   "U45": "HELD",
-  "Beta": "BLOCKED"
+  "Beta": "BLOCKED",
+  "nativeSemanticNegativeIndependentReview": {
+    "commit": "874c5fa2e20dee19c7ee4ae21f258dbe00c61577",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS_NATIVE_CANDIDATE_COVERAGE_P3_CLOSED",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-semantic-negatives-independent-2026-10-15/review-874c5fa2.md",
+      "sizeBytes": 10708,
+      "sha256": "46310bb97a6871ab9d22e2b37f8090df32abc7bb0f2fea585718d39c73dddbf8"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-semantic-negatives-independent-2026-10-15/review.json",
+      "sizeBytes": 555,
+      "sha256": "cbfd8fb6a30f53451441172f7a19ea5d33f669971705b09eef03d040db3e6c48"
+    },
+    "bindingScope": "Adjacent tracked index; exact verdict arrived after original manifest freeze. Frozen manifest unchanged."
+  }
 }

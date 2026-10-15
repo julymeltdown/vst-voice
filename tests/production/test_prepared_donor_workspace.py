@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -49,11 +50,11 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
         self.assertEqual(success, result.returncode == 0, result.stderr + result.stdout)
         return result
 
-    def fixture(self, root):
+    def fixture(self, root, *, schema=5, language="en", source_kind="human"):
         preparation = root / "preparation"; preparation.mkdir()
         with wave.open(str(preparation / "original.wav"), "wb") as output:
             output.setnchannels(1); output.setsampwidth(2); output.setframerate(48000)
-            output.writeframes(b"\x01\x00" * 64)
+            output.writeframes(b"".join(struct.pack("<h", index * 23 - 700) for index in range(64)))
         (preparation / "original.lab").write_text("0.000666666 0 aa\n0.001333333 0 aa\n")
         (preparation / "license.txt").write_text("SYNTHETIC ORIGINAL LICENSE, NO REAL RIGHTS ACCEPTANCE\n")
         bind = lambda name: {"path": name, "sha256": sha((preparation / name).read_bytes())}
@@ -63,8 +64,10 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
                 "spans": [{"sourceId": "fixture", "firstLabelIndex": index, "labelCount": 1} for index in (0, 1)]}
         plan_path = preparation / "plan.json"; plan_path.write_bytes(_text(plan))
         prepared = preparation / "donors"; packet = prepare(plan_path, prepared)
+        self.assertNotEqual(packet["proposals"][0]["derivedSha256"], packet["proposals"][1]["derivedSha256"])
+        self.assertNotEqual(packet["proposals"][0]["pcmSha256"], packet["proposals"][1]["pcmSha256"])
         packet_sha = sha((prepared / "donors.json").read_bytes())
-        profile = {"profileId": "synthetic-packet-parity", "language": "en", "vowels": ["aa"], "consonants": ["m"],
+        profile = {"profileId": "synthetic-packet-parity", "language": language, "vowels": ["aa" if language == "en" else "a"], "consonants": ["m"],
                    "specialPhones": ["pau"], "includeKinds": ["sustain"], "supportedStyles": ["neutral", "soft"],
                    "alternateTakes": 1, "pitchLayers": [69, 72]}
         profile_path = preparation / "profile.json"; profile_path.write_bytes(_text(profile))
@@ -75,7 +78,7 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
         project = json.loads((workspace / "project.json").read_bytes())
         declaration = preparation / "reviewed-declaration.txt"
         declaration.write_text("SYNTHETIC REVIEWED DECLARATION; NO REAL SINGER OR APPROVAL\n")
-        self.native("register-source", workspace, sha((workspace / "project.json").read_bytes()), "synthetic-human", "human",
+        self.native("register-source", workspace, sha((workspace / "project.json").read_bytes()), "synthetic-human", source_kind,
                     "pass", "yes", "yes", "no", "no", declaration, sha(declaration.read_bytes()), "producer", UTC)
         project = json.loads((workspace / "project.json").read_bytes())
         strategy = project["sourceStrategies"][0]
@@ -90,7 +93,7 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
             raw = (prepared / proposal["derivedPath"]).read_bytes(); digest = sha(raw)
             relative = f"raw/{digest[:2]}/{digest}.wav"
             asset = workspace / "assets" / relative; asset.parent.mkdir(parents=True, exist_ok=True); asset.write_bytes(raw)
-            if not project["assets"]:
+            if all(asset["sha256"] != digest for asset in project["assets"]):
                 project["assets"].append({"sha256": digest, "byteSize": len(raw), "relativePath": relative, "kind": "RAW"})
             take = {"takeId": assignment["plannedTakeId"], "promptId": assignment["promptId"],
                     "coverageKey": assignment["coverageKey"], "pitchLayer": 69, "style": assignment["style"],
@@ -103,7 +106,7 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
             project["takes"].append(take); project["sourceBindings"].append(binding)
             project["metadataRevisions"].append(_receipt(take, len(raw), "producer"))
             assignment.update(takeId=take["takeId"], state="MARKER_REVIEW")
-            project.update(schemaVersion=5, lifecycle="EXPERIMENTAL")
+            project.update(schemaVersion=schema, lifecycle="EXPERIMENTAL")
             _generation(workspace, project, project["lastDurableGeneration"] + 1, "import", take["takeId"])
         return workspace, project, prepared
 
@@ -111,10 +114,13 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
         number = project["lastDurableGeneration"]
         _generation(workspace, project, number, "import", project["takes"][-1]["takeId"])
 
-    def assert_readers(self, workspace, success):
+    def assert_readers(self, workspace, success, *, only_python_error=None):
         before = files(workspace)
         result = validate_production_draft_workspace(workspace)
         self.assertEqual(success, result.passed, result.errors)
+        if only_python_error is not None:
+            self.assertTrue(result.errors)
+            self.assertTrue(all(error.endswith(only_python_error) for error in result.errors), result.errors)
         native = self.native("inspect-source-quality", workspace, "synthetic-human", success=success)
         self.assertEqual(before, files(workspace))
         if success:
@@ -130,8 +136,49 @@ class PreparedDonorWorkspaceTests(unittest.TestCase):
             shutil.rmtree(prepared.parent)
             self.assert_readers(workspace, True)
             self.assertEqual(2, len(project["sourceBindings"]))
-            self.assertEqual(1, len(project["assets"]))
+            self.assertEqual(2, len(project["assets"]))
             self.assertEqual([], project["reviews"])
+
+    def test_present_donor_with_different_pcm_cannot_replace_captured_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace, project, prepared = self.fixture(Path(directory))
+            self.assert_readers(workspace, True)
+            print("[PYTHON-SOURCE-SEMANTICS] distinct-donor control: PASS")
+            packet = json.loads((prepared / "donors.json").read_bytes())
+            first, second = project["sourceBindings"]
+            self.assertNotEqual(first["rawAssetSha256"], second["rawAssetSha256"])
+            self.assertIn(first["preparedDonor"]["donorId"], {row["id"] for row in packet["proposals"]})
+            second["preparedDonor"]["donorId"] = first["preparedDonor"]["donorId"]
+            second["id"] = binding_id(project, second)
+            project["takes"][-1]["sourceBindingId"] = second["id"]
+            self.rewrite(workspace, project)
+            diagnostic = f"retained prepared donor differs from captured take {second['takeId']}"
+            self.assert_readers(workspace, False, only_python_error=diagnostic)
+            print("[PYTHON-SOURCE-SEMANTICS] present donor different audio: " + diagnostic)
+
+    def test_consistent_histories_isolate_schema_language_and_source_kind_guards(self):
+        variants = [("schema-four", {"schema": 4}), ("Japanese", {"language": "ja"}),
+                    ("procedural-source", {"source_kind": "procedural"})]
+        diagnostic = "prepared donor requires schema 5 English human-recording identity and five exact fields"
+        for name, options in variants:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                workspace, project, _ = self.fixture(Path(directory), **options)
+                generations = [json.loads(path.read_bytes()) for path in sorted((workspace / "generations").glob("*.json"))]
+                self.assertEqual([1, 2, 3, 4], [state["lastDurableGeneration"] for state in generations])
+                self.assertEqual({project["language"]}, {state["language"] for state in generations})
+                schemas = [state["schemaVersion"] for state in generations]
+                self.assertEqual(sorted(schemas), schemas)
+                if name == "schema-four": self.assertEqual({4}, set(schemas))
+                for state in generations:
+                    if state["sourceStrategies"]:
+                        self.assertEqual(project["sourceStrategies"], state["sourceStrategies"])
+                    for binding in state["sourceBindings"]:
+                        self.assertEqual(project["sourceStrategies"][0], binding["strategy"])
+                # A deleted guard would make Python accept this complete,
+                # consistently authored history. No history error may stand in
+                # for the intended clause; native must independently refuse.
+                self.assert_readers(workspace, False, only_python_error=diagnostic)
+                print("[PYTHON-SOURCE-SEMANTICS] " + name + ": " + diagnostic)
 
     def test_exact_prepared_fields_and_v2_identity_refuse_malformed_models(self):
         mutations = [("missing " + key, lambda b, key=key: b["preparedDonor"].pop(key))

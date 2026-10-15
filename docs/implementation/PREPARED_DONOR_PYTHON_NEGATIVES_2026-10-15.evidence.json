@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-python-negatives",
+  "sourceBase": "3ffe2125ca767722d8d900fcb842da153353f48b",
+  "sourcePatchSha256": "7177947ec58b5c22b6e9cabfcb8123a2139083dc3c75ba865213aeead0931c63",
+  "implementationSources": [
+    "tests/production/test_prepared_donor_workspace.py"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-python-negatives-2026-10-15/manifest.json",
+    "sizeBytes": 5909,
+    "sha256": "00ed62efb46a174c8855fc9263c30a82185a2c41c9998a1209fd7645d2e83b52"
+  },
+  "retainedArtifacts": 19,
+  "preservedBindings": 12,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "--target",
+        "seam_voicebank_cli",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.07322958399890922,
+      "sourceBase": "3ffe2125ca767722d8d900fcb842da153353f48b",
+      "sourcePatchSha256": "7177947ec58b5c22b6e9cabfcb8123a2139083dc3c75ba865213aeead0931c63",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-python": {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_workspace",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 4.356269790994702,
+      "sourceBase": "3ffe2125ca767722d8d900fcb842da153353f48b",
+      "sourcePatchSha256": "7177947ec58b5c22b6e9cabfcb8123a2139083dc3c75ba865213aeead0931c63",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-python-negatives-2026-10-15/verification.log",
+      "sizeBytes": 430,
+      "sha256": "2030f2980d3eb1024976db1337b29a7b28dbb9f2687c134f725374536174280f"
+    }
+  },
+  "pythonMethods": 16,
+  "newPythonMethods": 2,
+  "skips": 0,
+  "newNegativeForms": 4,
+  "newPositiveControls": 1,
+  "persistenceFixture": "Native workspace/source creation; deliberately constructed saved take generations/receipts.",
+  "actualNativeImporterCoverage": "Six separate CLI integration methods use actual native persistence.",
+  "strictPythonErrorIsolation": true,
+  "historyConsistentCases": [
+    "schema four",
+    "Japanese",
+    "procedural source"
+  ],
+  "mutantGuardDeletion": "NOT_RUN",
+  "runtimeCodeChanged": false,
+  "buildScope": "CLI target/dependency up-to-date check; no compilation in frozen stage; preliminary compile log retained.",
+  "originatingPythonReview": {
+    "commit": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+    "verdict": "APPROVE_ENGINEERING_TWO_TEST_GAP_P3S_AT_REVIEW_TIME",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-python-independent-2026-10-15/review-c9ef0d21.md",
+      "sizeBytes": 13259,
+      "sha256": "59764628be2b206d7f51600d185a562120b34728a455fc6ca70e1757ee2ab397"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-python-independent-2026-10-15/review.json",
+      "sizeBytes": 531,
+      "sha256": "4a55b7194e954075673f55b7b76b486bec86564cf29025e887088b4d309da7dd"
+    }
+  },
+  "pythonTestGapP3s": "LOCALLY_VERIFIED_REPAIRS_EXACT_REVIEW_PENDING",
+  "nativeNegativeCoverageIndependentReview": {
+    "commit": "874c5fa2e20dee19c7ee4ae21f258dbe00c61577",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS_NATIVE_CANDIDATE_COVERAGE_P3_CLOSED",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-semantic-negatives-independent-2026-10-15/review-874c5fa2.md",
+      "sizeBytes": 10708,
+      "sha256": "46310bb97a6871ab9d22e2b37f8090df32abc7bb0f2fea585718d39c73dddbf8"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-semantic-negatives-independent-2026-10-15/review.json",
+      "sizeBytes": 555,
+      "sha256": "cbfd8fb6a30f53451441172f7a19ea5d33f669971705b09eef03d040db3e6c48"
+    }
+  },
+  "nativeCandidateCoverageP3": "CLOSED_BY_EXACT_874C5FA2_REVIEW",
+  "nativePcmRangeP3": "OPEN",
+  "CTest": "NOT_RUN",
+  "fullSuite": "NOT_RUN",
+  "newSanitizers": "NOT_RUN",
+  "TSan": "NOT_RUN",
+  "powerLoss": "NOT_RUN",
+  "realSourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}
