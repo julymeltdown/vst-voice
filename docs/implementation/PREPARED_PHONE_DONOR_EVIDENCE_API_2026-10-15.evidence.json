@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-phone-donor-evidence-and-owned-validation",
+  "sourceBase": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+  "sourcePatchSha256": "f45877fd9f49b661fdf78405c5cb46d4b5c85f4d11b9a133e49ac28520d61975",
+  "manifest": {
+    "path": "out/evidence/prepared-phone-donor-evidence-api-2026-10-15/manifest.json",
+    "sizeBytes": 15566,
+    "sha256": "5039291ec0d4cc0fa0eacf654aabba863f9cc7ebb86e5ee89cf1465ee3ec8785"
+  },
+  "retainedArtifacts": 76,
+  "preservedBindings": 8,
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.36413087497931,
+    "sourceBase": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+    "sourcePatchSha256": "f45877fd9f49b661fdf78405c5cb46d4b5c85f4d11b9a133e49ac28520d61975",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_vocal_source_intake_tests|seam_sample_review_cli_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 20.649261417012895,
+    "sourceBase": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+    "sourcePatchSha256": "f45877fd9f49b661fdf78405c5cb46d4b5c85f4d11b9a133e49ac28520d61975",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "releaseCppCases": {
+    "newSnapshot": 4,
+    "existingSampleReviewCli": 30
+  },
+  "pythonMethods": 41,
+  "pythonSkips": 0,
+  "sanitizerBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/sanitize",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 51.672561291983584,
+    "sourceBase": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+    "sourcePatchSha256": "f45877fd9f49b661fdf78405c5cb46d4b5c85f4d11b9a133e49ac28520d61975",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "sanitizerCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/sanitize",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_vocal_source_intake_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 5.572085082996637,
+    "sourceBase": "07496e8a52a3251f2118d5d88c7b78321a36d315",
+    "sourcePatchSha256": "f45877fd9f49b661fdf78405c5cb46d4b5c85f4d11b9a133e49ac28520d61975",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true,
+    "environmentOverrides": {
+      "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+      "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+    },
+    "leakDetection": "DISABLED_NOT_VERIFIED",
+    "fullSuite": "NOT_RUN"
+  },
+  "sanitizerCppCases": 4,
+  "actualSourceSelections": 4,
+  "actualReceipt": {
+    "path": "out/evidence/prepared-phone-donor-evidence-api-2026-10-15/actual/run.json",
+    "sizeBytes": 2708,
+    "sha256": "546c561eb8ac5e88b74ef1f45db563a2b72b49f4a1711c8cacde21231a5b5b8f"
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-phone-donor-evidence-api-2026-10-15/verification.log",
+      "sizeBytes": 368,
+      "sha256": "fbd50b5bbde3579da5ed09be84910df67f8523a7801d3bcc5a707cc9ef4f19f2"
+    }
+  },
+  "architectureAdvice": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13dbb-9ee1-7e52-ac17-4c0e6b98d4ce",
+    "messageId": "msg_bab3ec73f1844c83ae474f6a59333185",
+    "completedAtUnixSeconds": 1792038589,
+    "durationMs": 1521019,
+    "commit": "0c4d3e2d48627b79ce80ae1f5ecd15cdb15a13cb",
+    "scope": "PREPARED_PHONE_DONOR_PROVENANCE_DESIGN_ONLY",
+    "recommendation": "MINIMAL_SCHEMA_5",
+    "existingFindings": [
+      "P2",
+      "P3"
+    ],
+    "sourceOrHumanOrBetaApproval": false,
+    "currentReaderImplementationReviewed": false,
+    "finalAnswer": {
+      "path": "out/evidence/prepared-phone-donor-bridge-independent-2026-10-15/review-0c4d3e2d.md",
+      "sizeBytes": 17264,
+      "sha256": "973404d187cff93ebbda9c0e4d4271b509fb4d806cd487434064e4516440c60a"
+    }
+  },
+  "originalLicenseVsRightsDeclarationClarification": "REQUESTED_PENDING",
+  "implementationIndependentReview": "PENDING",
+  "durableImport": "NOT_IMPLEMENTED",
+  "sourceRegistration": false,
+  "nativeImport": false,
+  "sourceRightsApproved": false,
+  "humanListening": false,
+  "fullSuite": "NOT_RUN",
+  "TSan": "NOT_RUN",
+  "leakDetection": "DISABLED_NOT_VERIFIED",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

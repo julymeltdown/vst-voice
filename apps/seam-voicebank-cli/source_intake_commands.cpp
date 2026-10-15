@@ -19,12 +19,13 @@ std::optional<int> runSourceIntakeCommand(int argc, char** argv) {
     return 2;
   }
   const auto& value = snapshot.value();
+  const auto& evidence = value.evidence;
   std::cout << formats::stringifyJson(formats::JsonValue::Object{
       {"documentKind", "SelectedPreparedPhoneDonorSnapshot"}, {"status", "UNAPPROVED"},
-      {"donorId", value.donorId}, {"packetSha256", value.packet.sha256},
+      {"donorId", evidence.donorId}, {"packetSha256", evidence.packet.sha256},
       {"audioSha256", value.audio.sha256}, {"pcmSha256", value.pcmSha256},
-      {"attributionSha256", value.attribution.sha256}, {"licenseSha256", value.license.sha256},
-      {"planSha256", value.plan.sha256}, {"sampleRate", static_cast<std::int64_t>(value.sampleRate)},
+      {"attributionSha256", evidence.attribution.sha256}, {"licenseSha256", evidence.license.sha256},
+      {"planSha256", evidence.plan.sha256}, {"sampleRate", static_cast<std::int64_t>(value.sampleRate)},
       {"frames", static_cast<std::int64_t>(value.frames)}, {"nonzeroPcm", value.nonzeroPcm},
       {"bankAdmission", "NOT_APPROVED"}, {"wholePacketAudioVerified", false},
       {"sourceRightsApproved", false}, {"nativeImport", false}}) << '\n';

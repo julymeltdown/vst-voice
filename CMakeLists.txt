@@ -2351,6 +2351,13 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_final_render_completeness_tests COMMAND seam_final_render_completeness_tests)
   set_tests_properties(seam_final_render_completeness_tests PROPERTIES TIMEOUT 90
     ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/completeness-preview-cache")
+  add_executable(seam_prepared_phone_donor_snapshot_tests
+    tests/test_main.cpp tests/test_prepared_phone_donor_snapshot.cpp)
+  target_include_directories(seam_prepared_phone_donor_snapshot_tests PRIVATE tests)
+  target_link_libraries(seam_prepared_phone_donor_snapshot_tests PRIVATE
+    seam_voicebank_production seam_formats seam_core)
+  seam_apply_compiler_options(seam_prepared_phone_donor_snapshot_tests)
+  add_test(NAME seam_prepared_phone_donor_snapshot_tests COMMAND seam_prepared_phone_donor_snapshot_tests)
   add_executable(seam_style_owned_candidate_import_tests
     tests/test_main.cpp
     tests/test_style_owned_candidate_import.cpp)

@@ -33,11 +33,13 @@ Two subsequent read-only evidence-verifier failures are also preserved: an incor
 To recheck retained hashes, logs and current implementation bytes without running native tools:
 
 ```sh
-python3 -B out/evidence/native-phone-donor-snapshot-2026-10-15/verify-final.py
-# After commit, use --commit COMMIT to compare the exact seven implementation blobs.
+python3 -B out/evidence/native-phone-donor-snapshot-2026-10-15/verify-final.py --commit 48647f55
+# The later evidence API changes the live source; use the exact earlier commit here.
 ```
 
 ## Remaining work and acceptance
+
+The subsequent [evidence and owned-byte API report](PREPARED_PHONE_DONOR_EVIDENCE_API_2026-10-15.md) records the current `.evidence` snapshot layout and separate metadata-only and in-memory validation entry points. This report and its frozen sources remain the historical first reader implementation.
 
 The next implementation must retain one shared content-addressed packet/plan/license/notice set, bind each imported take to its selected proposal and the actual consumed raw bytes, and enforce that binding through verification, history/recovery, candidate publication and installed redistribution. Duplicating the entire packet in each take would be wasteful. The independent architecture audit of committed base `0c4d3e2d` is still pending; this reader has not yet received an independent implementation verdict. No schema-version decision is asserted by this report.
 

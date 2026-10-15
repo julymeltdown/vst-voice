@@ -4,6 +4,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank/asset_path.hpp"
 #include <algorithm>
+#include <array>
 #include <initializer_list>
 #include <set>
 #include <span>
@@ -47,12 +48,14 @@ std::int64_t integer(const J& value, std::string_view key) {
 void equal(const J& value, std::string_view key, std::string_view expected) {
   require(text(value, key) == expected, "Expected unapproved prepared donor field: " + std::string{key});
 }
-J parse(const SourceIntakeFileSnapshot& file) {
-  const std::string_view raw{reinterpret_cast<const char*>(file.bytes.data()), file.bytes.size()};
+J parse(std::string_view raw) {
   auto parsed = formats::parseJson(raw, {.maximumInputBytes = 16U * MiB, .maximumDepth = 16U,
       .maximumNodes = 500000U, .maximumStringBytes = 2U * MiB, .maximumCollectionEntries = 16384U});
   if (!parsed) throw Refusal{parsed.error()};
   return std::move(parsed.value());
+}
+J parse(const SourceIntakeFileSnapshot& file) {
+  return parse(std::string_view{reinterpret_cast<const char*>(file.bytes.data()), file.bytes.size()});
 }
 SourceIntakeFileSnapshot read(const std::filesystem::path& root, std::string name,
     std::string expected, std::uint64_t limit, std::stop_token stop) {
@@ -121,102 +124,164 @@ void audioFacts(PreparedPhoneDonorSnapshot& result, const J& proposal) {
   require(start >= 0 && end > start && static_cast<std::uint64_t>(end - start) == result.frames,
       "Prepared donor frame interval differs from stored PCM");
 }
+
+void checkDirectory(const std::filesystem::path& directory, std::stop_token stopToken) {
+  checkpoint(stopToken);
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(directory, error);
+  require(!error && std::filesystem::is_directory(status) && !std::filesystem::is_symlink(status),
+      "Missing or linked prepared donor directory");
+  const auto marker = std::filesystem::symlink_status(directory / "INCOMPLETE", error);
+  require((!error && marker.type() == std::filesystem::file_type::not_found) ||
+      error == std::errc::no_such_file_or_directory, "Prepared donor directory is incomplete");
+}
+
+template<class Reader>
+PreparedPhoneDonorEvidence evidenceFrom(Reader&& reader, std::string expectedPacketSha256,
+    std::string donorId, std::stop_token stopToken) {
+  PreparedPhoneDonorEvidence result;
+  result.donorId = std::move(donorId);
+  result.packet = reader("donors.json", std::move(expectedPacketSha256), 16U * MiB, stopToken);
+  const auto packet = parse(result.packet);
+  shape(packet, {"schemaVersion", "documentKind", "status", "language", "planSha256", "labelContract",
+      "license", "retainedLicensePath", "retainedAttributionPath", "retainedAttributionSha256", "changeNotice",
+      "producerRegistration", "performerRights", "rightsClearance", "bankAdmission", "proposals"});
+  require(integer(packet, "schemaVersion") == 1 && field(packet, "labelContract") == labelContract(),
+      "Unsupported prepared donor schema or label contract");
+  for (const auto& [key, expected] : {std::pair{"documentKind", "UnassignedPhoneDonorProposals"},
+      {"status", "UNAPPROVED"}, {"language", "en"}, {"producerRegistration", "NOT_REGISTERED"},
+      {"performerRights", "NOT_ESTABLISHED"}, {"rightsClearance", "NOT_APPROVED"}, {"bankAdmission", "NOT_APPROVED"}})
+    equal(packet, key, expected);
+  equal(packet, "retainedLicensePath", "license-source.txt");
+  equal(packet, "retainedAttributionPath", "attribution.txt");
+  require(!text(packet, "changeNotice").empty(), "Missing prepared donor change notice");
+  const auto& license = field(packet, "license");
+  shape(license, {"path", "sha256", "sourceUrl", "attribution"});
+  require(!text(license, "sourceUrl").empty() && !text(license, "attribution").empty(),
+      "Missing prepared donor attribution or source URL");
+  result.license = reader("license-source.txt", text(license, "sha256"), MiB, stopToken);
+  result.attribution = reader("attribution.txt", text(packet, "retainedAttributionSha256"), 2U * MiB, stopToken);
+  result.plan = reader("intake-plan.json", text(packet, "planSha256"), MiB, stopToken);
+  const auto plan = parse(result.plan);
+  shape(plan, {"schemaVersion", "documentKind", "language", "labelContract", "license", "sources", "spans"});
+  require(integer(plan, "schemaVersion") == 1 && field(plan, "labelContract") == labelContract() &&
+      field(plan, "license") == license, "Prepared donor plan provenance differs");
+  equal(plan, "documentKind", "SourceLabelDonorPlan");
+  equal(plan, "language", "en");
+  const auto& proposals = field(packet, "proposals");
+  const auto& spans = field(plan, "spans");
+  const auto& sources = field(plan, "sources");
+  require(proposals.isArray() && !proposals.asArray().empty() && proposals.asArray().size() <= 4096U &&
+      spans.isArray() && spans.asArray().size() == proposals.asArray().size() &&
+      sources.isArray() && !sources.asArray().empty() && sources.asArray().size() <= 32U,
+      "Prepared donor plan/proposal bounds differ");
+  std::set<std::string> sourceIds;
+  for (const auto& source : sources.asArray()) {
+    shape(source, {"id", "sourceType", "audio", "labels"});
+    const auto& id = text(source, "id");
+    require(sourceId(id) && sourceIds.insert(id).second, "Invalid or duplicate prepared donor source id");
+    equal(source, "sourceType", "speech");
+    sourceBinding(field(source, "audio")); sourceBinding(field(source, "labels"));
+  }
+  const J* selected = nullptr;
+  std::set<std::string> ids;
+  for (std::size_t i = 0U; i < proposals.asArray().size(); ++i) {
+    checkpoint(stopToken);
+    const auto& row = proposals.asArray()[i];
+    const auto& span = spans.asArray()[i];
+    shape(row, {"id", "derivedPath", "derivedSha256", "pcmSha256", "sourceId", "sourceType", "sourceAudio",
+        "sourceLabels", "firstLabelIndex", "labelCount", "sourceAnnotations", "sourcePhones", "startFrame",
+        "endFrameExclusive", "sampleRate", "frames", "durationSeconds", "nonzeroPcm", "assignment",
+        "pitchReview", "phoneticReview", "listeningReview"});
+    shape(span, {"sourceId", "firstLabelIndex", "labelCount"});
+    for (const auto& [key, expected] : {std::pair{"assignment", "NOT_ASSIGNED"}, {"pitchReview", "NOT_REVIEWED"},
+        {"phoneticReview", "NOT_REVIEWED"}, {"listeningReview", "NOT_REVIEWED"}}) equal(row, key, expected);
+    const auto& id = text(row, "id");
+    require(ids.insert(id).second, "Duplicate prepared donor id");
+    const auto& source = text(span, "sourceId");
+    const auto first = integer(span, "firstLabelIndex"), count = integer(span, "labelCount");
+    require(sourceIds.contains(source) && first >= 0 && first < 16384 && count >= 1 && count <= 3,
+        "Invalid prepared donor span identity");
+    const auto index = std::to_string(first);
+    const auto expectedId = source + "_l" + std::string(5U - index.size(), '0') + index + "_n" + std::to_string(count);
+    require(id == expectedId && text(row, "derivedPath") == id + ".wav" &&
+        text(row, "sourceId") == source && integer(row, "firstLabelIndex") == first && integer(row, "labelCount") == count,
+        "Prepared donor identity differs from retained plan");
+    equal(row, "sourceType", "speech");
+    const auto sourceRow = std::find_if(sources.asArray().begin(), sources.asArray().end(),
+        [&](const J& value) { return text(value, "id") == source; });
+    require(field(row, "sourceAudio") == field(*sourceRow, "audio") &&
+        field(row, "sourceLabels") == field(*sourceRow, "labels"), "Prepared donor original bindings differ");
+    require(digest(text(row, "derivedSha256")) && digest(text(row, "pcmSha256")), "Invalid prepared donor audio digest");
+    if (id == result.donorId) selected = &row;
+  }
+  require(selected != nullptr, "Selected prepared donor id is absent");
+  result.derivedAudioSha256 = text(*selected, "derivedSha256");
+  result.proposalJson = formats::stringifyJson(*selected, false);
+  checkpoint(stopToken);
+  return result;
+}
+
+PreparedPhoneDonorSnapshot finishSnapshot(PreparedPhoneDonorEvidence evidence,
+    SourceIntakeFileSnapshot audio, std::stop_token stop) {
+  checkpoint(stop);
+  require(audio.relativePath == evidence.donorId + ".wav" && audio.bytes.size() <= 64U * MiB &&
+      audio.sha256 == evidence.derivedAudioSha256 && core::sha256Hex(audio.bytes) == evidence.derivedAudioSha256,
+      "Held prepared donor audio differs from the selected proposal");
+  const auto proposal = parse(evidence.proposalJson);
+  PreparedPhoneDonorSnapshot result;
+  result.evidence = std::move(evidence);
+  result.audio = std::move(audio);
+  audioFacts(result, proposal);
+  checkpoint(stop);
+  return result;
+}
+}  // namespace
+
+core::Result<PreparedPhoneDonorEvidence> loadPreparedPhoneDonorEvidence(
+    const std::filesystem::path& directory, std::string expectedPacketSha256,
+    std::string donorId, std::stop_token stopToken) {
+  try {
+    checkDirectory(directory, stopToken);
+    return evidenceFrom([&](std::string name, std::string expected, std::uint64_t limit, std::stop_token stop) {
+      return read(directory, std::move(name), std::move(expected), limit, stop);
+    }, std::move(expectedPacketSha256), std::move(donorId), stopToken);
+  } catch (const Refusal& refusal) {
+    return core::Result<PreparedPhoneDonorEvidence>{refusal.error};
+  }
 }
 
 core::Result<PreparedPhoneDonorSnapshot> loadPreparedPhoneDonor(
     const std::filesystem::path& directory, std::string expectedPacketSha256,
     std::string donorId, std::stop_token stopToken) {
+  auto evidence = loadPreparedPhoneDonorEvidence(directory, std::move(expectedPacketSha256), std::move(donorId), stopToken);
+  if (!evidence) return core::Result<PreparedPhoneDonorSnapshot>{evidence.error()};
+  try {
+    auto audio = read(directory, evidence.value().donorId + ".wav", evidence.value().derivedAudioSha256, 64U * MiB, stopToken);
+    return finishSnapshot(std::move(evidence.value()), std::move(audio), stopToken);
+  } catch (const Refusal& refusal) {
+    return core::Result<PreparedPhoneDonorSnapshot>{refusal.error};
+  }
+}
+
+core::Result<PreparedPhoneDonorSnapshot> validatePreparedPhoneDonorSnapshot(
+    PreparedPhoneDonorSnapshot snapshot, std::string expectedPacketSha256,
+    std::string expectedDonorId, std::stop_token stopToken) {
   try {
     checkpoint(stopToken);
-    std::error_code error;
-    const auto status = std::filesystem::symlink_status(directory, error);
-    require(!error && std::filesystem::is_directory(status) && !std::filesystem::is_symlink(status),
-        "Missing or linked prepared donor directory");
-    const auto marker = std::filesystem::symlink_status(directory / "INCOMPLETE", error);
-    require((!error && marker.type() == std::filesystem::file_type::not_found) ||
-        error == std::errc::no_such_file_or_directory, "Prepared donor directory is incomplete");
-    PreparedPhoneDonorSnapshot result;
-    result.donorId = std::move(donorId);
-    result.packet = read(directory, "donors.json", std::move(expectedPacketSha256), 16U * MiB, stopToken);
-    const auto packet = parse(result.packet);
-    shape(packet, {"schemaVersion", "documentKind", "status", "language", "planSha256", "labelContract",
-        "license", "retainedLicensePath", "retainedAttributionPath", "retainedAttributionSha256", "changeNotice",
-        "producerRegistration", "performerRights", "rightsClearance", "bankAdmission", "proposals"});
-    require(integer(packet, "schemaVersion") == 1 && field(packet, "labelContract") == labelContract(),
-        "Unsupported prepared donor schema or label contract");
-    for (const auto& [key, expected] : {std::pair{"documentKind", "UnassignedPhoneDonorProposals"},
-        {"status", "UNAPPROVED"}, {"language", "en"}, {"producerRegistration", "NOT_REGISTERED"},
-        {"performerRights", "NOT_ESTABLISHED"}, {"rightsClearance", "NOT_APPROVED"}, {"bankAdmission", "NOT_APPROVED"}})
-      equal(packet, key, expected);
-    equal(packet, "retainedLicensePath", "license-source.txt");
-    equal(packet, "retainedAttributionPath", "attribution.txt");
-    require(!text(packet, "changeNotice").empty(), "Missing prepared donor change notice");
-    const auto& license = field(packet, "license");
-    shape(license, {"path", "sha256", "sourceUrl", "attribution"});
-    require(!text(license, "sourceUrl").empty() && !text(license, "attribution").empty(),
-        "Missing prepared donor attribution or source URL");
-    result.license = read(directory, "license-source.txt", text(license, "sha256"), MiB, stopToken);
-    result.attribution = read(directory, "attribution.txt", text(packet, "retainedAttributionSha256"), 2U * MiB, stopToken);
-    result.plan = read(directory, "intake-plan.json", text(packet, "planSha256"), MiB, stopToken);
-    const auto plan = parse(result.plan);
-    shape(plan, {"schemaVersion", "documentKind", "language", "labelContract", "license", "sources", "spans"});
-    require(integer(plan, "schemaVersion") == 1 && field(plan, "labelContract") == labelContract() &&
-        field(plan, "license") == license, "Prepared donor plan provenance differs");
-    equal(plan, "documentKind", "SourceLabelDonorPlan");
-    equal(plan, "language", "en");
-    const auto& proposals = field(packet, "proposals");
-    const auto& spans = field(plan, "spans");
-    const auto& sources = field(plan, "sources");
-    require(proposals.isArray() && !proposals.asArray().empty() && proposals.asArray().size() <= 4096U &&
-        spans.isArray() && spans.asArray().size() == proposals.asArray().size() &&
-        sources.isArray() && !sources.asArray().empty() && sources.asArray().size() <= 32U,
-        "Prepared donor plan/proposal bounds differ");
-    std::set<std::string> sourceIds;
-    for (const auto& source : sources.asArray()) {
-      shape(source, {"id", "sourceType", "audio", "labels"});
-      const auto& id = text(source, "id");
-      require(sourceId(id) && sourceIds.insert(id).second, "Invalid or duplicate prepared donor source id");
-      equal(source, "sourceType", "speech");
-      sourceBinding(field(source, "audio")); sourceBinding(field(source, "labels"));
-    }
-    const J* selected = nullptr;
-    std::set<std::string> ids;
-    for (std::size_t i = 0U; i < proposals.asArray().size(); ++i) {
-      checkpoint(stopToken);
-      const auto& row = proposals.asArray()[i];
-      const auto& span = spans.asArray()[i];
-      shape(row, {"id", "derivedPath", "derivedSha256", "pcmSha256", "sourceId", "sourceType", "sourceAudio",
-          "sourceLabels", "firstLabelIndex", "labelCount", "sourceAnnotations", "sourcePhones", "startFrame",
-          "endFrameExclusive", "sampleRate", "frames", "durationSeconds", "nonzeroPcm", "assignment",
-          "pitchReview", "phoneticReview", "listeningReview"});
-      shape(span, {"sourceId", "firstLabelIndex", "labelCount"});
-      for (const auto& [key, expected] : {std::pair{"assignment", "NOT_ASSIGNED"}, {"pitchReview", "NOT_REVIEWED"},
-          {"phoneticReview", "NOT_REVIEWED"}, {"listeningReview", "NOT_REVIEWED"}}) equal(row, key, expected);
-      const auto& id = text(row, "id");
-      require(ids.insert(id).second, "Duplicate prepared donor id");
-      const auto& source = text(span, "sourceId");
-      const auto first = integer(span, "firstLabelIndex"), count = integer(span, "labelCount");
-      require(sourceIds.contains(source) && first >= 0 && first < 16384 && count >= 1 && count <= 3,
-          "Invalid prepared donor span identity");
-      const auto index = std::to_string(first);
-      const auto expectedId = source + "_l" + std::string(5U - index.size(), '0') + index + "_n" + std::to_string(count);
-      require(id == expectedId && text(row, "derivedPath") == id + ".wav" &&
-          text(row, "sourceId") == source && integer(row, "firstLabelIndex") == first && integer(row, "labelCount") == count,
-          "Prepared donor identity differs from retained plan");
-      equal(row, "sourceType", "speech");
-      const auto sourceRow = std::find_if(sources.asArray().begin(), sources.asArray().end(),
-          [&](const J& value) { return text(value, "id") == source; });
-      require(field(row, "sourceAudio") == field(*sourceRow, "audio") &&
-          field(row, "sourceLabels") == field(*sourceRow, "labels"), "Prepared donor original bindings differ");
-      require(digest(text(row, "derivedSha256")) && digest(text(row, "pcmSha256")), "Invalid prepared donor audio digest");
-      if (id == result.donorId) selected = &row;
-    }
-    require(selected != nullptr, "Selected prepared donor id is absent");
-    result.audio = read(directory, text(*selected, "derivedPath"), text(*selected, "derivedSha256"), 64U * MiB, stopToken);
-    audioFacts(result, *selected);
-    result.proposalJson = formats::stringifyJson(*selected, false);
-    checkpoint(stopToken);
-    return result;
+    require(snapshot.evidence.donorId == expectedDonorId, "Held prepared donor selection changed");
+    const std::array files{&snapshot.evidence.packet, &snapshot.evidence.plan, &snapshot.evidence.license, &snapshot.evidence.attribution};
+    auto evidence = evidenceFrom([&](std::string name, std::string expected, std::uint64_t limit, std::stop_token stop) {
+      checkpoint(stop);
+      require(digest(expected), "Expected lowercase SHA-256 for held prepared donor input");
+      const auto found = std::find_if(files.begin(), files.end(), [&](const auto* file) { return file->relativePath == name; });
+      require(found != files.end(), "Held prepared donor evidence is absent or renamed: " + name);
+      const auto& file = **found;
+      require(file.bytes.size() <= limit && file.sha256 == expected && core::sha256Hex(file.bytes) == expected,
+          "Held prepared donor evidence SHA-256 mismatch: " + name);
+      return std::move(**found);
+    }, std::move(expectedPacketSha256), std::move(expectedDonorId), stopToken);
+    return finishSnapshot(std::move(evidence), std::move(snapshot.audio), stopToken);
   } catch (const Refusal& refusal) {
     return core::Result<PreparedPhoneDonorSnapshot>{refusal.error};
   }
