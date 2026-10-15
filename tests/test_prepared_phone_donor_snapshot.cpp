@@ -129,3 +129,31 @@ TEST_CASE("Prepared donor evidence and owned validation honor pre-cancellation")
   CHECK(!p::loadPreparedPhoneDonor(f.root, f.packetSha, f.id, cancelled.get_token()));
   CHECK(!p::validatePreparedPhoneDonorSnapshot(snapshot, f.packetSha, f.id, cancelled.get_token()));
 }
+
+TEST_CASE("Prepared donor selected fact types are checked before JSON normalization") {
+  for (const auto& [key, rawValue] : {std::pair{"frames", "80.0"}, {"sampleRate", "8000.0"},
+      {"startFrame", "0.0"}, {"endFrameExclusive", "80.0"}, {"nonzeroPcm", "1"}, {"durationSeconds", "\"0.01\""}}) {
+    Fixture f; auto snapshot = f.load();
+    const auto original = seam::core::readTextFileLimited(f.root / "donors.json", 1024U * 1024U); CHECK(original);
+    auto packet = seam::formats::parseJson(original.value()); CHECK(packet);
+    packet.value().asObject()["proposals"].asArray()[0].asObject()[key] = "__selected_fact__";
+    auto text = seam::formats::stringifyJson(packet.value(), false);
+    const std::string marker = "\"__selected_fact__\"";
+    const auto at = text.find(marker); CHECK(at != std::string::npos);
+    text.replace(at, marker.size(), rawValue);
+    const auto expected = seam::core::sha256Hex(text);
+    CHECK(seam::core::durableAtomicWriteText(f.root / "donors.json", text));
+    const auto evidence = p::loadPreparedPhoneDonorEvidence(f.root, expected, f.id); CHECK(!evidence);
+    CHECK(evidence.error().code == seam::core::ErrorCode::InvalidArgument);
+    CHECK(evidence.error().message.find(key) != std::string::npos);
+    const auto loaded = p::loadPreparedPhoneDonor(f.root, expected, f.id); CHECK(!loaded);
+    CHECK(loaded.error().code == seam::core::ErrorCode::InvalidArgument);
+    CHECK(loaded.error().message.find(key) != std::string::npos);
+    snapshot.evidence.packet.bytes.assign(reinterpret_cast<const std::byte*>(text.data()),
+        reinterpret_cast<const std::byte*>(text.data() + text.size()));
+    snapshot.evidence.packet.sha256 = expected;
+    const auto owned = p::validatePreparedPhoneDonorSnapshot(std::move(snapshot), expected, f.id); CHECK(!owned);
+    CHECK(owned.error().code == seam::core::ErrorCode::InvalidArgument);
+    CHECK(owned.error().message.find(key) != std::string::npos);
+  }
+}

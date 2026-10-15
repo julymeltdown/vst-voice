@@ -216,6 +216,12 @@ PreparedPhoneDonorEvidence evidenceFrom(Reader&& reader, std::string expectedPac
     if (id == result.donorId) selected = &row;
   }
   require(selected != nullptr, "Selected prepared donor id is absent");
+  // Canonical JSON can serialize integral doubles as integers. Check the
+  // original selected row before that normalization can erase its wire types.
+  for (const auto key : {"sampleRate", "frames", "startFrame", "endFrameExclusive"})
+    (void)integer(*selected, key);
+  require(field(*selected, "nonzeroPcm").isBool(), "Expected prepared donor boolean: nonzeroPcm");
+  require(field(*selected, "durationSeconds").isNumber(), "Expected prepared donor number: durationSeconds");
   result.derivedAudioSha256 = text(*selected, "derivedSha256");
   result.proposalJson = formats::stringifyJson(*selected, false);
   checkpoint(stopToken);
