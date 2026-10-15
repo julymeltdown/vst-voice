@@ -385,15 +385,18 @@ ProductionProjectRepository::recover() const {
       continue;
     }
     bool unsupportedInspectionPolicy = false;
-    bool retainedEvidenceFailure = false;
-    auto verified = verifyGeneration(decoded.value(), false, &unsupportedInspectionPolicy, &retainedEvidenceFailure);
+    auto retainedContentFailure = RetainedContentFailure::None;
+    auto verified = verifyGeneration(decoded.value(), false, &unsupportedInspectionPolicy, &retainedContentFailure);
     if (verified) return decoded;
     if (unsupportedInspectionPolicy)
       return core::Result<VoicebankProductionProject>{verified.error()};
-    if (retainedEvidenceFailure)
+    if (retainedContentFailure != RetainedContentFailure::None) {
+      const std::string content = retainedContentFailure == RetainedContentFailure::ImmutableAsset
+          ? "Retained immutable asset" : "Retained source evidence";
       return core::failure<VoicebankProductionProject>(verified.error().code,
-          "Retained source evidence blocks recovery of generation " + std::to_string(generation) +
+          content + " blocks recovery of generation " + std::to_string(generation) +
           "; refusing to select older work. " + verified.error().message, verified.error().context);
+    }
     lastError = verified.error();
   }
   if (lastError.has_value()) {

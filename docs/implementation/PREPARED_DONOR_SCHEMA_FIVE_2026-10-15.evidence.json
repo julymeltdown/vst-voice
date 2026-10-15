@@ -96,7 +96,10 @@
   "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
   "fullSuite": "NOT_RUN",
   "pythonSchemaFiveProducerParity": "NOT_IMPLEMENTED",
-  "certifiedAssetLossP2": "OPEN_PREEXISTING_FOLLOWUP",
+  "certifiedAssetLossP2": {
+    "status": "LOCALLY_VERIFIED_INDEPENDENT_ASSET_REVIEW_PENDING",
+    "report": "docs/implementation/CERTIFIED_ASSET_RECOVERY_2026-10-15.md"
+  },
   "Alpha": [
     0,
     20

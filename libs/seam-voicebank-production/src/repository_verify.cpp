@@ -258,9 +258,9 @@ core::Result<void> ProductionProjectRepository::verify(
 
 core::Result<void> ProductionProjectRepository::verifyGeneration(
     const VoicebankProductionProject& project,
-    bool requireCurrentPointer, bool* unsupportedInspectionPolicy, bool* retainedEvidenceFailure) const {
+    bool requireCurrentPointer, bool* unsupportedInspectionPolicy, RetainedContentFailure* retainedContentFailure) const {
   if (unsupportedInspectionPolicy) *unsupportedInspectionPolicy = false;
-  if (retainedEvidenceFailure) *retainedEvidenceFailure = false;
+  if (retainedContentFailure) *retainedContentFailure = RetainedContentFailure::None;
   auto valid = validateProductionProject(project);
   if (!valid) return valid;
   // Certify this generation and its journal before classifying external evidence
@@ -342,13 +342,16 @@ core::Result<void> ProductionProjectRepository::verifyGeneration(
     if (!evidence) {
       // This generation has a complete binding. Losing its captured declaration
       // or reviewer evidence must not silently hide it behind older work.
-      if (retainedEvidenceFailure) *retainedEvidenceFailure = true;
+      if (retainedContentFailure) *retainedContentFailure = RetainedContentFailure::SourceEvidence;
       return evidence;
     }
   }
   for (const auto& asset : project.assets) {
     auto verified = assetStore_.verify(asset);
-    if (!verified) return verified;
+    if (!verified) {
+      if (retainedContentFailure) *retainedContentFailure = RetainedContentFailure::ImmutableAsset;
+      return verified;
+    }
   }
   return core::success();
 }

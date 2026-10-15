@@ -292,6 +292,48 @@ TEST_CASE("retained source evidence failure is terminal only after a generation 
   }
 }
 
+namespace {
+void certifiedAssetDamageRefusesRecovery(bool derived) {
+  for (int mode = 0; mode < 3; ++mode) {
+    DraftFixture fixture; fixture.source("original", true); fixture.assignment("a");
+    auto stale = fixture.project;
+    const auto raw = fixture.importTake("a"); CHECK(raw);
+    production::ProductionProjectRepository repository{fixture.root / "workspace"};
+    auto sha = fixture.project.takes.front().rawAssetSha256;
+    if (derived) {
+      const auto staged = repository.stageOperation(fixture.project, "take-a", "",
+          {.kind = production::OperationKind::NormalizeGain, .targetPeak = 0.2F}, "derived-loss-test"); CHECK(staged);
+      const auto committed = repository.commitStaged(fixture.project, staged.value(), "derived-loss", "producer",
+          "2026-09-09T10:03:00Z", "take-a", ""); CHECK(committed);
+      sha = committed.value().outputSha256; CHECK(sha != fixture.project.takes.front().rawAssetSha256);
+    }
+    const auto asset = std::find_if(fixture.project.assets.begin(), fixture.project.assets.end(),
+        [&](const auto& value) { return value.sha256 == sha; }); CHECK(asset != fixture.project.assets.end());
+    damageRetainedEvidence(fixture.root / "workspace/assets" / asset->relativePath, mode);
+    const auto before = workspaceBytes(fixture.root / "workspace");
+    const auto currentProject = production::encodeProductionProject(fixture.project);
+    const auto staleProject = production::encodeProductionProject(stale);
+    const auto recovered = repository.recover(); CHECK(!recovered);
+    CHECK(recovered.error().message.find("Retained immutable asset") != std::string::npos);
+    const auto saved = repository.save(fixture.project, {"save", "current-writer", "producer", "2026-09-09T10:04:00Z"}); CHECK(!saved);
+    CHECK(saved.error().message.find("Retained immutable asset") != std::string::npos);
+    const auto staleSaved = repository.save(stale, {"save", "stale-writer", "producer", "2026-09-09T10:04:00Z"}); CHECK(!staleSaved);
+    CHECK(staleSaved.error().message.find("Retained immutable asset") != std::string::npos);
+    CHECK(workspaceBytes(fixture.root / "workspace") == before);
+    CHECK(production::encodeProductionProject(fixture.project) == currentProject);
+    CHECK(production::encodeProductionProject(stale) == staleProject);
+  }
+}
+}
+
+TEST_CASE("certified asset recovery refuses damaged raw bytes without concealing imported work") {
+  certifiedAssetDamageRefusesRecovery(false);
+}
+
+TEST_CASE("certified asset recovery refuses damaged derived bytes without concealing processing") {
+  certifiedAssetDamageRefusesRecovery(true);
+}
+
 TEST_CASE("empty source-free production drafts persist without feasibility claims") {
   DraftFixture fixture;
   CHECK(fixture.project.schemaVersion == 2);

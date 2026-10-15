@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "unit": "certified-asset-loss-recovery",
+  "sourceBase": "0ec9c143f435461a6091d19dd121120b41f9ed3d",
+  "sourcePatchSha256": "5842ae4767188caac074479b330e55195aa0c6ee061ef349da95d3ea4ae69a42",
+  "manifest": {
+    "path": "out/evidence/certified-asset-recovery-2026-10-15/manifest.json",
+    "sizeBytes": 10175,
+    "sha256": "1f301cc18366d03c17d415e693b656eb83484d295e548794f50446552ce6f0d9"
+  },
+  "retainedArtifacts": 35,
+  "preservedBindings": 10,
+  "baselineBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "--target",
+      "seam_production_draft_tests",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 8.221226082998328,
+    "sourceBase": "0ec9c143f435461a6091d19dd121120b41f9ed3d",
+    "sourcePatchSha256": "35428242ae04d5e81916044019ec82f8700ded2d7e5517611499ba7da1c2a416",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "baselineNative": {
+    "argv": [
+      "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/certified-asset-recovery-2026-10-15/baseline/seam_production_draft_tests",
+      "certified asset"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.31924324997817166,
+    "sourceBase": "0ec9c143f435461a6091d19dd121120b41f9ed3d",
+    "sourcePatchSha256": "35428242ae04d5e81916044019ec82f8700ded2d7e5517611499ba7da1c2a416",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeSha256": "3e2379fc2ba9b40d32c5de05c0c0f25e750df407a018929525182f5c21c6f933",
+    "nativeAfterSha256": "3e2379fc2ba9b40d32c5de05c0c0f25e750df407a018929525182f5c21c6f933",
+    "nativeBeforeEqualsAfter": true
+  },
+  "baselinePass": 0,
+  "baselineFail": 2,
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 77.79253304199665,
+    "sourceBase": "0ec9c143f435461a6091d19dd121120b41f9ed3d",
+    "sourcePatchSha256": "5842ae4767188caac074479b330e55195aa0c6ee061ef349da95d3ea4ae69a42",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_production_import_outcome_tests|seam_production_review_tests|seam_voicebank_production_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 8.641886375000468,
+    "sourceBase": "0ec9c143f435461a6091d19dd121120b41f9ed3d",
+    "sourcePatchSha256": "5842ae4767188caac074479b330e55195aa0c6ee061ef349da95d3ea4ae69a42",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "nativeCasesInCtestOrder": [
+    8,
+    28,
+    8,
+    24,
+    64
+  ],
+  "nativeCaseExecutions": 132,
+  "newUniqueCases": 2,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/certified-asset-recovery-2026-10-15/verification.log",
+      "sizeBytes": 300,
+      "sha256": "acf8565e01b1f908a16a66032d7dcb4b9f7714650a7f636d18b77d0e295360b7"
+    }
+  },
+  "independentImplementationReview": "PENDING",
+  "sourceRegistrationOrRealImport": false,
+  "rightsOrHumanAcceptance": false,
+  "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
+  "fullSuite": "NOT_RUN",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

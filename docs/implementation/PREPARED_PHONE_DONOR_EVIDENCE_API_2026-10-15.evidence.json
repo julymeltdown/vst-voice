@@ -195,7 +195,13 @@
   "U45": "HELD",
   "Beta": "BLOCKED",
   "selectedFactTypeP3Repair": {
-    "status": "LOCALLY_VERIFIED_INDEPENDENT_REPAIR_REVIEW_PENDING",
-    "report": "docs/implementation/PREPARED_DONOR_FACT_TYPES_2026-10-15.md"
+    "status": "INDEPENDENTLY_APPROVED_P3_CLOSED",
+    "report": "docs/implementation/PREPARED_DONOR_FACT_TYPES_2026-10-15.md",
+    "commit": "bd35ddac9851940c9b62a8c3c4546d10632b6989",
+    "reviewMetadata": {
+      "path": "out/evidence/prepared-donor-fact-types-independent-2026-10-15/review.json",
+      "sizeBytes": 771,
+      "sha256": "8961851f7dfaf2487621606ac35e82974a135318fce6edb023abec422e5b1324"
+    }
   }
 }

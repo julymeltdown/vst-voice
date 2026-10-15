@@ -125,7 +125,9 @@ public:
   [[nodiscard]] core::Result<void> save(
       VoicebankProductionProject& project,
       const ProductionJournalEvent& event, std::stop_token stopToken = {});
-  // Supported corrupt/incomplete/over-limit files may fall back to the last valid one.
+  // Supported corrupt/incomplete/over-limit generation or journal files may
+  // fall back. Missing/changed evidence or assets of a certified generation
+  // refuse instead: those files were durable before its journal was committed.
   // An encountered unsupported project schema or inspection policy refuses instead of
   // silently presenting an older generation as current. No stored bytes change.
   // Decoder Unsupported is reserved for unknown schemas; parser limits return
@@ -260,10 +262,11 @@ private:
       std::uint64_t generation) const;
   [[nodiscard]] std::filesystem::path journalPath(
       std::uint64_t generation) const;
+  enum class RetainedContentFailure { None, SourceEvidence, ImmutableAsset };
   [[nodiscard]] core::Result<void> verifyGeneration(
       const VoicebankProductionProject& project,
       bool requireCurrentPointer, bool* unsupportedInspectionPolicy = nullptr,
-      bool* retainedEvidenceFailure = nullptr) const;
+      RetainedContentFailure* retainedContentFailure = nullptr) const;
 
   std::filesystem::path root_;
   ImmutableAssetStore assetStore_;
