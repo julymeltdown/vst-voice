@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-pcm-range-negatives",
+  "sourceBase": "3df28db47b4d1403124a1565aa05623ce49336d8",
+  "sourcePatchSha256": "2a59cb1b50f2ddd492e7a79f39cb11fb7d90c29ce1a214026bf406a2b6f8f41b",
+  "implementationSources": [
+    "tests/test_prepared_phone_donor_snapshot.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-pcm-range-negatives-2026-10-15/manifest.json",
+    "sizeBytes": 5452,
+    "sha256": "72f93ac7eb907fac2f536ece9dd67aa0784c5c0ff5e4d484f9ff9fdbd385fe40"
+  },
+  "retainedArtifacts": 18,
+  "preservedBindings": 8,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "--target",
+        "seam_prepared_phone_donor_snapshot_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.151475209015189,
+      "sourceBase": "3df28db47b4d1403124a1565aa05623ce49336d8",
+      "sourcePatchSha256": "2a59cb1b50f2ddd492e7a79f39cb11fb7d90c29ce1a214026bf406a2b6f8f41b",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_prepared_phone_donor_snapshot_tests$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.967329041013727,
+      "sourceBase": "3df28db47b4d1403124a1565aa05623ce49336d8",
+      "sourcePatchSha256": "2a59cb1b50f2ddd492e7a79f39cb11fb7d90c29ce1a214026bf406a2b6f8f41b",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-pcm-range-negatives-2026-10-15/verification.log",
+      "sizeBytes": 370,
+      "sha256": "51dd8a61ca56ed5d5923a5694375f7bfade94503147b992757acd433da8d2587"
+    }
+  },
+  "nativeCases": 22,
+  "newCases": 2,
+  "positiveForms": 2,
+  "negativeForms": 5,
+  "negativeReaderPaths": 5,
+  "exactDiagnosticRequired": true,
+  "originalReview": {
+    "status": "APPROVE_WITH_P3_RANGE_BOUND_TEST_GAP_GEOMETRY_CONCERN_CLOSED",
+    "verdict": {
+      "path": "out/evidence/asset-and-geometry-independent-2026-10-15/review-7e141c0f-24cf12d5.md",
+      "sizeBytes": 13074,
+      "sha256": "3d85c506c3f83af9a4a1d881a667dbff73bf3d95529c89ea6bb618b83c5da92f"
+    },
+    "metadata": {
+      "path": "out/evidence/asset-and-geometry-independent-2026-10-15/review.json",
+      "sizeBytes": 756,
+      "sha256": "9272605b0bd0ebb03a0c96f8a964e681e97f2b9cdaed9bada6317abbb58ba168"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no new execution or real admission"
+  },
+  "nativePcmRangeP3": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
+  "pythonRepair3df28db4Review": "IN_PROGRESS_AT_FREEZE",
+  "runtimeCodeChanged": false,
+  "zeroFramesEmptyInterval": "Logically coupled when end-start equals frames; no individual-conjunct isolation claim",
+  "mutationGuardDeletion": "NOT_RUN",
+  "buildScope": "Focused snapshot target/dependencies; changed test actually compiled and linked.",
+  "fullSuite": "NOT_RUN",
+  "Python": "NOT_RUN",
+  "newSanitizers": "NOT_RUN",
+  "powerLoss": "NOT_RUN",
+  "realSourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

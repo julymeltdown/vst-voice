@@ -110,5 +110,20 @@
     20
   ],
   "U45": "HELD",
-  "Beta": "BLOCKED"
+  "Beta": "BLOCKED",
+  "rangeBoundCoverageFollowUp": {
+    "report": "docs/implementation/PREPARED_DONOR_PCM_RANGE_NEGATIVES_2026-10-15.md",
+    "status": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
+    "nativeCases": 22,
+    "newCases": 2,
+    "positiveForms": 2,
+    "negativeForms": 5,
+    "negativeReaderPaths": 5,
+    "zeroFramesEmptyInterval": "Logically coupled; no separate conjunct isolation claim",
+    "manifest": {
+      "path": "out/evidence/prepared-donor-pcm-range-negatives-2026-10-15/manifest.json",
+      "sizeBytes": 5452,
+      "sha256": "72f93ac7eb907fac2f536ece9dd67aa0784c5c0ff5e4d484f9ff9fdbd385fe40"
+    }
+  }
 }

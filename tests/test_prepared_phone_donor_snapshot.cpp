@@ -285,6 +285,94 @@ TEST_CASE("Prepared donor evidence refuses inconsistent declared PCM geometry wi
   }
 }
 
+namespace {
+struct DeclaredPcm final {
+  const char* name;
+  std::int64_t rate, frames, start;
+};
+
+// Change only the second donor's declared interval, rate and duration. The first
+// donor and all retained metadata bindings remain valid. No measured WAV or
+// source-annotation truth is claimed by these metadata-only fixtures.
+std::string replaceDeclaredPcm(p::PreparedPhoneDonorSnapshot& snapshot, const DeclaredPcm& pcm) {
+  auto packet = seam::formats::parseJson(std::string_view{
+      reinterpret_cast<const char*>(snapshot.evidence.packet.bytes.data()), snapshot.evidence.packet.bytes.size()});
+  CHECK(packet);
+  auto& row = packet.value().asObject()["proposals"].asArray()[1].asObject();
+  row["sampleRate"] = pcm.rate; row["frames"] = pcm.frames;
+  row["startFrame"] = pcm.start; row["endFrameExclusive"] = pcm.start + pcm.frames;
+  row["durationSeconds"] = static_cast<double>(pcm.frames) / static_cast<double>(pcm.rate);
+  const auto text = seam::formats::stringifyJson(packet.value());
+  const auto decoded = seam::formats::parseJson(text); CHECK(decoded);
+  const auto& encoded = decoded.value().asObject().at("proposals").asArray()[1].asObject();
+  CHECK(encoded.at("endFrameExclusive").asInt64() - encoded.at("startFrame").asInt64() == pcm.frames);
+  CHECK(encoded.at("durationSeconds").asNumber() == static_cast<double>(pcm.frames) / static_cast<double>(pcm.rate));
+  snapshot.evidence.packet.bytes.assign(reinterpret_cast<const std::byte*>(text.data()),
+      reinterpret_cast<const std::byte*>(text.data() + text.size()));
+  snapshot.evidence.packet.sha256 = seam::core::sha256Hex(text);
+  return text;
+}
+
+auto heldMetadata(const p::PreparedPhoneDonorSnapshot& snapshot) {
+  return std::array{snapshot.evidence.packet, snapshot.evidence.plan,
+      snapshot.evidence.license, snapshot.evidence.attribution};
+}
+}
+
+TEST_CASE("Prepared donor metadata accepts canonical PCM range boundaries without audio") {
+  for (const auto& pcm : {DeclaredPcm{"lower bounds", 8000, 1, 0},
+      DeclaredPcm{"upper bounds", 192000, 33554410, 0}}) {
+    Fixture f(true);
+    auto snapshot = p::loadPreparedPhoneDonor(f.root, f.packetSha, "fixture_l00001_n1"); CHECK(snapshot);
+    CHECK(std::filesystem::remove(f.root / (f.id + ".wav")));
+    CHECK(std::filesystem::remove(f.root / "fixture_l00001_n1.wav"));
+    const auto text = replaceDeclaredPcm(snapshot.value(), pcm);
+    const auto expected = snapshot.value().evidence.packet.sha256;
+    CHECK(seam::core::durableAtomicWriteText(f.root / "donors.json", text));
+    CHECK(p::loadPreparedPhoneDonorEvidence(f.root, expected, snapshot.value().evidence.donorId));
+    const auto directory = p::loadPreparedPhoneDonorPacketFacts(f.root, expected); CHECK(directory);
+    const auto owned = p::validatePreparedPhoneDonorPacketFacts(heldMetadata(snapshot.value()), expected); CHECK(owned);
+    CHECK(directory.value().derivedAudioSha256ByDonor == owned.value().derivedAudioSha256ByDonor);
+    CHECK(owned.value().derivedAudioSha256ByDonor.size() == 2U);
+    std::cout << "[PCM-RANGES] " << pcm.name << ": PASS selected/directory-facts/owned-facts\n";
+  }
+}
+
+TEST_CASE("Prepared donor metadata refuses isolated PCM range violations before reading audio") {
+  for (const auto& pcm : {DeclaredPcm{"rate below minimum", 4000, 80, 0},
+      DeclaredPcm{"rate above maximum", 200000, 80, 0}, DeclaredPcm{"zero frames", 8000, 0, 0},
+      DeclaredPcm{"frames above cap", 8000, 33560000, 0}, DeclaredPcm{"negative start", 8000, 80, -1}}) {
+    // Exactly one range category is invalid. Zero frames also makes end == start;
+    // with an exact interval length these two conjuncts cannot be isolated.
+    const int invalidCategories = static_cast<int>(pcm.rate < 8000 || pcm.rate > 192000) +
+        static_cast<int>(pcm.frames <= 0 || pcm.frames > 33554410) + static_cast<int>(pcm.start < 0);
+    CHECK(invalidCategories == 1);
+    CHECK(pcm.frames == 0 || pcm.start + pcm.frames > pcm.start);
+    Fixture f(true);
+    auto snapshot = p::loadPreparedPhoneDonor(f.root, f.packetSha, "fixture_l00001_n1"); CHECK(snapshot);
+    CHECK(p::loadPreparedPhoneDonorPacketFacts(f.root, f.packetSha));
+    CHECK(p::validatePreparedPhoneDonorPacketFacts(heldMetadata(snapshot.value()), f.packetSha));
+    CHECK(std::filesystem::remove(f.root / (f.id + ".wav")));
+    CHECK(std::filesystem::remove(f.root / "fixture_l00001_n1.wav"));
+    const auto text = replaceDeclaredPcm(snapshot.value(), pcm);
+    const auto expected = snapshot.value().evidence.packet.sha256;
+    CHECK(seam::core::durableAtomicWriteText(f.root / "donors.json", text));
+    // Selected-only readers still accept the untouched first donor. Whole-packet
+    // readers must reject the second row rather than cache it unchecked.
+    CHECK(p::loadPreparedPhoneDonorEvidence(f.root, expected, f.id));
+    const auto requireRangeRefusal = [](const auto& result) {
+      CHECK(!result); CHECK(result.error().code == seam::core::ErrorCode::InvalidArgument);
+      CHECK(result.error().message == "Prepared donor declared PCM facts are inconsistent or exceed canonical WAV bounds");
+    };
+    requireRangeRefusal(p::loadPreparedPhoneDonorEvidence(f.root, expected, snapshot.value().evidence.donorId));
+    requireRangeRefusal(p::loadPreparedPhoneDonor(f.root, expected, snapshot.value().evidence.donorId));
+    requireRangeRefusal(p::loadPreparedPhoneDonorPacketFacts(f.root, expected));
+    requireRangeRefusal(p::validatePreparedPhoneDonorPacketFacts(heldMetadata(snapshot.value()), expected));
+    requireRangeRefusal(p::validatePreparedPhoneDonorSnapshot(std::move(snapshot.value()), expected, "fixture_l00001_n1"));
+    std::cout << "[PCM-RANGES] " << pcm.name << ": REFUSED selected/full/owned-snapshot/directory-facts/owned-facts\n";
+  }
+}
+
 TEST_CASE("Shared packet facts identify two distinct donors without reading either WAV") {
   Fixture f(true);
   const auto first = f.load();
