@@ -144,7 +144,7 @@
     }
   },
   "originatingP3": "LOCALLY_REPAIRED_REVIEW_PENDING",
-  "independentReview": "PENDING_EXACT_COMMIT",
+  "independentReview": "ACTIVE_EXACT_B3998F99_REVIEW",
   "predecessorReceiptReview": {
     "commit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
     "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
@@ -165,5 +165,11 @@
   "Alpha": "0/20",
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "fullGoal": "ACTIVE"
+  "fullGoal": "ACTIVE",
+  "implementationCommit": "b3998f99de1c63fa3e1479776d2af60095aa19a0",
+  "postcommitReadOnlyVerification": {
+    "path": "out/evidence/source-assessment-publication-2026-10-15/verification-postcommit.log",
+    "sizeBytes": 393,
+    "sha256": "95e42e9f8ba122e7900d70c17312e0cad00b64744f6db32ba4f77f8afe92dc93"
+  }
 }

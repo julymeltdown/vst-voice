@@ -119,8 +119,27 @@
       "sha256": "7eec00b087f20b2ca51f746edce8aae2dd5b2b81d76ba10fbf1acca2c15da293"
     }
   },
-  "originatingP3": "LOCALLY_ADDRESSED_REVIEW_PENDING",
-  "independentReview": "ACTIVE_EXACT_7EC877F7_REVIEW",
+  "originatingP3": "CLOSED_BY_EXACT_7EC877F7_REVIEW",
+  "independentReview": {
+    "commit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "originatingA7ReceiptP3": "CLOSED",
+    "final": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/review-7ec877f7.md",
+      "sizeBytes": 9424,
+      "sha256": "4b3dbba606539f2ebe3c2cbce4d9ff409eeaeb8a5d9651f29ed60fe2fda3b2c6"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/metadata.json",
+      "sizeBytes": 471,
+      "sha256": "3776752005532dddf17f7f2064f4da9a7e9df39c7ff92450cba3c488ce9295ac"
+    },
+    "fullCommitReadOnlyVerification": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/verification-full-7ec877f7.log",
+      "sizeBytes": 293,
+      "sha256": "2bead2c90fb92de3991602d2f01d0036cb39890a3d1c9967de0e42a92401ccdf"
+    }
+  },
   "liveAppKit": "BLOCKED_MAC_LOCKED",
   "nativeExecutionScope": "Synthetic native tests; scripted dialogs and silent audio",
   "sourceAdmission": false,

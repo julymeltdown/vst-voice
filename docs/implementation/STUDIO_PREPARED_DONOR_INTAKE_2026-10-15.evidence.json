@@ -108,7 +108,7 @@
   "independentReview": {
     "commit": "a7f81e0776ba5d1e903ec2c74b9cdcea85242426",
     "verdict": "APPROVE_ENGINEERING",
-    "newP3": "LOCALLY_ADDRESSED_REVIEW_PENDING: see STUDIO_DONOR_RECEIPT_BOUNDARIES_2026-10-15.md",
+    "newP3": "CLOSED_BY_EXACT_7EC877F7_REVIEW",
     "final": {
       "path": "out/evidence/studio-prepared-donor-independent-2026-10-15/review-a7f81e07.md",
       "sizeBytes": 14727,
@@ -151,5 +151,25 @@
     "path": "out/evidence/studio-prepared-donor-intake-2026-10-15/verification-postcommit.log",
     "sizeBytes": 231,
     "sha256": "d6a1a7af41dd6cd19f4decac8a69ad56bf3f889db01302952d3dac32e38bf841"
+  },
+  "receiptFollowupIndependentReview": {
+    "commit": "7ec877f7d9b50cc6a8961d7512e7e0ff25651fcd",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "originatingA7ReceiptP3": "CLOSED",
+    "final": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/review-7ec877f7.md",
+      "sizeBytes": 9424,
+      "sha256": "4b3dbba606539f2ebe3c2cbce4d9ff409eeaeb8a5d9651f29ed60fe2fda3b2c6"
+    },
+    "metadata": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/metadata.json",
+      "sizeBytes": 471,
+      "sha256": "3776752005532dddf17f7f2064f4da9a7e9df39c7ff92450cba3c488ce9295ac"
+    },
+    "fullCommitReadOnlyVerification": {
+      "path": "out/evidence/studio-donor-receipt-independent-2026-10-15/verification-full-7ec877f7.log",
+      "sizeBytes": 293,
+      "sha256": "2bead2c90fb92de3991602d2f01d0036cb39890a3d1c9967de0e42a92401ccdf"
+    }
   }
 }
