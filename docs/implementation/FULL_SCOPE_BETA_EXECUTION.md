@@ -9337,3 +9337,6 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 
 2026-10-15 — Legacy English review authority P3 implemented: optional manifest contract must equal optional inventory authority, including None. Unchanged-production regression failed at accepted schema2/FOLD; full rebuild and five focused lanes/102 native cases PASS after fix. See LEGACY_ENGLISH_REVIEW_AUTHORITY_2026-10-15.md/index. Independent closure pending; prior full239 belongs to50f5b1d9. Alpha0/20; U45HELD; BetaBLOCKED.
+
+
+2026-10-15 — New phone-donor proposal outputs bind exact retained UTF-8 attribution bytes with retainedAttributionSha256. Two missing-field baseline errors reproduced;18 direct Python methods PASS; source/license/audio controls preserved. See PHONE_DONOR_ATTRIBUTION_DIGEST_2026-10-15.md/index. Existing packets untouched; downstream import enforcement and independent review pending. Alpha0/20; U45HELD; BetaBLOCKED.

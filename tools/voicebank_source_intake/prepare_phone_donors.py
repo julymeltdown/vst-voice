@@ -167,11 +167,11 @@ def prepare(plan_path: Path, output: Path) -> dict:
                     "no resampling, normalization, pitch shift, phone alias or bank assignment."
     # Keep the caller's explicit attribution beside the derived audio, including original author
     # names where the source license requires them. These supplied words are not rights approval.
-    (output / "attribution.txt").write_text(
+    attribution_bytes = (
         license_record["attribution"] + "\nSource license: " + license_record["sourceUrl"] +
         "\nOriginal license text: license-source.txt\nModifications: " + change_notice +
-        "\nUnassigned and unapproved. Supplied attribution does not establish performer rights.\n",
-        encoding="utf-8")
+        "\nUnassigned and unapproved. Supplied attribution does not establish performer rights.\n").encode("utf-8")
+    (output / "attribution.txt").write_bytes(attribution_bytes)
     proposals = []
     for source, pcm, rate, labels, first, count in prepared:
         name = f"{source['id']}_l{first:05d}_n{count}.wav"
@@ -195,7 +195,8 @@ def prepare(plan_path: Path, output: Path) -> dict:
     result = {"schemaVersion": 1, "documentKind": "UnassignedPhoneDonorProposals", "status": "UNAPPROVED",
               "language": "en", "planSha256": digest(raw_plan), "labelContract": LABEL_CONTRACT,
               "license": license_record, "retainedLicensePath": "license-source.txt",
-              "retainedAttributionPath": "attribution.txt", "changeNotice": change_notice,
+              "retainedAttributionPath": "attribution.txt", "retainedAttributionSha256": digest(attribution_bytes),
+              "changeNotice": change_notice,
               "producerRegistration": "NOT_REGISTERED", "performerRights": "NOT_ESTABLISHED",
               "rightsClearance": "NOT_APPROVED", "bankAdmission": "NOT_APPROVED", "proposals": proposals}
     (output / "donors.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")

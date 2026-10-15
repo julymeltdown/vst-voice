@@ -91,7 +91,9 @@ class PhoneDonorIntakeTests(unittest.TestCase):
         output=self.root/"attributed"
         result=prepare(self.plan_path,output)
         self.assertEqual("attribution.txt",result["retainedAttributionPath"])
-        notice=(output/result["retainedAttributionPath"]).read_text(encoding="utf-8")
+        notice_bytes=(output/result["retainedAttributionPath"]).read_bytes()
+        self.assertEqual(hashlib.sha256(notice_bytes).hexdigest(),result["retainedAttributionSha256"])
+        notice=notice_bytes.decode("utf-8")
         self.assertIn(self.plan["license"]["attribution"],notice)
         self.assertIn(self.plan["license"]["sourceUrl"],notice)
         self.assertIn(result["changeNotice"],notice)
@@ -99,6 +101,21 @@ class PhoneDonorIntakeTests(unittest.TestCase):
         self.assertEqual(self.license.read_bytes(),(output/result["retainedLicensePath"]).read_bytes())
         self.assertEqual("NOT_APPROVED",result["rightsClearance"])
         self.assertEqual("NOT_APPROVED",result["bankAdmission"])
+
+    def test_attribution_edits_change_notice_binding_without_changing_audio_or_license(self) -> None:
+        original=prepare(self.plan_path,self.root/"original-notice")
+        self.plan["license"]["attribution"]="Changed fixture author — synthetic only."
+        self.save()
+        changed=prepare(self.plan_path,self.root/"changed-notice")
+        self.assertNotEqual(original["retainedAttributionSha256"],changed["retainedAttributionSha256"])
+        self.assertEqual(original["proposals"],changed["proposals"])
+        for result,directory in [(original,"original-notice"),(changed,"changed-notice")]:
+            notice=self.root/directory/result["retainedAttributionPath"]
+            self.assertEqual(hashlib.sha256(notice.read_bytes()).hexdigest(),result["retainedAttributionSha256"])
+            self.assertEqual("NOT_APPROVED",result["rightsClearance"])
+            self.assertEqual("NOT_APPROVED",result["bankAdmission"])
+        self.assertEqual((self.root/"original-notice/license-source.txt").read_bytes(),
+                         (self.root/"changed-notice/license-source.txt").read_bytes())
 
     def test_silent_pause_is_preserved_and_reported_without_acceptance(self) -> None:
         with wave.open(str(self.audio), "wb") as wav:

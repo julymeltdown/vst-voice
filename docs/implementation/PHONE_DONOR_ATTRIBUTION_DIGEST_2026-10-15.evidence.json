@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "unit": "phone-donor-attribution-digest",
+  "sourceBase": "b48a289bd7e5eff21375827f422f02ba56b1667a",
+  "manifest": {
+    "path": "out/evidence/phone-donor-attribution-digest-2026-10-15/manifest.json",
+    "sizeBytes": 3620,
+    "sha256": "d25fdb8c65235a7afc3d864ba7a311e3f31ae9a474d95066ea35b44b7edac834"
+  },
+  "retainedArtifacts": 16,
+  "preservedBindings": 4,
+  "reproduction": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake.PhoneDonorIntakeTests.test_explicit_author_attribution_travels_with_license_and_modifications",
+      "tests.test_phone_donor_intake.PhoneDonorIntakeTests.test_attribution_edits_change_notice_binding_without_changing_audio_or_license",
+      "-v"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.09076441699289717,
+    "head": "b48a289bd7e5eff21375827f422f02ba56b1667a",
+    "diffSha256": "3a6709106fe82453224c0b26991aa761c690db46c1452bb906d6325bef2db834"
+  },
+  "final": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_phone_donor_intake",
+      "-v"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.1580371249874588,
+    "head": "b48a289bd7e5eff21375827f422f02ba56b1667a",
+    "diffSha256": "e9a8f28148ee2edca1e254c4e3b7e1184fd340ecef830c7cbad13288ea02fed5",
+    "stableTrackedDiff": true
+  },
+  "newOutputField": "retainedAttributionSha256",
+  "passingPythonTests": 18,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/phone-donor-attribution-digest-2026-10-15/verification.log",
+      "sizeBytes": 259,
+      "sha256": "0dda4ce2c86edf31a0419f0afd2393c7f1615da3c94d987034bf1118f16de60c"
+    }
+  },
+  "nativeOrCtestExecution": false,
+  "existingPacketsRewritten": false,
+  "downstreamImporterEnforcement": "OPEN",
+  "independentReview": "PENDING",
+  "sourceOrHumanApproval": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}
