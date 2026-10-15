@@ -97,8 +97,22 @@
       "sha256": "5a9682950c9d342919446c8ef43e76ce31a04900e550376542d611f6488cd3c3"
     }
   },
-  "siblingWriterP3": "LOCALLY_VERIFIED_REPAIR_EXACT_INDEPENDENT_REVIEW_PENDING",
-  "candidateFourIndependentReview": "IN_PROGRESS_01E78A0C",
+  "siblingWriterP3": "CLOSED_BY_EXACT_BCE11B9A_INDEPENDENT_REVIEW",
+  "candidateFourIndependentReview": {
+    "commit": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+    "verdict": "APPROVE_ENGINEERING_ONE_NEGATIVE_TEST_GAP_P3",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review-01e78a0c.md",
+      "sizeBytes": 16861,
+      "sha256": "b1d84e4aac372e766e095aaf56c366e544691f54fbcfa62e1eb0e047c1a73086"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review.json",
+      "sizeBytes": 555,
+      "sha256": "a9ec362c53a71d796c24aafcb0b25d050962a75759dd4777644543bfa771c197"
+    },
+    "bindingScope": "Adjacent tracked index; exact verdict arrived after original manifest freeze; frozen evidence unchanged."
+  },
   "newSanitizers": "NOT_RUN",
   "fullSuite": "NOT_RUN",
   "osFsyncFailureInjection": "NOT_RUN",
@@ -113,5 +127,20 @@
     20
   ],
   "U45": "HELD",
-  "Beta": "BLOCKED"
+  "Beta": "BLOCKED",
+  "exactIndependentReview": {
+    "commit": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS_SIBLING_WRITER_P3_CLOSED",
+    "finalAnswer": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review-bce11b9a.md",
+      "sizeBytes": 12571,
+      "sha256": "9f2c059cf1570aedaa57e354347433333a21767f213baf1b2dcdc0aedd96f8e3"
+    },
+    "metadata": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review.json",
+      "sizeBytes": 553,
+      "sha256": "c1fa44f9b6dbb3ae37a306f1633b69fb1df12e59a034171b6832763f2bde009c"
+    },
+    "bindingScope": "Adjacent tracked index; received after this CLI evidence manifest froze. Frozen manifest unchanged."
+  }
 }

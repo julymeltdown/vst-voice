@@ -43,3 +43,7 @@ python3 -B out/evidence/retained-source-evidence-durability-2026-10-15/verify.py
 | Read-only frozen verifier | PASS; 40 artifacts and 13 preserved bindings |
 
 The manifest is 12,745 bytes, SHA-256 `ddfca1fea1c4f943d2d9c67084c73a3b75251a72eabc9d39bbaf33025b32cfbb`. Every stage uses the same three-file patch and stable source base. Seven native executables including the CLI match before/after CTest and are copied; the parity run separately binds and retains its CLI.
+
+## Exact post-commit independent verdict
+
+Exact `bce11b9a` is now independently APPROVED for engineering with zero findings, closing the sibling-writer P3 for ordinary declaration, quality evidence and source registration. The retained exact final answer is 12,571 bytes, SHA-256 `9f2c059cf1570aedaa57e354347433333a21767f213baf1b2dcdc0aedd96f8e3`, under `out/evidence/retained-source-evidence-independent-2026-10-15`; the adjacent tracked index binds it and its metadata after the original manifest freeze. The reviewer read committed source and rehashed evidence without running builds, native binaries, tests, retained scripts or playback. Missing error-branch/integration coverage and the lower-impact style-migration pattern remain separate open work; no power-loss, human or Beta acceptance is established.

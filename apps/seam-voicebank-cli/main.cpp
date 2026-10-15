@@ -890,7 +890,7 @@ void printUsage() {
       << "    Collects generated output only against its retained expectation; never refreshes a stale request.\n"
       << "    Imports into an existing procedural producer workspace as unapproved MarkerReview material.\n";
   seam::voicebank_cli::printSampleReviewUsage();
-  std::cerr << "  seam_voicebank_cli verify-phone-donor DIRECTORY PACKET_SHA256 DONOR_ID\n";
+  seam::voicebank_cli::printSourceIntakeUsage();
   seam::voicebank_cli::printCampaignUsage();
   seam::voicebank_cli::printCoverageUsage();
   seam::voicebank_cli::printProjectBindingUsage();

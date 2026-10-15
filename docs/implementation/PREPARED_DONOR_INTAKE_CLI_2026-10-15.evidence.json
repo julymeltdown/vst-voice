@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-intake-cli",
+  "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+  "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+  "implementationSources": [
+    "apps/seam-voicebank-cli/main.cpp",
+    "apps/seam-voicebank-cli/source_intake_commands.cpp",
+    "apps/seam-voicebank-cli/source_intake_commands.hpp",
+    "tests/production/test_prepared_donor_intake_cli.py"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-intake-cli-2026-10-15/manifest.json",
+    "sizeBytes": 13420,
+    "sha256": "a943ba2c63a3c6e6109a18da2badbe1ed2ac799f5ac1c5e8cff6be4cb58ec176"
+  },
+  "retainedArtifacts": 63,
+  "preservedBindings": 8,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.4910031250037719,
+      "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+      "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-python": {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli",
+        "tests.production.test_prepared_donor_workspace",
+        "tests.test_phone_donor_intake"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 8.516145000001416,
+      "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+      "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 22.390170207974734,
+      "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+      "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "sanitize-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_voicebank_cli",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 8.745677625003736,
+      "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+      "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    "sanitize-python": {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 8.916100542002823,
+      "sourceBase": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+      "sourcePatchSha256": "0c10cdb4c48ef8cafbef82386fa04b21e4272938e4dfbdbb97f601f92f676e5a",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-intake-cli-2026-10-15/verification.log",
+      "sizeBytes": 412,
+      "sha256": "6beba07b8b64036e6e9c5425045fd07330bf9fad184872d78e7e4abf96183470"
+    }
+  },
+  "newPythonMethods": 6,
+  "releasePythonMethods": 40,
+  "releasePythonSkips": 0,
+  "releaseCtestLanes": 3,
+  "releaseNativeCases": 52,
+  "sanitizedNewPythonMethods": 6,
+  "sanitizedSkips": 0,
+  "preliminaryFailure": "Immutable source ID was reused in synthetic fixture; corrected with distinct source IDs.",
+  "manifestSummaryPrint": "Path-relative summary print failed after complete manifest write; read-only verifier passed.",
+  "sanitizerScope": "CLI target and dependencies only; detect_leaks=0; no sanitized CTest in this unit.",
+  "overlap": "Release Python overlapped sanitizer build; not performance evidence.",
+  "presentationScope": "CLI JSON stdout and retained request; Studio UI/human reading not established.",
+  "reviewedDeclarationLocator": "Original locator still required before import; retained evidence sufficient after commitment.",
+  "candidateFourIndependentReview": {
+    "commit": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+    "verdict": "APPROVE_ENGINEERING_ONE_NEGATIVE_TEST_GAP_P3",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review-01e78a0c.md",
+      "sizeBytes": 16861,
+      "sha256": "b1d84e4aac372e766e095aaf56c366e544691f54fbcfa62e1eb0e047c1a73086"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review.json",
+      "sizeBytes": 555,
+      "sha256": "a9ec362c53a71d796c24aafcb0b25d050962a75759dd4777644543bfa771c197"
+    }
+  },
+  "perTakeDeclarationP3": "CLOSED_FOR_SCHEMA4_BY_EXACT_01E78A0C_REVIEW",
+  "candidateFourNegativeCoverageP3": "OPEN",
+  "siblingWriterIndependentReview": {
+    "commit": "bce11b9a79938c261deac627e4a8a799aa7c3811",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS_SIBLING_WRITER_P3_CLOSED",
+    "finalAnswer": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review-bce11b9a.md",
+      "sizeBytes": 12571,
+      "sha256": "9f2c059cf1570aedaa57e354347433333a21767f213baf1b2dcdc0aedd96f8e3"
+    },
+    "metadata": {
+      "path": "out/evidence/retained-source-evidence-independent-2026-10-15/review.json",
+      "sizeBytes": 553,
+      "sha256": "c1fa44f9b6dbb3ae37a306f1633b69fb1df12e59a034171b6832763f2bde009c"
+    },
+    "bindingScope": "Adjacent tracked index; received after this CLI evidence manifest froze. Frozen manifest unchanged."
+  },
+  "cliIndependentReview": "PENDING_EXACT_POST_COMMIT",
+  "nativeRangeP3": "OPEN",
+  "pythonExistingTestGapP3s": "OPEN_TWO",
+  "wrapperFailureInjection": "NOT_RUN",
+  "osFailureInjection": "NOT_RUN",
+  "fullSuite": "NOT_RUN",
+  "TSan": "NOT_RUN",
+  "leakDetection": "DISABLED",
+  "powerLoss": "NOT_RUN",
+  "realSourceRegistrationOrImport": false,
+  "playbackOrHumanAcceptance": false,
+  "sourcePoolOriginals": 1469,
+  "preparedSpeechDonors": 312,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}
