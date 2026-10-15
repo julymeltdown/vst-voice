@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "unit": "retained-source-evidence-durability",
+  "sourceBase": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+  "sourcePatchSha256": "2f0bc7241cc84bf0740ef4993fb69e8437876430a3c265b5268d7ac9edb91393",
+  "implementationSources": [
+    "libs/seam-voicebank-production/src/repository_import.cpp",
+    "libs/seam-voicebank-production/src/source_assessment.cpp",
+    "libs/seam-voicebank-production/src/source_registration.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/retained-source-evidence-durability-2026-10-15/manifest.json",
+    "sizeBytes": 12745,
+    "sha256": "ddfca1fea1c4f943d2d9c67084c73a3b75251a72eabc9d39bbaf33025b32cfbb"
+  },
+  "retainedArtifacts": 40,
+  "preservedBindings": 13,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 32.921788500010734,
+      "sourceBase": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+      "sourcePatchSha256": "2f0bc7241cc84bf0740ef4993fb69e8437876430a3c265b5268d7ac9edb91393",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_production_import_outcome_tests|seam_voicebank_production_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 28.63329162498121,
+      "sourceBase": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+      "sourcePatchSha256": "2f0bc7241cc84bf0740ef4993fb69e8437876430a3c265b5268d7ac9edb91393",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "python-parity": {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_workspace"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.724923416011734,
+      "sourceBase": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+      "sourcePatchSha256": "2f0bc7241cc84bf0740ef4993fb69e8437876430a3c265b5268d7ac9edb91393",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "nativeCasesInCtestOrder": [
+    20,
+    28,
+    8,
+    30,
+    2,
+    64
+  ],
+  "nativeCaseExecutions": 152,
+  "pythonTestMethods": 8,
+  "pythonSkips": 0,
+  "newTestCases": 0,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/retained-source-evidence-durability-2026-10-15/verification.log",
+      "sizeBytes": 454,
+      "sha256": "558f9aa7b26e8afd10bf021ffea48242b6c09d269a7f38fccf5a6974824777c8"
+    }
+  },
+  "originatingIndependentReview": {
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-durability-independent-2026-10-15/review-78a1b817.md",
+      "sizeBytes": 15546,
+      "sha256": "b6c97c773092f8956787772d15da28f91195044acfcf4d2dcb53f84f0dd0795b"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-durability-independent-2026-10-15/review.json",
+      "sizeBytes": 563,
+      "sha256": "5a9682950c9d342919446c8ef43e76ce31a04900e550376542d611f6488cd3c3"
+    }
+  },
+  "siblingWriterP3": "LOCALLY_VERIFIED_REPAIR_EXACT_INDEPENDENT_REVIEW_PENDING",
+  "candidateFourIndependentReview": "IN_PROGRESS_01E78A0C",
+  "newSanitizers": "NOT_RUN",
+  "fullSuite": "NOT_RUN",
+  "osFsyncFailureInjection": "NOT_RUN",
+  "wrapperFailureInjection": "NOT_RUN",
+  "powerLossTest": "NOT_RUN",
+  "hardwareWriteCacheGuarantee": "NOT_ESTABLISHED",
+  "windows": "UNVERIFIED_TODO_DIRECTORY_SYNC_NOOP",
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

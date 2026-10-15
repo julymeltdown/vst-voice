@@ -56,3 +56,5 @@ Source base: `78a1b817e237fe31837b171fd97c72f0c698d3f0`; exact 11-file source/te
 | Read-only frozen verifier | PASS; 175 artifacts, 12 preserved bindings |
 
 Both final test runs match all six native identities before/after and retain their copies. ASan uses `detect_leaks=0:abort_on_error=1:strict_string_checks=1`; UBSan uses `print_stacktrace=1:halt_on_error=1`. No leak-test claim is made. The manifest is 47,566 bytes, SHA-256 `3d1fe3112b93f506f61d7f3a2e9bf10a17fd9eacfecf544c259705bb92bd4142`. Initial and intermediate executions remain retained with their exact stage patches; their source states and identity limits are described above.
+
+The sibling retained-evidence writer P3 now has a [separate local repair](RETAINED_SOURCE_EVIDENCE_DURABILITY_2026-10-15.md) for assessment, ordinary snapshot and source registration. Its exact independent closure is pending; this candidate unit’s original builds and sanitizer runs remain scoped to its own commit.

@@ -57,21 +57,15 @@ core::Result<std::string> snapshotSourceEvidence(const std::filesystem::path& ro
   if (core::sha256Hex(bytes.value()) != strategy.licenseSha256)
     return core::failure<std::string>(core::ErrorCode::Conflict, "Source evidence differs from its declared execution authorization");
   const auto directory = root / "source-evidence";
-  std::error_code error;
-  auto status = std::filesystem::symlink_status(directory, error);
-  if (error == std::errc::no_such_file_or_directory || (!error && status.type() == std::filesystem::file_type::not_found)) {
-    error.clear();
-    std::filesystem::create_directory(directory, error);
-    if (error && error != std::errc::file_exists)
-      return core::failure<std::string>(core::ErrorCode::IoError, "Cannot create retained source evidence directory", error.message());
-    error.clear();
-    status = std::filesystem::symlink_status(directory, error);
+  // Flush reused directory entries too: an earlier failed import may have
+  // published an identical declaration without completing its parent sync.
+  for (const auto& parent : {root, directory}) {
+    const auto synced = core::durableCreateDirectories(parent);
+    if (!synced) return core::Result<std::string>{synced.error()};
   }
-  if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status))
-    return core::failure<std::string>(core::ErrorCode::Conflict, "Source evidence directory must be a real directory");
+  std::error_code error;
   const auto relative = "source-evidence/" + strategy.licenseSha256 + ".txt";
   const auto path = root / relative;
-  error.clear();
   const auto existing = std::filesystem::symlink_status(path, error);
   if (!error && std::filesystem::exists(existing)) {
     const auto retained = core::readFileBytesLimited(path, 4ULL * 1024ULL * 1024ULL);

@@ -139,14 +139,14 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::recordSourceQ
     return core::failure<Output>(core::ErrorCode::Conflict,"Source assessment evidence is missing, empty, oversized or changed");
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Source assessment cancelled before evidence retention");
   const auto directory = root_ / "source-evidence";
-  std::error_code error;
-  if (!std::filesystem::exists(directory,error)) std::filesystem::create_directory(directory,error);
-  const auto directoryStatus = std::filesystem::symlink_status(directory,error);
-  if (error || !std::filesystem::is_directory(directoryStatus) || std::filesystem::is_symlink(directoryStatus))
-    return core::failure<Output>(core::ErrorCode::Conflict,"Source evidence directory is unsafe");
+  for (const auto& parent : {root_, directory}) {
+    const auto synced = core::durableCreateDirectories(parent);
+    if (!synced) return core::Result<Output>{synced.error()};
+  }
   const auto retained = directory / (assessment.evidenceSha256 + ".quality.txt");
   const auto written = core::durableAtomicWriteNew(retained,bytes.value());
   if (!written) {
+    if (written.error().code != core::ErrorCode::Conflict) return core::Result<Output>{written.error()};
     const auto resolved = voicebank::resolveBankAsset(root_,"source-evidence/"+assessment.evidenceSha256+".quality.txt");
     const auto existing = resolved ? core::readFileBytesLimited(resolved.value(),4ULL*1024ULL*1024ULL) : core::Result<std::vector<std::byte>>{resolved.error()};
     if (!existing || existing.value() != bytes.value()) return core::Result<Output>{written.error()};

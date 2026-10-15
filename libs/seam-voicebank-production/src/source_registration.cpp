@@ -38,14 +38,15 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::registerSourc
     return core::failure<Output>(core::ErrorCode::Conflict,"Source evidence is missing, empty, oversized or differs from the captured digest");
   // Retain the exact declaration now, before any imported material depends on it.
   const auto directory = root_ / "source-evidence";
-  std::error_code error;
-  const auto status = std::filesystem::symlink_status(directory,error);
-  if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status))
-    return core::failure<Output>(core::ErrorCode::Conflict,"Source evidence directory is unsafe");
+  for (const auto& parent : {root_, directory}) {
+    const auto synced = core::durableCreateDirectories(parent);
+    if (!synced) return core::Result<Output>{synced.error()};
+  }
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Source registration cancelled before retention");
   const auto retained = directory / (source.licenseSha256 + ".txt");
   const auto written = core::durableAtomicWriteNew(retained,evidence.value());
   if (!written) {
+    if (written.error().code != core::ErrorCode::Conflict) return core::Result<Output>{written.error()};
     const auto existing = core::readFileBytesLimited(retained,4ULL*1024ULL*1024ULL);
     if (!existing || existing.value() != evidence.value()) return core::Result<Output>{written.error()};
   }
