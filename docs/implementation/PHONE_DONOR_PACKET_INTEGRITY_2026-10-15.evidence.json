@@ -76,7 +76,24 @@
       "sizeBytes": 10994,
       "sha256": "7fe6d25c451aa993b78966734fa9415a893c7b86ce6110e2d456b79642d96255"
     },
-    "evidenceCorrection": "ADDRESSED_PENDING_INDEPENDENT_CLOSURE"
+    "evidenceCorrection": "INDEPENDENTLY_CLOSED_BY_6f6380ce",
+    "closureReview": {
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "title": "Review in English",
+      "turnId": "01a13d6b-3e2b-7900-b55b-9d2e603729cb",
+      "completedAtUnixSeconds": 1792032253,
+      "durationMs": 452612,
+      "finalAnswer": {
+        "path": "out/evidence/source-intake-review-closure-2026-10-15/review-1a0cfceb-6f6380ce.md",
+        "sizeBytes": 9692,
+        "sha256": "e05ede840d856821074cf1ae384dc9e65c51b9f93fedccd5db4901bd5cd9b1ff"
+      },
+      "reviewerExecution": "Read-only own Git/hash/source/log/executable inspection; no builds/tests/native tools/retained scripts",
+      "sourceOrHumanOrBetaApproval": false,
+      "commit": "6f6380ce883a3ee60570133477a2fd007417dc8f",
+      "verdict": "P3_CLOSED",
+      "newFindings": 0
+    }
   },
   "nativeOrCtestExecution": true,
   "newOriginalAudio": 0,
