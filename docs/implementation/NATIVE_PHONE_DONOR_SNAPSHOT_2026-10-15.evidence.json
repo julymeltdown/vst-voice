@@ -79,7 +79,62 @@
   "independentReview": "PENDING",
   "durableImportBridge": "UNFINISHED",
   "fullSuite": "NOT_RUN",
-  "sanitizers": "NOT_RUN_FOR_THIS_READER",
+  "sanitizers": {
+    "status": "ASAN_UBSAN_PASS",
+    "sourceCommit": "48647f55b1afa85bd9311730cb488ffc39fafda3",
+    "manifest": {
+      "path": "out/evidence/native-phone-donor-snapshot-sanitize-2026-10-15/manifest.json",
+      "sizeBytes": 5304,
+      "sha256": "df335a3ce7c92da7d8aeb13383af703076ffca75bc4619e0c355c49dd8db3737"
+    },
+    "retainedArtifacts": 25,
+    "preservedBindings": 5,
+    "fullBuild": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 54.226591583981644,
+      "sourceCommit": "48647f55b1afa85bd9311730cb488ffc39fafda3",
+      "headUnchanged": true,
+      "trackedTreeClean": true
+    },
+    "focusedCtest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^seam_vocal_source_intake_tests$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.1803989589971025,
+      "sourceCommit": "48647f55b1afa85bd9311730cb488ffc39fafda3",
+      "headUnchanged": true,
+      "trackedTreeClean": true,
+      "nativeBeforeEqualsAfter": true,
+      "environmentOverrides": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "leakDetection": "DISABLED_NOT_VERIFIED",
+      "fullSuite": "NOT_RUN"
+    },
+    "pythonMethods": 41,
+    "skips": 0,
+    "verification": {
+      "path": "out/evidence/native-phone-donor-snapshot-sanitize-2026-10-15/verification.json",
+      "sizeBytes": 572,
+      "sha256": "6bcf37ab3ca31c867c3ef01d96e230814812d98e7cb6214e83762632391e05fc"
+    },
+    "leakDetection": "DISABLED_NOT_VERIFIED",
+    "TSan": "NOT_RUN",
+    "fullSuite": "NOT_RUN"
+  },
   "sourceRegistration": false,
   "nativeImport": false,
   "sourceRightsApproved": false,
