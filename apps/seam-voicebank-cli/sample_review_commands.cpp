@@ -301,7 +301,7 @@ int publish(int argc, char** argv) {
       destination,{},cancellation.token());
   if (!candidate) return fail(candidate.error(), &cancellation);
   print({{"result","CandidateCommitted"},{"root",candidate.value().root.generic_string()},
-      {"schemaVersion",production::kResourceCandidateSchemaVersion},{"resourceKind",candidate.value().resourceKind},
+      {"schemaVersion",candidate.value().schemaVersion},{"resourceKind",candidate.value().resourceKind},
       {"status",std::string{production::kReviewedCandidateStatus}},{"qualification",std::string{production::kCandidateQualification}},
       {"manifestSha256",candidate.value().manifestSha256},{"contentSha256",candidate.value().contentSha256},
       {"candidateSha256",candidate.value().candidateSha256},{"sourceGeneration",std::to_string(candidate.value().sourceGeneration)},

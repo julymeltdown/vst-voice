@@ -125,6 +125,11 @@ core::Result<void> checkSampleFamily(const distribution::SignedContainerInfo& co
       manifest.styles != descriptor.styles || character != descriptor.character)
     return core::failure(core::ErrorCode::Conflict,
         "Signed sample manifest differs from the candidate's declared identity or applicability");
+  const auto evidence = production::verifyResourceCandidateSourceEvidence(descriptor,
+      [&](std::string_view path, std::uint64_t limit) {
+        return distribution::readSignedContainerEntry(container, packagePath, path, limit);
+      });
+  if (!evidence) return evidence;
   const auto content = signedSampleContentHash(container, packagePath, options, manifest);
   if (!content) return core::Result<void>{content.error()};
   if (content.value() != descriptor.contentSha256)

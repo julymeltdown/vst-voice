@@ -18,6 +18,7 @@
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <cmath>
@@ -613,12 +614,8 @@ core::Result<PublishedSampleCandidate> publishReviewedCandidate(
   using Output = PublishedSampleCandidate;
   auto checkpoint = cancelled(stop);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-  // Packet-bound takes require the forthcoming candidate notice-closure
-  // format. Never publish them with the current descriptor's incomplete set.
-  if (std::any_of(project.sourceBindings.begin(), project.sourceBindings.end(),
-      [](const auto& binding) { return binding.preparedDonor.has_value(); }))
-    return core::failure<Output>(core::ErrorCode::Unsupported,
-        "Prepared donor publication requires complete packet notice closure");
+  const bool prepared = std::any_of(project.sourceBindings.begin(), project.sourceBindings.end(),
+      [](const auto& binding) { return binding.preparedDonor.has_value(); });
   if (!destination.is_absolute() || destination != destination.lexically_normal() ||
       destination.filename().empty() || destination.filename() == "." || destination.filename() == ".." ||
       destination.filename().string().front() == '.' ||
@@ -829,6 +826,36 @@ core::Result<PublishedSampleCandidate> publishReviewedCandidate(
         static_cast<std::uint64_t>(bytes.value().size())});
     sourceEvidenceHashes.emplace(relative, binding.strategy.licenseSha256);
   }
+  std::map<std::string, const PreparedDonorBinding*> packets;
+  for (const auto& binding : project.sourceBindings)
+    if (binding.preparedDonor) packets.emplace(binding.preparedDonor->packetSha256, &*binding.preparedDonor);
+  for (const auto& [digest, donor] : packets) {
+    const auto relative = "provenance/source-evidence/packets/" + digest + "/";
+    for (const auto& directory : {stage / "provenance/source-evidence/packets", stage / relative}) {
+      checkpoint = core::durableCreateDirectories(directory);
+      if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+    }
+    const std::array names{"donors.json", "intake-plan.json", "license-source.txt", "attribution.txt"};
+    const std::array roles{"source-donor-packet", "source-intake-plan", "source-original-license", "source-attribution"};
+    const std::array hashes{digest, donor->intakePlanSha256, donor->originalLicenseSha256, donor->attributionSha256};
+    constexpr std::uint64_t MiB = 1024ULL * 1024ULL;
+    const std::array<std::uint64_t, 4> limits{16U * MiB, MiB, MiB, 2U * MiB};
+    for (std::size_t i = 0U; i < names.size(); ++i) {
+      checkpoint = cancelled(stop);
+      if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+      const auto remaining = 64U * MiB - sourceEvidenceBytes;
+      const auto bytes = core::readFileBytesLimited(workspace.value() / "source-evidence/packets" / digest / names[i], limits[i]);
+      if (!bytes) return core::Result<Output>{bytes.error()};
+      if (bytes.value().size() > remaining)
+        return core::failure<Output>(core::ErrorCode::Unsupported, "Candidate source evidence exceeds the 64 MiB budget");
+      sourceEvidenceBytes += bytes.value().size();
+      if (core::sha256Hex(bytes.value()) != hashes[i])
+        return core::failure<Output>(core::ErrorCode::Conflict, "Prepared donor notice changed during publication", names[i]);
+      checkpoint = core::durableAtomicWriteNew(stage / (relative + names[i]), bytes.value());
+      if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+      evidenceFiles.push_back({relative + names[i], roles[i], hashes[i], static_cast<std::uint64_t>(bytes.value().size())});
+    }
+  }
   // Retain the exact history (including certified journal-only attempts) that
   // proved original attribution. A hole alone is never an abort certificate.
   // Keeping only the import journal digest would prevent an offline consumer
@@ -954,6 +981,7 @@ core::Result<PublishedSampleCandidate> publishReviewedCandidate(
   std::sort(payloadFiles.begin(), payloadFiles.end(), byPath);
   std::sort(evidenceFiles.begin(), evidenceFiles.end(), byPath);
   ResourceCandidateDescriptor typed;
+  if (prepared) typed.schemaVersion = kPreparedDonorCandidateSchemaVersion;
   typed.kind = ResourceCandidateKind::Sample;
   typed.resourceKind = firstKind;
   typed.status = std::string{kReviewedCandidateStatus};
@@ -1008,7 +1036,7 @@ core::Result<PublishedSampleCandidate> publishReviewedCandidate(
   checkpoint = publishNewDirectory(stage, finalPath, parentIdentity.value(), stageIdentity.value());
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
   Output output{finalPath, core::sha256Hex(manifestJson.value()), contentHash.value(),
-      core::sha256Hex(descriptor), project.lastDurableGeneration, false, true, {}, firstKind};
+      core::sha256Hex(descriptor), project.lastDurableGeneration, false, true, {}, firstKind, typed.schemaVersion};
   checkpoint = options.faultInjector ? options.faultInjector(CandidatePublicationStage::AfterCommitBeforeParentSync) : core::success();
   if (checkpoint) checkpoint = syncDirectory(parent.value());
   if (!checkpoint) {

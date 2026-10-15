@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "prepared_candidate_fixture.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/export_service.hpp"
 #include "seam/authoring/helper_process.hpp"
@@ -34,16 +35,17 @@ struct Fixture final {
   std::filesystem::path root;
   production::VoicebankProductionProject project;
   std::size_t commandSequence{0};
-  explicit Fixture(bool distinguish) {
+  explicit Fixture(bool distinguish, bool prepared = false) {
     if (retained) {
       const std::filesystem::path parent{std::getenv("SEAM_ENGLISH_LIFECYCLE_CAPTURE_DIR")};
       CHECK(parent.is_absolute()); CHECK(std::filesystem::is_directory(parent));
-      root = parent / (distinguish ? "distinguished" : "folded");
+      root = parent / (prepared ? "prepared" : distinguish ? "distinguished" : "folded");
       CHECK(std::filesystem::create_directory(root)); // New output only, never overwrite a capture.
     } else root = test::support::temporaryDirectory("english-candidate-lifecycle");
     auto profile = production::draftInventoryPresetProfile(production::DraftInventoryPreset::EnglishFull, "english-lifecycle");
     profile.vowels = {distinguish ? "ay1" : "ay"}; profile.includeKinds = {"sustain"};
     profile.pitchLayers = {69, 70}; profile.requestedMinMidi = 68; profile.requestedMaxMidi = 72; profile.alternateTakes = 1;
+    if (prepared) profile.supportedStyles = {"neutral", "soft"};
     if (distinguish) profile.stressPolicy = "DISTINGUISH_LEXICAL_STRESS";
     CHECK(production::createDraftProducerWorkspace(root / "workspace", profile, "english-lifecycle", "producer", "2026-10-15T01:00:00Z"));
     production::ProductionProjectRepository repository{root / "workspace/producer"};
@@ -52,26 +54,54 @@ struct Fixture final {
         "producer", "2026-10-15T01:01:00Z"));
     const auto license = root / "fixture-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "SYNTHETIC ENGINEERING FIXTURE ONLY. Not a female singer, performer clearance, owner policy or human acceptance."));
-    production::SourceStrategyAssessment source{.id = "fixture", .kind = production::SourceStrategyKind::ProceduralSynthesis,
+    production::SourceStrategyAssessment source{.id = "fixture", .kind = prepared ? production::SourceStrategyKind::HumanRecording : production::SourceStrategyKind::ProceduralSynthesis,
         .rights = production::Feasibility::Pass, .permissions = {true, true, true, true},
         .licenseLocator = license.string(), .licenseSha256 = core::sha256File(license).value()};
     CHECK(repository.registerSource(project, source, core::sha256Hex(production::encodeProductionProject(project)), "producer", "2026-10-15T01:02:00Z"));
     const auto assignments = project.unitAssignments;
-    for (const auto& row : assignments) {
-      const auto path = root / ("tone-" + std::to_string(row.pitchLayer) + ".wav");
-      const auto hz = 440.0 * std::pow(2.0, (static_cast<double>(row.pitchLayer) - 69.0) / 12.0);
+    std::vector<std::filesystem::path> tones;
+    for (const auto pitch : {69, 70}) {
+      const auto path = root / ("tone-" + std::to_string(pitch) + ".wav");
+      const auto hz = 440.0 * std::pow(2.0, (static_cast<double>(pitch) - 69.0) / 12.0);
       CHECK(voicebank::writeWav(path, {.sampleRate = 16000U, .channels = 1U, .sampleFormat = voicebank::WavSampleFormat::Pcm16},
           test::support::sineWave(16000U, hz, 0.2, 0.25F)));
-      CHECK(repository.importRaw(project, path, {.takeId = row.plannedTakeId, .promptId = row.promptId,
-          .coverageKey = row.coverageKey, .pitchLayer = row.pitchLayer, .style = row.style},
-          {"import", row.plannedTakeId, "producer", "2026-10-15T01:03:00Z"}));
+      tones.push_back(path);
     }
-    const auto inspected = cli({"inspect-source-quality", (root / "workspace/producer").string(), "fixture"});
+    std::pair<std::filesystem::path, std::vector<std::string>> packet;
+    if (prepared) packet = test::preparedTonePacket(root, tones);
+    bool softSourceRegistered = false;
+    for (const auto& row : assignments) {
+      const auto path = root / ("tone-" + std::to_string(row.pitchLayer) + ".wav");
+      const production::RawTakeInput input{.takeId = row.plannedTakeId, .promptId = row.promptId,
+          .coverageKey = row.coverageKey, .pitchLayer = row.pitchLayer, .style = row.style};
+      const production::ProductionJournalEvent event{"import", row.plannedTakeId, "producer", "2026-10-15T01:03:00Z"};
+      if (prepared) {
+        if (row.style == "soft" && !softSourceRegistered) {
+          source.id = "fixture-soft";
+          source.licenseLocator = (root / "fixture-soft-license.txt").string();
+          CHECK(core::durableAtomicWriteTextNew(source.licenseLocator, "SECOND SYNTHETIC DECLARATION; no real grant or approval."));
+          source.licenseSha256 = core::sha256File(source.licenseLocator).value();
+          CHECK(repository.registerSource(project, source, core::sha256Hex(production::encodeProductionProject(project)),
+              "producer", "2026-10-15T01:03:00Z"));
+          softSourceRegistered = true;
+        }
+        // The selected source is explicit at capture time; switching sources
+        // does not rewrite the earlier takes' declaration snapshots.
+        const auto packetSha = core::sha256File(packet.first / "donors.json").value();
+        const auto id = packet.second.at(static_cast<std::size_t>(row.pitchLayer - 69));
+        auto held = production::loadPreparedPhoneDonor(packet.first, packetSha, id); CHECK(held);
+        CHECK(repository.importPreparedDonor(project, std::move(held.value()),
+            {core::sha256Hex(production::encodeProductionProject(project)), packetSha, id, project.selectedSourceStrategyId}, input, event));
+      } else CHECK(repository.importRaw(project, path, input, event));
+    }
     const auto evidence = root / "fixture-quality.txt";
     const std::string decision = "MOCK FIXTURE REVIEW ONLY. No human listening, phonetic quality or singer acceptance.";
     CHECK(core::durableAtomicWriteTextNew(evidence, decision));
-    CHECK(cli({"record-source-quality", (root / "workspace/producer").string(), "fixture", inspected.find("projectSha256")->asString(),
-        "fixture-quality", "reviewer", "2026-10-15T01:04:00Z", "pass", "pass", evidence.string(), core::sha256Hex(decision)}).find("result")->asString() == "SourceQualityAssessmentCommitted");
+    for (const auto& strategy : project.sourceStrategies) {
+      const auto inspected = cli({"inspect-source-quality", (root / "workspace/producer").string(), strategy.id});
+      CHECK(cli({"record-source-quality", (root / "workspace/producer").string(), strategy.id, inspected.find("projectSha256")->asString(),
+        "fixture-quality-" + strategy.id, "reviewer", "2026-10-15T01:04:00Z", "pass", "pass", evidence.string(), core::sha256Hex(decision)}).find("result")->asString() == "SourceQualityAssessmentCommitted");
+    }
   }
   ~Fixture() { if (!retained) { std::error_code error; std::filesystem::remove_all(root, error); } }
   J cli(std::vector<std::string> arguments, std::uint32_t expectedExit = 0U) {
@@ -89,6 +119,113 @@ struct Fixture final {
     const auto parsed = formats::parseJson(run.value().output.standardOutput); CHECK(parsed); return parsed.value();
   }
 };
+}
+
+TEST_CASE("Prepared donor candidates retain both license identities through signed installation and refuse resigned evidence omissions") {
+  // Every actor, grant, phone, pitch and quality/review decision is a synthetic
+  // test fixture. No downloaded voice, factual singer review or Beta approval.
+  Fixture fixture{false, true};
+  const auto producer = fixture.root / "workspace/producer", editable = fixture.root / "editable/manifest.json";
+  fixture.cli({"create-sample-draft", producer.string(), "engineering.prepared.lifecycle", "0.1.0",
+      "Synthetic prepared lifecycle", "en", "neutral", (fixture.root / "editable").string()});
+  const auto captured = fixture.cli({"prepare-sample-review", producer.string(), editable.string(), (fixture.root / "packet.json").string()});
+  const auto reviewed = fixture.cli({"review-sample", producer.string(), (fixture.root / "packet.json").string(),
+      captured.find("fileSha256")->asString(), "reviewer", "2026-10-15T01:05:00Z", "accept"});
+  std::filesystem::remove_all(fixture.root / "prepared-tones");
+  std::filesystem::remove(fixture.root / "fixture-license.txt");
+  std::filesystem::remove(fixture.root / "fixture-soft-license.txt");
+  const auto candidate = fixture.root / "candidate";
+  const auto published = fixture.cli({"publish-sample", producer.string(), editable.string(), reviewed.find("generation")->asString(),
+      reviewed.find("projectSha256")->asString(), candidate.string()});
+  CHECK(published.find("schemaVersion")->asInt64() == 4);
+  const auto verified = production::verifyResourceCandidateDirectory(candidate);
+  if (!verified) throw test::Failure{verified.error().message + " / " + verified.error().context};
+  const auto descriptor = verified.value().descriptor;
+  CHECK(descriptor.schemaVersion == 4); CHECK(descriptor.declaresDependencySet()); CHECK(descriptor.unitBindings.size() == 4U);
+  const auto snapshotBytes = core::readTextFileLimited(candidate / "provenance/production.json", 64U * 1024U * 1024U); CHECK(snapshotBytes);
+  const auto snapshot = production::decodeProductionProject(snapshotBytes.value()); CHECK(snapshot);
+  CHECK(snapshot.value().sourceBindings.size() == 4U); CHECK(snapshot.value().assets.size() == 2U);
+  std::vector<production::ResourceCandidateFile> required;
+  for (const auto& file : descriptor.evidence)
+    if (file.role == "source-license-snapshot" || file.role == "source-donor-packet" || file.role == "source-intake-plan" ||
+        file.role == "source-original-license" || file.role == "source-attribution") required.push_back(file);
+  CHECK(required.size() == 6U); // Two independent declarations + one shared four-file packet.
+  CHECK(std::count_if(required.begin(), required.end(), [](const auto& file) { return file.role == "source-license-snapshot"; }) == 2);
+  const auto& binding = snapshot.value().sourceBindings.front(); CHECK(binding.preparedDonor);
+  CHECK(binding.strategy.licenseSha256 != binding.preparedDonor->originalLicenseSha256);
+  const auto key = distribution::generateSigningKeyPair(); CHECK(key);
+  const distribution::VerifySeambankOptions trusted{.trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto package = fixture.root / "prepared.seambank";
+  const auto packed = candidate_packaging::packageResourceCandidate(candidate, package, key.value(),
+      {.expectedCandidateSha256 = verified.value().candidateSha256}); CHECK(packed);
+  CHECK(candidate_packaging::verifyResourceCandidatePackage(package, trusted));
+  const auto installed = candidate_packaging::installResourceCandidatePackage(package, fixture.root / "installed",
+      {.verification = trusted, .expectedPackageDigest = packed.value().packageDigest}); CHECK(installed);
+  const auto audit = [&] { return candidate_packaging::verifyInstalledResourceCandidate(package, packed.value().packageDigest,
+      verified.value().candidateSha256, installed.value().installDirectory, trusted); };
+  CHECK(audit());
+  for (const auto& file : required) {
+    const auto path = installed.value().installDirectory / file.path;
+    const auto original = core::readFileBytesLimited(path, 16U * 1024U * 1024U); CHECK(original);
+    CHECK(core::sha256Hex(original.value()) == file.sha256);
+    for (const bool remove : {false, true}) {
+      if (remove) CHECK(std::filesystem::remove(path));
+      else CHECK(core::durableAtomicWriteText(path, "changed installed evidence"));
+      CHECK(!audit());
+      CHECK(core::durableAtomicWrite(path, original.value())); CHECK(audit());
+    }
+  }
+  std::size_t variant = 0;
+  for (const auto& file : required) {
+    for (const bool remove : {false, true}) {
+      const auto changedRoot = fixture.root / ("altered-" + std::to_string(variant++));
+      std::filesystem::copy(candidate, changedRoot, std::filesystem::copy_options::recursive);
+      auto changed = descriptor;
+      auto found = std::find_if(changed.evidence.begin(), changed.evidence.end(), [&](const auto& entry) { return entry.path == file.path; });
+      CHECK(found != changed.evidence.end());
+      if (remove) { std::filesystem::remove(changedRoot / file.path); changed.evidence.erase(found); }
+      else {
+        const std::string swap = "substituted evidence with a newly authored listing";
+        CHECK(core::durableAtomicWriteText(changedRoot / file.path, swap));
+        found->bytes = swap.size(); found->sha256 = core::sha256Hex(swap);
+      }
+      const auto encoded = production::encodeResourceCandidateDescriptor(changed); CHECK(encoded);
+      CHECK(core::durableAtomicWriteText(changedRoot / "candidate.json", encoded.value()));
+      CHECK(!production::verifyResourceCandidateDirectory(changedRoot));
+      const auto output = changedRoot.string() + ".seambank";
+      CHECK(distribution::packSeambank(changedRoot, output, key.value()));
+      CHECK(distribution::verifySeambank(output, trusted)); // Authentic signature and exact re-authored file table.
+      CHECK(!candidate_packaging::verifyResourceCandidatePackage(output, trusted));
+      const auto refused = changedRoot.string() + ".typed.seambank";
+      CHECK(!candidate_packaging::packageResourceCandidate(changedRoot, refused, key.value(),
+          {.expectedCandidateSha256 = core::sha256Hex(encoded.value())})); CHECK(!std::filesystem::exists(refused));
+      const auto refusedInstall = changedRoot / "refused-install";
+      CHECK(!candidate_packaging::installResourceCandidatePackage(output, refusedInstall,
+          {.verification = trusted, .expectedPackageDigest = core::sha256File(output).value()}));
+      CHECK(!std::filesystem::exists(refusedInstall));
+    }
+  }
+  const auto downgraded = fixture.root / "downgraded";
+  std::filesystem::copy(candidate, downgraded, std::filesystem::copy_options::recursive);
+  auto legacy = descriptor; legacy.schemaVersion = 3;
+  std::erase_if(legacy.evidence, [&](const auto& file) {
+    if (file.path.starts_with("provenance/source-evidence/packets/")) {
+      std::filesystem::remove(downgraded / file.path); return true;
+    }
+    return false;
+  });
+  const auto legacyJson = production::encodeResourceCandidateDescriptor(legacy); CHECK(legacyJson);
+  CHECK(core::durableAtomicWriteText(downgraded / "candidate.json", legacyJson.value()));
+  CHECK(!production::verifyResourceCandidateDirectory(downgraded));
+  CHECK(distribution::packSeambank(downgraded, fixture.root / "downgraded.seambank", key.value()));
+  CHECK(distribution::verifySeambank(fixture.root / "downgraded.seambank", trusted));
+  CHECK(!candidate_packaging::verifyResourceCandidatePackage(fixture.root / "downgraded.seambank", trusted));
+  auto oversized = descriptor;
+  for (auto& file : oversized.evidence) if (file.role == "source-quality-evidence") file.bytes = 64ULL * 1024ULL * 1024ULL + 1U;
+  const auto budget = production::verifyResourceCandidateSourceEvidence(oversized,
+      [&](std::string_view path, std::uint64_t limit) { return core::readFileBytesLimited(candidate / path, limit); });
+  CHECK(!budget); CHECK(budget.error().message.find("64 MiB budget") != std::string::npos);
+  CHECK(!published.find("releaseEligible")->asBool());
 }
 
 TEST_CASE("English generated candidates preserve declared stress through signed install and fresh dictionary score rendering") {

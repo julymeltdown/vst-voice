@@ -1,5 +1,6 @@
 #pragma once
 #include "seam/core/result.hpp"
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -30,6 +31,11 @@ struct PreparedPhoneDonorPacketFacts final {
 };
 [[nodiscard]] core::Result<PreparedPhoneDonorPacketFacts> loadPreparedPhoneDonorPacketFacts(
     const std::filesystem::path& directory, std::string expectedPacketSha256,
+    std::stop_token stopToken = {});
+// The same all-row fact contract over exactly four owned canonical metadata
+// files, with no filesystem or WAV access. Intended for archive verification.
+[[nodiscard]] core::Result<PreparedPhoneDonorPacketFacts> validatePreparedPhoneDonorPacketFacts(
+    std::array<SourceIntakeFileSnapshot, 4> files, std::string expectedPacketSha256,
     std::stop_token stopToken = {});
 // Owns the selected audio too, with facts measured from those exact WAV bytes.
 // Future import must consume/retain these bytes, not reopen preparation paths.

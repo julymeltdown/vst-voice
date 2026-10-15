@@ -139,6 +139,7 @@ struct PublishedSampleCandidate final {
   bool durabilityConfirmed{true};
   std::string diagnostic;
   std::string resourceKind;
+  std::int64_t schemaVersion{3};
 };
 
 // Pure review material, not an approval operation. A reviewer must inspect it,

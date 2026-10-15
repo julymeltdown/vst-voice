@@ -7,8 +7,10 @@
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/prepared_phone_donor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <initializer_list>
 #include <map>
@@ -74,7 +76,8 @@ const std::set<std::string, std::less<>>& payloadRoles() {
 const std::set<std::string, std::less<>>& evidenceRoles() {
   static const std::set<std::string, std::less<>> roles{
       "source-license", "source-license-snapshot", "source-quality-evidence", "production-snapshot",
-      "history-generation", "history-journal", "declaration"};
+      "history-generation", "history-journal", "declaration", "source-donor-packet",
+      "source-intake-plan", "source-original-license", "source-attribution"};
   return roles;
 }
 
@@ -197,7 +200,10 @@ core::Result<void> validateFileLists(const ResourceCandidateDescriptor& descript
     const auto& roles = list == &descriptor.payload ? payloadRoles() : evidenceRoles();
     for (std::size_t index = 0U; index < list->size(); ++index) {
       const auto& file = (*list)[index];
-      if (!isPackageableCandidatePath(file.path) || file.path == kResourceCandidateDescriptorPath ||
+      const bool packetRole = file.role == "source-donor-packet" || file.role == "source-intake-plan" ||
+          file.role == "source-original-license" || file.role == "source-attribution";
+      if ((packetRole && descriptor.schemaVersion != kPreparedDonorCandidateSchemaVersion) ||
+          !isPackageableCandidatePath(file.path) || file.path == kResourceCandidateDescriptorPath ||
           !roles.contains(file.role) || !isDigest(file.sha256) || file.bytes > kMaximumListedFileBytes)
         return malformed("Candidate file entry is invalid for its list", file.path);
       std::string lowerPath = file.path;
@@ -326,7 +332,7 @@ J encodeDescriptor(const ResourceCandidateDescriptor& descriptor) {
         {"projectSha256", descriptor.source->projectSha256}, {"inventorySha256", descriptor.source->inventorySha256},
         {"licenseSha256", descriptor.source->licenseSha256}};
   return J::Object{{"format", std::string{kResourceCandidateFormat}},
-      {"schemaVersion", kResourceCandidateSchemaVersion}, {"resourceKind", descriptor.resourceKind},
+      {"schemaVersion", descriptor.schemaVersion}, {"resourceKind", descriptor.resourceKind},
       {"status", descriptor.status}, {"releaseEligible", false},
       {"evidenceScope", std::string{kCandidateEvidenceScope}}, {"qualification", std::string{kCandidateQualification}},
       {"resource", J::Object{{"id", descriptor.resourceId}, {"version", descriptor.resourceVersion},
@@ -390,7 +396,7 @@ core::Result<ResourceCandidateDescriptor> decodeTyped(const J& root) {
   if (!exactKeys(root, {"format", "schemaVersion", "resourceKind", "status", "releaseEligible", "evidenceScope",
           "qualification", "resource", "languages", "styles", "character", "rootManifest", "manifestSha256",
           "contentSha256", "source", "payload", "evidence", "externalDependencies", "originHistory", "unitBindings"}))
-    return core::failure<Output>(core::ErrorCode::ParseError, "Schema-3 candidate descriptor has unexpected or missing fields");
+    return core::failure<Output>(core::ErrorCode::ParseError, "Typed candidate descriptor has unexpected or missing fields");
   const auto* qualification = text(root, "qualification");
   const auto* kindName = text(root, "resourceKind");
   const auto kind = kindName ? kindFromString(*kindName) : std::nullopt;
@@ -399,8 +405,9 @@ core::Result<ResourceCandidateDescriptor> decodeTyped(const J& root) {
       !exactKeys(*resource, {"id", "version", "displayName"}) || !text(*resource, "id") ||
       !text(*resource, "version") || !text(*resource, "displayName") ||
       !text(root, "rootManifest") || !text(root, "manifestSha256") || !text(root, "contentSha256"))
-    return core::failure<Output>(core::ErrorCode::ParseError, "Schema-3 candidate identity fields are malformed");
+    return core::failure<Output>(core::ErrorCode::ParseError, "Typed candidate identity fields are malformed");
   ResourceCandidateDescriptor descriptor;
+  descriptor.schemaVersion = root.find("schemaVersion")->asInt64();
   descriptor.kind = *kind;
   descriptor.resourceKind = *kindName;
   descriptor.status = *text(root, "status");
@@ -485,6 +492,11 @@ core::Result<void> verifySampleFiles(const std::filesystem::path& root, const Re
       snapshot.value().inventorySha256 != source.inventorySha256 ||
       (descriptor.declaresDependencySet() && snapshot.value().projectId != source.projectId))
     return mismatch("Candidate producer snapshot does not reopen as its declared source generation");
+  if (descriptor.declaresDependencySet()) {
+    const auto checked = verifyResourceCandidateSourceEvidence(descriptor,
+        [&](std::string_view path, std::uint64_t limit) { return core::readFileBytesLimited(root / path, limit); }, stop);
+    if (!checked) return checked;
+  }
   const auto license = core::sha256File(root / "source-license.txt", 4ULL * 1024ULL * 1024ULL);
   if (!license || license.value() != source.licenseSha256) return mismatch("Candidate source license differs from its identity");
   if (descriptor.unitBindings.size() != manifest.value().units.size())
@@ -611,8 +623,10 @@ core::Result<void> validateResourceCandidateDescriptor(const ResourceCandidateDe
     auto checked = validateUnitBindings(descriptor);
     return checked ? validateOriginHistory(descriptor) : checked;
   }
-  if (descriptor.schemaVersion != kResourceCandidateSchemaVersion)
+  if (!descriptor.declaresDependencySet())
     return malformed("Unsupported resource candidate schema version");
+  if (descriptor.schemaVersion == kPreparedDonorCandidateSchemaVersion && descriptor.kind != ResourceCandidateKind::Sample)
+    return malformed("Schema-4 candidates require prepared sample provenance");
   const auto family = kindFromString(descriptor.resourceKind);
   if (!family || *family != descriptor.kind) return malformed("Candidate resource kind differs from its payload family");
   if (!safeComponent(descriptor.resourceId) || !safeComponent(descriptor.resourceVersion) ||
@@ -642,9 +656,9 @@ core::Result<void> validateResourceCandidateDescriptor(const ResourceCandidateDe
 }
 
 core::Result<std::string> encodeResourceCandidateDescriptor(const ResourceCandidateDescriptor& descriptor) {
-  if (descriptor.schemaVersion != kResourceCandidateSchemaVersion)
+  if (!descriptor.declaresDependencySet())
     return core::failure<std::string>(core::ErrorCode::Unsupported,
-        "Only schema-3 candidates are written; legacy descriptors are never re-encoded");
+        "Only typed schema-3/4 candidates are written; legacy descriptors are never re-encoded");
   const auto valid = validateResourceCandidateDescriptor(descriptor);
   if (!valid) return core::Result<std::string>{valid.error()};
   auto encoded = formats::stringifyJson(encodeDescriptor(descriptor), true) + "\n";
@@ -673,12 +687,116 @@ core::Result<ResourceCandidateDescriptor> decodeResourceCandidateDescriptor(std:
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate descriptor claims release eligibility or evidence scope");
   auto decoded = (schema->asInt64() == kLegacySampleCandidateSchemaVersion ||
       schema->asInt64() == kLegacySourceCandidateSchemaVersion) ? decodeLegacy(root)
-      : schema->asInt64() == kResourceCandidateSchemaVersion ? decodeTyped(root)
+      : (schema->asInt64() == kResourceCandidateSchemaVersion || schema->asInt64() == kPreparedDonorCandidateSchemaVersion) ? decodeTyped(root)
       : core::failure<Output>(core::ErrorCode::Unsupported, "Unsupported resource candidate schema version");
   if (!decoded) return decoded;
   const auto valid = validateResourceCandidateDescriptor(decoded.value());
   if (!valid) return core::Result<Output>{valid.error()};
   return decoded;
+}
+
+core::Result<void> verifyResourceCandidateSourceEvidence(
+    const ResourceCandidateDescriptor& descriptor, const ResourceCandidateEvidenceReader& reader, std::stop_token stop) {
+  if (descriptor.kind != ResourceCandidateKind::Sample || !descriptor.declaresDependencySet()) return core::success();
+  auto checked = validateResourceCandidateDescriptor(descriptor);
+  if (!checked) return checked;
+  if (stop.stop_requested()) return mismatch("Candidate source evidence verification cancelled");
+  const auto raw = reader("provenance/production.json", kMaximumSnapshotBytes);
+  if (!raw) return core::Result<void>{raw.error()};
+  if (raw.value().size() > kMaximumSnapshotBytes) return mismatch("Candidate producer snapshot exceeds its byte limit");
+  const auto& source = *descriptor.source;
+  const std::string_view json{reinterpret_cast<const char*>(raw.value().data()), raw.value().size()};
+  const auto project = decodeProductionProject(json);
+  if (core::sha256Hex(raw.value()) != source.projectSha256 || !project ||
+      project.value().projectId != source.projectId || project.value().lastDurableGeneration != source.generation ||
+      project.value().inventorySha256 != source.inventorySha256)
+    return mismatch("Candidate source evidence has a different producer snapshot");
+  const auto& captured = project.value();
+  const bool prepared = std::any_of(captured.sourceBindings.begin(), captured.sourceBindings.end(),
+      [](const auto& binding) { return binding.preparedDonor.has_value(); });
+  if (prepared != (descriptor.schemaVersion == kPreparedDonorCandidateSchemaVersion))
+    return mismatch("Prepared donor provenance requires candidate schema 4, and schema 4 requires a prepared binding");
+  for (const auto& unit : descriptor.unitBindings) {
+    const auto take = std::find_if(captured.takes.begin(), captured.takes.end(),
+        [&](const auto& value) { return value.takeId == *text(unit, "takeId"); });
+    if (take == captured.takes.end()) return mismatch("Candidate source take is absent");
+    const auto binding = std::find_if(captured.sourceBindings.begin(), captured.sourceBindings.end(),
+        [&](const auto& value) { return value.id == take->sourceBindingId; });
+    if (binding == captured.sourceBindings.end() || resource_kind::sampleKind(binding->strategy.kind) != descriptor.resourceKind ||
+        *text(unit, "sourceKind") != descriptor.resourceKind)
+      return mismatch("Candidate source kind differs from its captured provenance");
+    if (&unit == &descriptor.unitBindings.front() && binding->strategy.licenseSha256 != source.licenseSha256)
+      return mismatch("Candidate primary declaration differs from its first take");
+  }
+  if (!prepared) return core::success();  // Preserve schema-3 historical dependency semantics.
+  constexpr std::uint64_t MiB = 1024ULL * 1024ULL;
+  std::uint64_t budget = 64U * MiB;
+  std::set<std::string, std::less<>> expected;
+  const auto readListed = [&](const std::string& path, std::string_view role, const std::string& digest,
+                             std::uint64_t limit) -> core::Result<std::vector<std::byte>> {
+    const auto* file = findListed(descriptor.evidence, path);
+    if (!file || file->role != role || file->sha256 != digest || file->bytes > limit)
+      return core::failure<std::vector<std::byte>>(core::ErrorCode::Conflict, "Candidate required source evidence is absent or differs", path);
+    if (!expected.insert(path).second)
+      return core::failure<std::vector<std::byte>>(core::ErrorCode::Conflict, "Candidate source evidence was read twice", path);
+    if (file->bytes > budget)
+      return core::failure<std::vector<std::byte>>(core::ErrorCode::Unsupported, "Candidate source evidence exceeds the 64 MiB budget");
+    budget -= file->bytes;
+    if (stop.stop_requested())
+      return core::failure<std::vector<std::byte>>(core::ErrorCode::Conflict, "Candidate source evidence verification cancelled");
+    auto bytes = reader(path, limit);
+    if (!bytes) return bytes;
+    if (bytes.value().size() != file->bytes || core::sha256Hex(bytes.value()) != digest)
+      return core::failure<std::vector<std::byte>>(core::ErrorCode::Conflict, "Candidate required source evidence bytes differ", path);
+    return bytes;
+  };
+  std::map<std::string, std::vector<const TakeSourceBinding*>, std::less<>> packets;
+  for (const auto& binding : captured.sourceBindings) {
+    const auto path = "provenance/" + binding.licenseSnapshotPath;
+    if (!expected.contains(path)) {
+      const auto declaration = readListed(path, "source-license-snapshot", binding.strategy.licenseSha256, 4U * MiB);
+      if (!declaration) return core::Result<void>{declaration.error()};
+    } else {
+      const auto* file = findListed(descriptor.evidence, path);
+      if (!file || file->role != "source-license-snapshot" || file->sha256 != binding.strategy.licenseSha256)
+        return mismatch("Candidate shared declaration identity differs", path);
+    }
+    if (binding.preparedDonor) packets[binding.preparedDonor->packetSha256].push_back(&binding);
+  }
+  for (const auto& [digest, members] : packets) {
+    const auto& donor = *members.front()->preparedDonor;
+    const std::string prefix = "provenance/source-evidence/packets/" + digest + "/";
+    const std::array names{"donors.json", "intake-plan.json", "license-source.txt", "attribution.txt"};
+    const std::array roles{"source-donor-packet", "source-intake-plan", "source-original-license", "source-attribution"};
+    const std::array hashes{digest, donor.intakePlanSha256, donor.originalLicenseSha256, donor.attributionSha256};
+    const std::array<std::uint64_t, 4> limits{16U * MiB, MiB, MiB, 2U * MiB};
+    std::array<SourceIntakeFileSnapshot, 4> files;
+    for (std::size_t i = 0U; i < files.size(); ++i) {
+      auto bytes = readListed(prefix + names[i], roles[i], hashes[i], limits[i]);
+      if (!bytes) return core::Result<void>{bytes.error()};
+      files[i] = {names[i], hashes[i], std::move(bytes.value())};
+    }
+    const auto facts = validatePreparedPhoneDonorPacketFacts(std::move(files), digest, stop);
+    if (!facts) return core::Result<void>{facts.error()};
+    for (const auto* binding : members) {
+      const auto& value = *binding->preparedDonor;
+      const auto audio = facts.value().derivedAudioSha256ByDonor.find(value.donorId);
+      if (audio == facts.value().derivedAudioSha256ByDonor.end() || audio->second != binding->rawAssetSha256 ||
+          value.intakePlanSha256 != facts.value().intakePlanSha256 ||
+          value.originalLicenseSha256 != facts.value().originalLicenseSha256 || value.attributionSha256 != facts.value().attributionSha256)
+        return mismatch("Candidate prepared donor differs from its retained packet", binding->takeId);
+    }
+  }
+  for (const auto& file : descriptor.evidence) {
+    if (file.role == "source-quality-evidence") {
+      if (file.bytes > budget) return mismatch("Candidate source evidence exceeds the 64 MiB budget");
+      budget -= file.bytes;
+    }
+    const bool closureRole = file.role == "source-license-snapshot" || file.role == "source-donor-packet" ||
+        file.role == "source-intake-plan" || file.role == "source-original-license" || file.role == "source-attribution";
+    if (closureRole && !expected.contains(file.path)) return mismatch("Candidate source evidence union contains an unreferenced entry", file.path);
+  }
+  return core::success();
 }
 
 core::Result<VerifiedResourceCandidate> verifyResourceCandidateDirectory(const std::filesystem::path& root,

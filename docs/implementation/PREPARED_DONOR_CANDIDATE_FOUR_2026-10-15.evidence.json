@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-candidate-four",
+  "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+  "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+  "implementationSources": [
+    "libs/seam-voicebank-production/include/seam/voicebank_production/candidate_publication.hpp",
+    "apps/seam-voicebank-cli/sample_review_commands.cpp",
+    "libs/seam-candidate-packaging/src/candidate_package.cpp",
+    "libs/seam-voicebank-production/include/seam/voicebank_production/prepared_phone_donor.hpp",
+    "libs/seam-voicebank-production/include/seam/voicebank_production/resource_candidate.hpp",
+    "libs/seam-voicebank-production/src/prepared_phone_donor.cpp",
+    "libs/seam-voicebank-production/src/repository_candidate.cpp",
+    "libs/seam-voicebank-production/src/resource_candidate.cpp",
+    "tests/test_english_candidate_lifecycle.cpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp",
+    "tests/prepared_candidate_fixture.hpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-candidate-four-2026-10-15/manifest.json",
+    "sizeBytes": 47566,
+    "sha256": "3d1fe3112b93f506f61d7f3a2e9bf10a17fd9eacfecf544c259705bb92bd4142"
+  },
+  "retainedArtifacts": 175,
+  "preservedBindings": 12,
+  "executions": {
+    "release-build-1": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 89.49567741598003,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "231beba040172457034c550ae51aecc91e519bd60ac5a5c9e7c99ba84cacd044",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 32.85370183302439,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "231beba040172457034c550ae51aecc91e519bd60ac5a5c9e7c99ba84cacd044",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "release-build-2": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 51.17550695798127,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "610ee2de3b945de354fdfe1f1eb01f7887605987d6bdaea79d4c5fbabff39d97",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-build-3": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.192509334010538,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "3477b5051b4ad6c412fb9601416629c3f8c9223f0127c9f65ba12ce40a9106ef",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-build-4": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 55.369850250019226,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest-2": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 28.67032816700521,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "release-ctest-3": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 52.33394941702136,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "sanitize-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 260.4564639580203,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    "sanitize-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 287.5624407909927,
+      "sourceBase": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+      "sourcePatchSha256": "0b6985aadc5e0469c40e6b42db607cb5ced62ba53d216501f4c3bbc08f772db5",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "finalNativeCaseExecutionsPerConfiguration": 144,
+  "newUniquePreparedLifecycleCases": 1,
+  "reviewedDeclarationsInPositiveFixture": 2,
+  "sharedCanonicalPacketFiles": 4,
+  "syntheticTakes": 4,
+  "distinctSyntheticRawAssets": 2,
+  "installedEvidenceDamageForms": 12,
+  "authenticallyResignedEvidenceDamageForms": 12,
+  "authenticallyResignedDowngradeForms": 1,
+  "sourceEvidenceBudgetMiB": 64,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-candidate-four-2026-10-15/verification.log",
+      "sizeBytes": 418,
+      "sha256": "0308248e22b5ce22afa488c37aab6eef3629892888240454a1d8f12b61196ef2"
+    }
+  },
+  "pythonUnitReview": {
+    "commit": "c9ef0d21",
+    "verdict": "APPROVE_ENGINEERING_TWO_P3_TEST_GAPS",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-python-independent-2026-10-15/review-c9ef0d21.md",
+      "sizeBytes": 13259,
+      "sha256": "59764628be2b206d7f51600d185a562120b34728a455fc6ca70e1757ee2ab397"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-python-independent-2026-10-15/review.json",
+      "sizeBytes": 531,
+      "sha256": "4a55b7194e954075673f55b7b76b486bec86564cf29025e887088b4d309da7dd"
+    }
+  },
+  "candidateFourIndependentReview": "PENDING_EXACT_POST_COMMIT_REVIEW",
+  "perTakeDeclarationP3": "LOCALLY_VERIFIED_FOR_SCHEMA4_INDEPENDENT_CLOSURE_PENDING",
+  "directoryDurabilityIndependentReview": {
+    "commit": "78a1b817e237fe31837b171fd97c72f0c698d3f0",
+    "verdict": "APPROVE_ENGINEERING_ORIGINATING_P3_CLOSED",
+    "newFinding": "PREEXISTING_P3_QUALITY_AND_DECLARATION_WRITERS",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-durability-independent-2026-10-15/review-78a1b817.md",
+      "sizeBytes": 15546,
+      "sha256": "b6c97c773092f8956787772d15da28f91195044acfcf4d2dcb53f84f0dd0795b"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-durability-independent-2026-10-15/review.json",
+      "sizeBytes": 563,
+      "sha256": "5a9682950c9d342919446c8ef43e76ce31a04900e550376542d611f6488cd3c3"
+    },
+    "bindingScope": "Adjacent tracked index; received after the candidate evidence manifest was frozen. Frozen manifest unchanged."
+  },
+  "nativeRangeTestP3": "OPEN",
+  "pythonTestGapP3s": "OPEN_TWO",
+  "fullSuite": "NOT_RUN",
+  "TSan": "NOT_RUN",
+  "leakDetection": "DISABLED",
+  "sourcePoolRehashedInThisUnit": false,
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "windows": "UNVERIFIED_TODO",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <stop_token>
@@ -26,6 +27,9 @@ inline constexpr std::string_view kResourceCandidateDescriptorPath = "candidate.
 inline constexpr std::int64_t kLegacySampleCandidateSchemaVersion = 1;
 inline constexpr std::int64_t kLegacySourceCandidateSchemaVersion = 2;
 inline constexpr std::int64_t kResourceCandidateSchemaVersion = 3;
+// Schema 4 retains schema-3 dependency semantics and additionally closes every
+// captured declaration and prepared packet's four canonical metadata files.
+inline constexpr std::int64_t kPreparedDonorCandidateSchemaVersion = 4;
 
 // A candidate is engineering material awaiting later gates. None of these values can be changed
 // by a producer; a descriptor carrying anything else is refused on read.
@@ -104,19 +108,28 @@ struct ResourceCandidateDescriptor final {
   formats::JsonValue::Array unitBindings;
 
   [[nodiscard]] bool declaresDependencySet() const noexcept {
-    return schemaVersion == kResourceCandidateSchemaVersion;
+    return schemaVersion == kResourceCandidateSchemaVersion || schemaVersion == kPreparedDonorCandidateSchemaVersion;
   }
 };
 
-// Encodes schema 3 only. A legacy descriptor is refused so legacy material is never upgraded.
+// Encodes typed schemas 3/4. Legacy descriptors are never implicitly upgraded.
 [[nodiscard]] core::Result<std::string> encodeResourceCandidateDescriptor(
     const ResourceCandidateDescriptor& descriptor);
-// Decodes legacy schemas 1/2 and typed schema 3 strictly: unknown keys, relaxed honesty fields or malformed lists refuse.
+// Decodes legacy schemas 1/2 and typed schemas 3/4 strictly: unknown keys, relaxed honesty fields or malformed lists refuse.
 [[nodiscard]] core::Result<ResourceCandidateDescriptor> decodeResourceCandidateDescriptor(
     std::string_view json);
 // Structural and kind rules that need no files. Decoding already applies them.
 [[nodiscard]] core::Result<void> validateResourceCandidateDescriptor(
     const ResourceCandidateDescriptor& descriptor);
+// Shared directory/archive provenance check. Reader supplies bounded owned
+// bytes; no paths are reopened inside the check. Schema 3 cannot carry prepared
+// bindings. Schema 4 requires the exact declaration/packet union and all-row
+// declared facts, including signed packages whose listing was re-authored.
+using ResourceCandidateEvidenceReader = std::function<core::Result<std::vector<std::byte>>(
+    std::string_view path, std::uint64_t maximumBytes)>;
+[[nodiscard]] core::Result<void> verifyResourceCandidateSourceEvidence(
+    const ResourceCandidateDescriptor& descriptor, const ResourceCandidateEvidenceReader& reader,
+    std::stop_token stop = {});
 // Canonical content identity for a model payload listing (path, digest and size of each file).
 [[nodiscard]] std::string modelCandidateContentSha256(const std::vector<ResourceCandidateFile>& payload);
 // The path rule packages enforce, applied before any file is listed.

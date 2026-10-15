@@ -283,6 +283,32 @@ core::Result<PreparedPhoneDonorPacketFacts> loadPreparedPhoneDonorPacketFacts(
   }
 }
 
+core::Result<PreparedPhoneDonorPacketFacts> validatePreparedPhoneDonorPacketFacts(
+    std::array<SourceIntakeFileSnapshot, 4> files, std::string expectedPacketSha256,
+    std::stop_token stopToken) {
+  try {
+    std::set<std::string> names;
+    for (const auto& file : files)
+      require(names.insert(file.relativePath).second, "Duplicate held prepared donor metadata file");
+    PreparedPhoneDonorPacketFacts result;
+    const auto evidence = evidenceFrom([&](std::string name, std::string expected, std::uint64_t limit, std::stop_token stop) {
+      checkpoint(stop);
+      const auto found = std::find_if(files.begin(), files.end(), [&](const auto& file) { return file.relativePath == name; });
+      require(found != files.end() && digest(expected), "Held prepared donor metadata file is absent or invalid");
+      require(found->bytes.size() <= limit && found->sha256 == expected && core::sha256Hex(found->bytes) == expected,
+          "Held prepared donor metadata SHA-256 mismatch: " + name);
+      return std::move(*found);
+    }, std::move(expectedPacketSha256), {}, stopToken, &result.derivedAudioSha256ByDonor);
+    result.packetSha256 = evidence.packet.sha256;
+    result.intakePlanSha256 = evidence.plan.sha256;
+    result.originalLicenseSha256 = evidence.license.sha256;
+    result.attributionSha256 = evidence.attribution.sha256;
+    return result;
+  } catch (const Refusal& refusal) {
+    return core::Result<PreparedPhoneDonorPacketFacts>{refusal.error};
+  }
+}
+
 core::Result<PreparedPhoneDonorEvidence> loadPreparedPhoneDonorEvidence(
     const std::filesystem::path& directory, std::string expectedPacketSha256,
     std::string donorId, std::stop_token stopToken) {

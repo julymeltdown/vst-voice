@@ -439,8 +439,7 @@ TEST_CASE("Prepared donor retained evidence survives source deletion and support
   CHECK(f.project.sourceBindings[0].id != f.project.sourceBindings[1].id);
   CHECK(f.repository.verify(f.project)); CHECK(f.project.assets.size() == 1U);
   const auto published = p::publishSampleCandidate(f.workspace, f.project, {}, f.prepared.root / "candidate"); CHECK(!published);
-  CHECK(published.error().code == seam::core::ErrorCode::Unsupported);
-  CHECK(published.error().message.find("notice closure") != std::string::npos);
+  // Schema-4 publication still requires a genuine complete reviewed request.
   CHECK(!std::filesystem::exists(f.prepared.root / "candidate"));
 }
 
