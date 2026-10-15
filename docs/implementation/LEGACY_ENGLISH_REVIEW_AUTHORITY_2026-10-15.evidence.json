@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "unit": "legacy-english-review-authority",
+  "sourceBase": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+  "manifest": {
+    "path": "out/evidence/legacy-english-review-authority-2026-10-15/manifest.json",
+    "sizeBytes": 7221,
+    "sha256": "f8a89470315d798a740cd36ec531d13c6576ba5098adcd7a06da69706dc502d8"
+  },
+  "retainedArtifacts": 33,
+  "preservedBindings": 7,
+  "runs": {
+    "reproduction": {
+      "build": {
+        "argv": [
+          "cmake",
+          "--build",
+          "build/release",
+          "-j6"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 25.2714050829818,
+        "before": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "e84c655b9cce0585eab58169009261d6f831c41236c939424d21a105ff946b0d"
+        },
+        "after": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "e84c655b9cce0585eab58169009261d6f831c41236c939424d21a105ff946b0d"
+        }
+      },
+      "ctest": {
+        "argv": [
+          "ctest",
+          "--test-dir",
+          "build/release",
+          "--output-on-failure",
+          "--parallel",
+          "1",
+          "-R",
+          "^seam_manifest_draft_tests$"
+        ],
+        "exitCode": 8,
+        "elapsedSeconds": 0.9902297079970594,
+        "before": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "e84c655b9cce0585eab58169009261d6f831c41236c939424d21a105ff946b0d"
+        },
+        "after": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "e84c655b9cce0585eab58169009261d6f831c41236c939424d21a105ff946b0d"
+        }
+      }
+    },
+    "final": {
+      "build": {
+        "argv": [
+          "cmake",
+          "--build",
+          "build/release",
+          "-j6"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 4.774738666979829,
+        "before": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "70687b5c6eafbc56ec4c28349320aae7796f29bc43a570dc7e54a1c4eec5ad2c"
+        },
+        "after": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "70687b5c6eafbc56ec4c28349320aae7796f29bc43a570dc7e54a1c4eec5ad2c"
+        }
+      },
+      "ctest": {
+        "argv": [
+          "ctest",
+          "--test-dir",
+          "build/release",
+          "--output-on-failure",
+          "--parallel",
+          "1",
+          "-R",
+          "^(seam_manifest_draft_tests|seam_sample_review_cli_tests|seam_english_candidate_lifecycle_tests|seam_studio_sample_review_tests|seam_studio_manifest_draft_tests)$"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 20.314863209001487,
+        "before": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "70687b5c6eafbc56ec4c28349320aae7796f29bc43a570dc7e54a1c4eec5ad2c"
+        },
+        "after": {
+          "head": "9dfde04963abae3c4be5552247de64925dbe2ef0",
+          "diffSha256": "70687b5c6eafbc56ec4c28349320aae7796f29bc43a570dc7e54a1c4eec5ad2c"
+        }
+      }
+    }
+  },
+  "reproducedNativeFailures": 1,
+  "baselineStoppedAtFirstUnauthorizedSchema2FoldCapture": true,
+  "finalSchemas": [
+    2,
+    3
+  ],
+  "finalPolicies": [
+    "FOLD_LEXICAL_STRESS",
+    "DISTINGUISH_LEXICAL_STRESS"
+  ],
+  "finalNativeCases": 102,
+  "finalFocusedCTestLanes": 5,
+  "selectedNativeCopies": 6,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/legacy-english-review-authority-2026-10-15/verification.log",
+      "sizeBytes": 377,
+      "sha256": "645aeedafa8e4ee7f370eef08e2258b615093da22940b29247596985d4ac7701"
+    }
+  },
+  "independentClosure": "PENDING_FOR_THIS_UNIT",
+  "full239AfterThisUnit": "NOT_RUN; PRIOR_FULL_PASS_AT_50F5B1D9",
+  "sourceOrHumanApproval": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

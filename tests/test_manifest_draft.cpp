@@ -23,7 +23,8 @@ struct Fixture final {
   production::ProductionProjectRepository repository{root / "producer"};
   production::VoicebankProductionProject project;
   production::SampleManifestDraftIdentity identity{"test.original", "0.1.0", "Synthetic Original", domain::Language::Japanese, "original"};
-  explicit Fixture(bool qualified = false, bool styleOwned = false) {
+  explicit Fixture(bool qualified = false, bool styleOwned = false, std::string phone = "a",
+      std::int64_t legacySchema = production::kProductionProjectSchemaVersion) {
     const auto license = root / "synthetic-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "SYNTHETIC TEST ONLY. Not a singer or release qualification."));
     const auto hash = core::sha256File(license); CHECK(hash);
@@ -33,15 +34,16 @@ struct Fixture final {
         .rights = production::Feasibility::Pass, .coverage = qualified ? production::Feasibility::Pass : production::Feasibility::NotAssessed,
         .listening = qualified ? production::Feasibility::Pass : production::Feasibility::NotAssessed,
         .permissions = {true, true, qualified, qualified}, .licenseLocator = license.string(), .licenseSha256 = hash.value(), .evidenceState = "SYNTHETIC_TEST_ONLY"}};
+    project.schemaVersion = legacySchema;
     project.operators = {{"producer", "PRODUCER"}, {"reviewer", "REVIEWER"}};
     if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
     if (styleOwned) project.declaredPitchLayers = {69};
-    project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "a", .plannedTakeId = "take-a"}};
+    project.unitAssignments = {{.coverageKey = "sustain:" + phone, .pitchLayer = 69, .promptId = "a", .plannedTakeId = "take-a"}};
     if (styleOwned) project.unitAssignments.front().style = "original";
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId, .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));
     CHECK(voicebank::writeWav(root / "raw.wav", {.sampleRate = 48000U, .channels = 1U, .sampleFormat = voicebank::WavSampleFormat::Pcm24},
         test::support::sineWave(48000U, 440.0, 0.2, 0.25F)));
-    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = styleOwned ? "original" : ""},
+    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:" + phone, .pitchLayer = 69, .style = styleOwned ? "original" : ""},
         {.action = "import", .subjectId = "take-a", .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:01:00Z"}));
   }
   core::Result<production::CreatedSampleManifestDraft> create(std::string name = "editable",
@@ -82,6 +84,35 @@ TEST_CASE("English generated producer drafts preserve declared folding or exact 
   const auto created = legacy.create(); CHECK(created);
   const auto manifest = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(manifest);
   CHECK(!manifest.value().languageContract); CHECK(manifest.value().matchedPhone("iy1") == "iy1");
+}
+
+TEST_CASE("Legacy English review preserves exact matching and refuses any hand-added contract") {
+  const auto profile = production::draftInventoryPresetProfile(production::DraftInventoryPreset::EnglishFull, "legacy-reference");
+  for (const auto schema : {production::kProductionProjectSchemaVersion, production::kProductionAssessmentSchemaVersion}) {
+    Fixture legacy{false, false, "ay", schema};
+    legacy.identity.language = domain::Language::English;
+    const auto created = legacy.create(); CHECK(created);
+    const auto loaded = voicebank::ManifestJsonCodec{}.load(created.value().root / "manifest.json"); CHECK(loaded);
+    CHECK(legacy.project.schemaVersion == schema); CHECK(!loaded.value().languageContract);
+    CHECK(loaded.value().matchedPhone("ay1") == "ay1");
+    CHECK(production::prepareSampleCandidateReview(legacy.root / "producer", legacy.project, loaded.value()));
+    const auto before = production::encodeProductionProject(legacy.project);
+    for (const auto policy : {"FOLD_LEXICAL_STRESS", "DISTINGUISH_LEXICAL_STRESS"}) {
+      auto changed = loaded.value();
+      changed.languageContract = voicebank::Manifest::EnglishPhoneContract{
+          profile.vocabularyId, profile.vocabularySha256, policy};
+      CHECK(changed.validate());
+      const auto result = production::prepareSampleCandidateReview(legacy.root / "producer", legacy.project, changed);
+      CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+      CHECK(result.error().message == "English review contract must match the bound producer inventory");
+      CHECK(result.error().context == "languageContract");
+      CHECK(production::encodeProductionProject(legacy.repository.recover().value()) == before);
+      CHECK(legacy.project.reviews.empty());
+    }
+    // Removing the unauthorized declaration is the only change needed to restore review capture.
+    CHECK(production::prepareSampleCandidateReview(legacy.root / "producer", legacy.project, loaded.value()));
+    CHECK(production::encodeProductionProject(legacy.repository.recover().value()) == before);
+  }
 }
 
 TEST_CASE("English review capture refuses valid altered or removed inventory contracts") {

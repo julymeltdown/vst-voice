@@ -9334,3 +9334,6 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 
 2026-10-15 — Independent APPROVE exact 4bafec5e; both a0259814 P3s closed within specified style-owned scope. One newly identified legacy-English no-authority contract P3 remains open. Lead rehashed 73 artifacts/8 pins; final verdict retained separately. Full 239 checkpoint is separate lead execution evidence. Alpha 0/20; U45 HELD; Beta BLOCKED.
+
+
+2026-10-15 — Legacy English review authority P3 implemented: optional manifest contract must equal optional inventory authority, including None. Unchanged-production regression failed at accepted schema2/FOLD; full rebuild and five focused lanes/102 native cases PASS after fix. See LEGACY_ENGLISH_REVIEW_AUTHORITY_2026-10-15.md/index. Independent closure pending; prior full239 belongs to50f5b1d9. Alpha0/20; U45HELD; BetaBLOCKED.
