@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
+#include <map>
 
 namespace {
 using namespace seam;
@@ -153,6 +155,113 @@ TEST_CASE("Prepared donor candidates retain both license identities through sign
   CHECK(std::count_if(required.begin(), required.end(), [](const auto& file) { return file.role == "source-license-snapshot"; }) == 2);
   const auto& binding = snapshot.value().sourceBindings.front(); CHECK(binding.preparedDonor);
   CHECK(binding.strategy.licenseSha256 != binding.preparedDonor->originalLicenseSha256);
+  // These owned-reader cases deliberately pass the descriptor, snapshot and
+  // listing identities. Ordinary re-signed file damage below stops earlier at
+  // readListed and cannot exercise these semantic provenance checks.
+  using Owned = std::map<std::string, std::vector<std::byte>, std::less<>>;
+  const auto ownedText = [](const std::string& value) {
+    const auto bytes = std::as_bytes(std::span{value.data(), value.size()});
+    return std::vector<std::byte>{bytes.begin(), bytes.end()};
+  };
+  const auto rebind = [](production::VoicebankProductionProject& project) {
+    for (auto& source : project.sourceBindings) {
+      source.id = production::takeSourceBindingId(project.projectId, source);
+      const auto take = std::find_if(project.takes.begin(), project.takes.end(),
+          [&](const auto& value) { return value.takeId == source.takeId; });
+      CHECK(take != project.takes.end()); take->sourceBindingId = source.id;
+    }
+  };
+  const auto exerciseSource = [&](std::string_view name, production::VoicebankProductionProject project,
+      production::ResourceCandidateDescriptor changed, Owned owned, std::string_view refusal, std::size_t packetReads) {
+    rebind(project);
+    const auto sourceJson = production::encodeProductionProject(project);
+    CHECK(production::decodeProductionProject(sourceJson));
+    owned["provenance/production.json"] = ownedText(sourceJson);
+    changed.source->projectSha256 = core::sha256Hex(sourceJson);
+    auto listing = std::find_if(changed.evidence.begin(), changed.evidence.end(),
+        [](const auto& file) { return file.path == "provenance/production.json"; });
+    CHECK(listing != changed.evidence.end());
+    listing->sha256 = changed.source->projectSha256; listing->bytes = sourceJson.size();
+    std::sort(changed.evidence.begin(), changed.evidence.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
+    CHECK(production::validateResourceCandidateDescriptor(changed));
+    std::vector<std::string> reads;
+    const auto checked = production::verifyResourceCandidateSourceEvidence(changed,
+        [&](std::string_view path, std::uint64_t limit) -> core::Result<std::vector<std::byte>> {
+          const auto found = owned.find(path);
+          auto bytes = found != owned.end() ? core::Result<std::vector<std::byte>>{found->second}
+                                           : core::readFileBytesLimited(candidate / path, limit);
+          CHECK(bytes); CHECK(bytes.value().size() <= limit);
+          const auto file = std::find_if(changed.evidence.begin(), changed.evidence.end(),
+              [&](const auto& value) { return value.path == path; });
+          CHECK(file != changed.evidence.end()); CHECK(file->bytes == bytes.value().size());
+          CHECK(file->sha256 == core::sha256Hex(bytes.value()));
+          CHECK(std::find(reads.begin(), reads.end(), path) == reads.end());
+          reads.emplace_back(path); return bytes;
+        });
+    if (refusal.empty()) CHECK(checked);
+    else {
+      CHECK(!checked);
+      if (checked.error().message != refusal)
+        throw test::Failure{std::string{name} + ": expected " + std::string{refusal} + ", received " + checked.error().message};
+    }
+    CHECK(reads.front() == "provenance/production.json");
+    CHECK(static_cast<std::size_t>(std::count_if(reads.begin(), reads.end(), [](const auto& path) {
+      return path.starts_with("provenance/source-evidence/packets/");
+    })) == packetReads);
+    std::cout << "[SOURCE-SEMANTICS] " << name << ": " << (checked ? "PASS" : checked.error().message)
+              << "; packet-files-read=" << packetReads << '\n';
+  };
+  exerciseSource("unchanged control", snapshot.value(), descriptor, {}, {}, 4U);
+  for (const std::string_view field : {"donor-audio", "absent-donor", "plan", "license", "attribution"}) {
+    auto rewritten = snapshot.value(); auto& member = *rewritten.sourceBindings.back().preparedDonor;
+    if (field == "donor-audio") {
+      const auto other = std::find_if(rewritten.sourceBindings.begin(), rewritten.sourceBindings.end(), [&](const auto& value) {
+        return value.rawAssetSha256 != rewritten.sourceBindings.back().rawAssetSha256;
+      });
+      CHECK(other != rewritten.sourceBindings.end()); CHECK(other->preparedDonor);
+      member.donorId = other->preparedDonor->donorId; // Present row, different actual tone.
+    } else if (field == "absent-donor") member.donorId = "absent_l00000_n1";
+    else if (field == "plan") member.intakePlanSha256 = std::string(64U, '0');
+    else if (field == "license") member.originalLicenseSha256 = std::string(64U, '0');
+    else member.attributionSha256 = std::string(64U, '0');
+    // The first shared member remains valid, so all four packet files and
+    // all-row facts pass before this later member reaches its comparison.
+    exerciseSource(field, std::move(rewritten), descriptor, {}, "Candidate prepared donor differs from its retained packet", 4U);
+  }
+  {
+    auto rewritten = snapshot.value(); auto changed = descriptor;
+    const auto oldDigest = rewritten.sourceBindings.front().preparedDonor->packetSha256;
+    const auto oldPrefix = "provenance/source-evidence/packets/" + oldDigest + "/";
+    const auto raw = core::readTextFileLimited(candidate / (oldPrefix + "donors.json"), 16U * 1024U * 1024U); CHECK(raw);
+    auto packet = formats::parseJson(raw.value()); CHECK(packet);
+    packet.value().asObject()["status"] = "APPROVED";
+    const auto json = formats::stringifyJson(packet.value()), digest = core::sha256Hex(json);
+    const auto prefix = "provenance/source-evidence/packets/" + digest + "/";
+    Owned owned;
+    for (auto& file : changed.evidence) if (file.path.starts_with(oldPrefix)) {
+      const auto name = file.path.substr(oldPrefix.size());
+      const auto original = core::readFileBytesLimited(candidate / file.path, 16U * 1024U * 1024U); CHECK(original);
+      file.path = prefix + name;
+      owned[file.path] = name == "donors.json" ? ownedText(json) : original.value();
+      file.sha256 = core::sha256Hex(owned.at(file.path)); file.bytes = owned.at(file.path).size();
+    }
+    for (auto& source : rewritten.sourceBindings) source.preparedDonor->packetSha256 = digest;
+    exerciseSource("packet facts after rehash", std::move(rewritten), std::move(changed), std::move(owned),
+        "Expected unapproved prepared donor field: status", 4U);
+  }
+  {
+    auto changed = descriptor;
+    const std::string extra = "unreferenced declaration";
+    changed.evidence.push_back({"provenance/source-evidence/unreferenced.txt", "source-license-snapshot", core::sha256Hex(extra), extra.size()});
+    exerciseSource("unreferenced closure entry", snapshot.value(), std::move(changed), {},
+        "Candidate source evidence union contains an unreferenced entry", 4U);
+  }
+  {
+    auto rewritten = snapshot.value();
+    for (auto& source : rewritten.sourceBindings) source.preparedDonor.reset();
+    exerciseSource("schema four without prepared binding", std::move(rewritten), descriptor, {},
+        "Prepared donor provenance requires candidate schema 4, and schema 4 requires a prepared binding", 0U);
+  }
   const auto key = distribution::generateSigningKeyPair(); CHECK(key);
   const distribution::VerifySeambankOptions trusted{.trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
   const auto package = fixture.root / "prepared.seambank";

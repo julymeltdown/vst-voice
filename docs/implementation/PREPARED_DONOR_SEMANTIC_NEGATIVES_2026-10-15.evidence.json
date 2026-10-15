@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-semantic-negatives",
+  "sourceBase": "166833ef330cdea484ed475305c1a03d6f7b72a8",
+  "sourcePatchSha256": "4d6dbfc828537869847cd8cc0fb064ece5f108957b837802a8cbf2f54653513f",
+  "implementationSources": [
+    "tests/test_english_candidate_lifecycle.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-semantic-negatives-2026-10-15/manifest.json",
+    "sizeBytes": 8795,
+    "sha256": "70ef5ea6f66f38531394bf22a98c83578528efc4dd13c31a9670543920cb2323"
+  },
+  "retainedArtifacts": 38,
+  "preservedBindings": 10,
+  "executions": {
+    "release-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "--target",
+        "seam_english_candidate_lifecycle_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.07020291598746553,
+      "sourceBase": "166833ef330cdea484ed475305c1a03d6f7b72a8",
+      "sourcePatchSha256": "4d6dbfc828537869847cd8cc0fb064ece5f108957b837802a8cbf2f54653513f",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "release-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^seam_english_candidate_lifecycle_tests$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.702440708002541,
+      "sourceBase": "166833ef330cdea484ed475305c1a03d6f7b72a8",
+      "sourcePatchSha256": "4d6dbfc828537869847cd8cc0fb064ece5f108957b837802a8cbf2f54653513f",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "sanitize-build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_english_candidate_lifecycle_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 12.59575258300174,
+      "sourceBase": "166833ef330cdea484ed475305c1a03d6f7b72a8",
+      "sourcePatchSha256": "4d6dbfc828537869847cd8cc0fb064ece5f108957b837802a8cbf2f54653513f",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    "sanitize-ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^seam_english_candidate_lifecycle_tests$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 33.75262237500283,
+      "sourceBase": "166833ef330cdea484ed475305c1a03d6f7b72a8",
+      "sourcePatchSha256": "4d6dbfc828537869847cd8cc0fb064ece5f108957b837802a8cbf2f54653513f",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-semantic-negatives-2026-10-15/verification.log",
+      "sizeBytes": 432,
+      "sha256": "db6b0e53b93d044e9b75799b6af18ba7363e76a544eaf16bffad69d75cbb9ad3"
+    }
+  },
+  "releaseExistingNativeCases": 2,
+  "sanitizedExistingNativeCases": 2,
+  "newNativeCases": 0,
+  "newNegativeFormsPerRun": 8,
+  "newPositiveControlsPerRun": 1,
+  "exactDiagnosticsAndPacketReadCounts": true,
+  "runtimeCodeChanged": false,
+  "signedSemanticMutationTests": "NOT_ADDED_API_LEVEL_ONLY",
+  "existingSignedLifecycle": "STILL_EXECUTED_IN_SAME_CASE",
+  "sourceGuardPinsMatchBaseGit": true,
+  "originatingReview": {
+    "commit": "01e78a0c46ccc591a64ebb17ef7359c85f7f2dc1",
+    "verdict": "APPROVE_ENGINEERING_ONE_COVERAGE_P3",
+    "finalAnswer": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review-01e78a0c.md",
+      "sizeBytes": 16861,
+      "sha256": "b1d84e4aac372e766e095aaf56c366e544691f54fbcfa62e1eb0e047c1a73086"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-candidate-four-independent-2026-10-15/review.json",
+      "sizeBytes": 555,
+      "sha256": "a9ec362c53a71d796c24aafcb0b25d050962a75759dd4777644543bfa771c197"
+    }
+  },
+  "candidateNegativeCoverageP3": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
+  "cli166833efIndependentReview": "IN_PROGRESS",
+  "pythonGapP3s": "OPEN_TWO",
+  "nativePcmRangeP3": "OPEN",
+  "fullSuite": "NOT_RUN",
+  "fullBuild": "NOT_RUN_FOCUSED_TARGETS_AND_DEPENDENCIES_ONLY",
+  "pythonTests": "NOT_RUN_NO_PYTHON_CHANGE",
+  "leakDetection": "DISABLED",
+  "TSan": "NOT_RUN",
+  "osFaultInjection": "NOT_RUN",
+  "powerLoss": "NOT_RUN",
+  "realSourceAdmission": false,
+  "humanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

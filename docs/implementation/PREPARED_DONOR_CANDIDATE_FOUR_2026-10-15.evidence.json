@@ -250,7 +250,7 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "candidateFourNegativeCoverageP3": "OPEN",
+  "candidateFourNegativeCoverageP3": "LOCALLY_VERIFIED_REPAIR_EXACT_REVIEW_PENDING",
   "intakeCliFollowup": "PREPARED_DONOR_INTAKE_CLI_2026-10-15",
   "siblingWriterIndependentReview": {
     "commit": "bce11b9a79938c261deac627e4a8a799aa7c3811",
@@ -266,5 +266,6 @@
       "sha256": "c1fa44f9b6dbb3ae37a306f1633b69fb1df12e59a034171b6832763f2bde009c"
     },
     "bindingScope": "Adjacent tracked index; received after this CLI evidence manifest froze. Frozen manifest unchanged."
-  }
+  },
+  "semanticNegativeFollowup": "PREPARED_DONOR_SEMANTIC_NEGATIVES_2026-10-15"
 }
