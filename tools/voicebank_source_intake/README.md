@@ -51,3 +51,12 @@ python3 tools/voicebank_source_intake/prepare_phone_donors.py \
 ```
 
 Use the `donors.json` digest captured by the trusted handoff; computing a new digest from an unknown replacement does not authenticate it. Missing notice bindings require regeneration into a new output. Verification refuses incomplete packets, changed/missing/linked retained files and relabelled approval fields. It checks the prepared artifact snapshots, not the factual author names, performer clearance, original annotations, acoustic suitability or source rights. The original source inputs remain separately retained. Passing this read-only preflight grants no import or bank approval, and a later importer must recheck the bytes it actually consumes.
+
+The native reader can now hold one selected donor and its shared provenance as owned byte snapshots:
+
+```sh
+build/release/seam_voicebank_cli verify-phone-donor \
+  /absolute/path/to/prepared-donors DIGEST_FROM_THE_RETAINED_HANDOFF DONOR_ID
+```
+
+It checks the exact packet, plan, license, attribution and selected canonical WAV hashes, the selected PCM geometry/hash, plan identity and unapproved fields. It reads only the selected donor's audio; `wholePacketAudioVerified` remains false. It does not reopen the separately retained original recordings or authenticate their annotation content. The Python whole-packet preflight remains separate. The C++ `PreparedPhoneDonorSnapshot` owns the bytes so a later importer can consume and retain them without reopening preparation paths. Durable project retention, import, recovery, candidate publication and installed notice propagation are still unfinished. See [the native reader report](../../docs/implementation/NATIVE_PHONE_DONOR_SNAPSHOT_2026-10-15.md) for the actual SLT trial and verification limits.

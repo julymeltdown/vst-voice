@@ -554,6 +554,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/project_codec_validation.cpp
   libs/seam-voicebank-production/src/repository.cpp
   libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/prepared_phone_donor.cpp
   libs/seam-voicebank-production/src/repository_generation.cpp
   libs/seam-voicebank-production/src/generation_expectation.cpp
   libs/seam-voicebank-production/src/repository_operations.cpp
@@ -1359,7 +1360,8 @@ add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
   apps/seam-voicebank-cli/sample_review_commands.cpp
   apps/seam-voicebank-cli/candidate_package_commands.cpp
   apps/seam-voicebank-cli/procedural_continuity_commands.cpp
-  apps/seam-voicebank-cli/project_binding_commands.cpp)
+  apps/seam-voicebank-cli/project_binding_commands.cpp
+  apps/seam-voicebank-cli/source_intake_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis seam_candidate_packaging)
 seam_apply_compiler_options(seam_voicebank_cli)

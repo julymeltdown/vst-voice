@@ -21,6 +21,7 @@
 #include "campaign_commands.hpp"
 #include "coverage_commands.hpp"
 #include "project_binding_commands.hpp"
+#include "source_intake_commands.hpp"
 #include "seam/formats/project_json.hpp"
 #include <charconv>
 
@@ -889,6 +890,7 @@ void printUsage() {
       << "    Collects generated output only against its retained expectation; never refreshes a stale request.\n"
       << "    Imports into an existing procedural producer workspace as unapproved MarkerReview material.\n";
   seam::voicebank_cli::printSampleReviewUsage();
+  std::cerr << "  seam_voicebank_cli verify-phone-donor DIRECTORY PACKET_SHA256 DONOR_ID\n";
   seam::voicebank_cli::printCampaignUsage();
   seam::voicebank_cli::printCoverageUsage();
   seam::voicebank_cli::printProjectBindingUsage();
@@ -981,6 +983,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string_view command{argv[1]};
+  if (const auto result = seam::voicebank_cli::runSourceIntakeCommand(argc, argv)) return *result;
   if (const auto result = seam::voicebank_cli::runProjectBindingCommand(argc, argv)) return *result;
   if (const auto result = seam::voicebank_cli::runCampaignCommand(argc, argv)) return *result;
   if (const auto result = seam::voicebank_cli::runCoverageCommand(argc, argv)) return *result;

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "unit": "native-selected-phone-donor-snapshot",
+  "sourceBase": "0c4d3e2d48627b79ce80ae1f5ecd15cdb15a13cb",
+  "manifest": {
+    "path": "out/evidence/native-phone-donor-snapshot-2026-10-15/manifest-final.json",
+    "sizeBytes": 123411,
+    "sha256": "a5c4bc6c8761ec0c3bab20a08c1184160c7a7b9484e7d8d84f7a3d79ea3a8a57"
+  },
+  "retainedArtifacts": 691,
+  "preservedBindings": 6,
+  "sourcePatchSha256": "153f926cb8d9d252b982d215d2365c888d077753974180f23ad571939ea1c795",
+  "fullReleaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 33.8122085420182,
+    "sourceBase": "0c4d3e2d48627b79ce80ae1f5ecd15cdb15a13cb",
+    "sourcePatchSha256": "153f926cb8d9d252b982d215d2365c888d077753974180f23ad571939ea1c795",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "focusedCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_vocal_source_intake_tests|seam_sample_review_cli_tests|seam_style_owned_candidate_import_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 20.49321362498449,
+    "sourceBase": "0c4d3e2d48627b79ce80ae1f5ecd15cdb15a13cb",
+    "sourcePatchSha256": "153f926cb8d9d252b982d215d2365c888d077753974180f23ad571939ea1c795",
+    "stableSourceDiff": true,
+    "headUnchanged": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "pythonMethods": 41,
+  "pythonSkips": 0,
+  "cppCases": 33,
+  "newPythonMethodsInvokingNative": 3,
+  "actualDonorCommands": 312,
+  "actualTrialReceipt": {
+    "path": "out/evidence/native-phone-donor-snapshot-2026-10-15/actual/run.json",
+    "sizeBytes": 166864,
+    "sha256": "a657b0ecb1c55455a76114c4d96f94486c73e42bfd531db8a2483e6d6021defd"
+  },
+  "nativeBinaries": [
+    {
+      "path": "seam_voicebank_cli",
+      "sizeBytes": 9886240,
+      "sha256": "0b41b7bf07a99f6c3e5513e4658bd521092b29669fc66bc65b2a7b9c53beca66"
+    },
+    {
+      "path": "seam_sample_review_cli_tests",
+      "sizeBytes": 9919152,
+      "sha256": "865e41b491d62bad9cde6a1fb22f37b4da2b2b6b8aa6fc9e9efacb8d933206ad"
+    },
+    {
+      "path": "seam_style_owned_candidate_import_tests",
+      "sizeBytes": 9770376,
+      "sha256": "b53fe5154700d7979e15ae9dcd61c3a16261d68585eaa302ff3ae2b1ba55fc1c"
+    }
+  ],
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/native-phone-donor-snapshot-2026-10-15/verification-final.log",
+      "sizeBytes": 302,
+      "sha256": "2d04b20a4cc82d922cc3c98343474c1aa664867372b2807988dc9419471db805"
+    }
+  },
+  "independentReview": "PENDING",
+  "durableImportBridge": "UNFINISHED",
+  "fullSuite": "NOT_RUN",
+  "sanitizers": "NOT_RUN_FOR_THIS_READER",
+  "sourceRegistration": false,
+  "nativeImport": false,
+  "sourceRightsApproved": false,
+  "humanListening": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -55,6 +56,103 @@ class PhoneDonorIntakeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, match):
             prepare(self.plan_path, output)
         self.assertFalse(output.exists())
+
+    def native(self, output: Path, expected: str, donor: str, *, success: bool) -> subprocess.CompletedProcess:
+        configured=os.environ.get("SEAM_SOURCE_INTAKE_CLI")
+        cli=Path(configured) if configured else Path(__file__).resolve().parents[1]/"build/release/seam_voicebank_cli"
+        if configured:
+            self.assertTrue(cli.is_file(),"Configured native source-intake CLI is missing")
+        elif not cli.is_file():
+            self.skipTest("Optional direct native CLI unavailable; configured CTest requires it")
+        run=subprocess.run([str(cli),"verify-phone-donor",str(output),expected,donor],
+                           capture_output=True,text=True,timeout=10)
+        self.assertEqual(0 if success else 2,run.returncode,run.stderr)
+        if not success:
+            self.assertIn("Prepared donor refused",run.stderr)
+            self.assertEqual("",run.stdout)
+        return run
+
+    def test_native_selected_donor_snapshots_match_prepared_bytes_without_mutation(self) -> None:
+        output=self.root/"native-selected"
+        result=prepare(self.plan_path,output)
+        held={p.name:p.read_bytes() for p in output.iterdir()}
+        expected=hashlib.sha256(held["donors.json"]).hexdigest()
+        for row in result["proposals"]:
+            observed=json.loads(self.native(output,expected,row["id"],success=True).stdout)
+            for key,value in {"status":"UNAPPROVED","bankAdmission":"NOT_APPROVED","nativeImport":False,
+                              "sourceRightsApproved":False,"wholePacketAudioVerified":False,
+                              "donorId":row["id"],"audioSha256":row["derivedSha256"],
+                              "pcmSha256":row["pcmSha256"],"frames":row["frames"],
+                              "sampleRate":row["sampleRate"],"nonzeroPcm":row["nonzeroPcm"],
+                              "packetSha256":expected,"planSha256":result["planSha256"],
+                              "licenseSha256":result["license"]["sha256"],
+                              "attributionSha256":result["retainedAttributionSha256"]}.items():
+                self.assertEqual(value,observed[key],key)
+        self.assertEqual(held,{p.name:p.read_bytes() for p in output.iterdir()})
+        (output/result["proposals"][-1]["derivedPath"]).unlink()
+        self.native(output,expected,result["proposals"][0]["id"],success=True)
+        with wave.open(str(self.audio),"wb") as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(8000);wav.writeframes(bytes(1600))
+        self.plan["sources"][0]["audio"]=self.binding(self.audio);self.save()
+        silent=self.root/"native-silent";prepared=prepare(self.plan_path,silent)
+        result=json.loads(self.native(silent,hashlib.sha256((silent/"donors.json").read_bytes()).hexdigest(),
+                                      prepared["proposals"][0]["id"],success=True).stdout)
+        self.assertFalse(result["nonzeroPcm"])
+
+    def test_native_donor_refuses_changed_inputs_links_incomplete_and_untrusted_digest(self) -> None:
+        output=self.root/"native-changed";result=prepare(self.plan_path,output)
+        expected=hashlib.sha256((output/"donors.json").read_bytes()).hexdigest()
+        donor=result["proposals"][0]["id"]
+        for path in [output/"attribution.txt",output/"license-source.txt",output/"intake-plan.json",
+                     output/result["proposals"][0]["derivedPath"]]:
+            raw=path.read_bytes()
+            for mode in ["changed","missing","linked"]:
+                with self.subTest(file=path.name,mode=mode):
+                    try:
+                        if mode=="changed":path.write_bytes(raw+b"changed")
+                        else:
+                            path.unlink()
+                            if mode=="linked":path.symlink_to(self.license)
+                        self.native(output,expected,donor,success=False)
+                    finally:
+                        if path.exists() or path.is_symlink():path.unlink()
+                        path.write_bytes(raw)
+        for sha in ["","a"*64,"A"*64,"invalid"]:
+            with self.subTest(sha=sha):self.native(output,sha,donor,success=False)
+        self.native(output,expected,"../unowned",success=False)
+        marker=output/"INCOMPLETE"
+        marker.write_text("not complete");self.native(output,expected,donor,success=False);marker.unlink()
+        marker.symlink_to(output/"missing");self.native(output,expected,donor,success=False);marker.unlink()
+        linked=self.root/"native-linked-directory";linked.symlink_to(output,target_is_directory=True)
+        self.native(linked,expected,donor,success=False)
+        if hasattr(os,"mkfifo"):
+            audio=output/result["proposals"][0]["derivedPath"];raw=audio.read_bytes();audio.unlink()
+            os.mkfifo(audio);self.native(output,expected,donor,success=False);audio.unlink();audio.write_bytes(raw)
+
+    def test_native_donor_refuses_relabelled_approval_and_inconsistent_selected_provenance(self) -> None:
+        output=self.root/"native-relabelled";result=prepare(self.plan_path,output)
+        path=output/"donors.json";raw=path.read_bytes();donor=result["proposals"][0]["id"]
+        changes=[lambda p:p.update(bankAdmission="APPROVED"),lambda p:p.update(language="ja"),
+                 lambda p:p.update(schemaVersion=2),lambda p:p.update(sourceApproved=True),
+                 lambda p:p["proposals"][0].update(phoneticReview="REVIEWED"),
+                 lambda p:p["proposals"][-1].update(listeningReview="REVIEWED"),
+                 lambda p:p["proposals"][0].update(accepted=True),
+                 lambda p:p["proposals"][0].update(frames=True),
+                 lambda p:p["proposals"][0].update(frames=p["proposals"][0]["frames"]+1),
+                 lambda p:p["proposals"][0].update(nonzeroPcm=False),
+                 lambda p:p["proposals"][0].update(pcmSha256="0"*64),
+                 lambda p:p["proposals"][0].update(durationSeconds=999),
+                 lambda p:p["proposals"][0].update(sourceType="singing"),
+                 lambda p:p["proposals"][0].update(derivedPath="../outside.wav"),
+                 lambda p:p["proposals"][0]["sourceAudio"].update(sha256="1"*64),
+                 lambda p:p["license"].update(attribution="changed attribution")]
+        for i,change in enumerate(changes):
+            with self.subTest(change=i):
+                changed=json.loads(raw);change(changed);path.write_text(json.dumps(changed))
+                self.native(output,hashlib.sha256(path.read_bytes()).hexdigest(),donor,success=False)
+        path.write_bytes(b'{"status":"APPROVED",'+raw.lstrip()[1:])
+        self.native(output,hashlib.sha256(path.read_bytes()).hexdigest(),donor,success=False)
+        path.write_bytes(raw)
 
     def test_preserves_pcm_exact_boundaries_annotations_and_unapproved_state(self) -> None:
         held = {p: p.read_bytes() for p in (self.audio, self.labels, self.license)}
