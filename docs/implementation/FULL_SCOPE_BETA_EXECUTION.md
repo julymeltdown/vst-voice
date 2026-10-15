@@ -9583,3 +9583,8 @@ Python c9ef0d21 exact independent review remains in progress; do not interrupt i
 Implemented the actual Studio capture/notice/assignment/confirmation/import path using the shared revalidated CLI-compatible contract. Complete original notices, source phones and explicit coverage/MIDI/style remain bound to the producer/context/digest. Cancelled or stale modals do not import; held preparation may disappear before explicit import. A pre-import schema-transition warning was added. Full report/index: `STUDIO_PREPARED_DONOR_INTAKE_2026-10-15.md` and `.evidence.json`.
 
 Final full Release rebuild and seven CTest lanes PASS (112 native cases); actual CLI 6 methods PASS, zero skips; focused ASan/UBSan build and two lanes PASS (72 cases, leak detection disabled). Frozen root has 94 artifacts/12 pins; manifest SHA-256 `b8e1884bdc9dd1d27d14f05e087b61147306e8b21aafbb6dda6ddb6f9fb9033e`. Exact Studio review pending. Predecessor f7d2559c APPROVE closes its wrapper cancellation/commit-fault item; its separate pre-existing migration/commit-recognition P3 stays OPEN and is next. No real downloaded recording admitted or approved. Alpha 0/20, U45 HELD, Beta BLOCKED; goal ACTIVE. `.github` and README untouched; Windows TODO.
+
+
+## 2026-10-15 — Exact importer-wrapper review receipt
+
+Retained exact f7d2559c APPROVE: originating importer-wrapper cancellation/commit-fault item CLOSED. Report/index `PREPARED_DONOR_TRANSACTION_BOUNDARIES_2026-10-15` now bind the 15,644-byte final verdict and 605-byte metadata. A separate pre-existing schema-transition/pointer-recognition P3 remains OPEN; no Beta or human acceptance follows. Studio a7f81e07 is pushed and postcommit evidence verified, exact independent review pending. Alpha 0/20, U45 HELD, Beta BLOCKED; goal ACTIVE.

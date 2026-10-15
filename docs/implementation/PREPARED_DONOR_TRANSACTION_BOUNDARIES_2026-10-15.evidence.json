@@ -120,7 +120,25 @@
   "newTransactionForms": 9,
   "existingActualCliMethods": 6,
   "skips": 0,
-  "independentReview": "PENDING_EXACT_COMMIT",
+  "independentReview": {
+    "status": "APPROVE",
+    "reviewedCommit": "f7d2559c1870c53cd55c210841b8928201641bf8",
+    "wrapperCancellationAndCommitFaultItem": "CLOSED",
+    "final": {
+      "path": "out/evidence/prepared-donor-transaction-independent-2026-10-15/review-f7d2559c.md",
+      "sizeBytes": 15644,
+      "sha256": "2a3545ca6734f9c7ef94ff1b7f8d38bd03aac5a350130d355e4ae0eced844a74"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-transaction-independent-2026-10-15/metadata.json",
+      "sizeBytes": 605,
+      "sha256": "c9c3ff99ff9e984351e8c644e39ab2e12b1088b48c2deb4b030a987ac746dee3"
+    },
+    "preExistingP3": {
+      "status": "OPEN",
+      "summary": "Post-transition committed import can differ from the pre-transition draft during pointer-failure recognition; preserve exact generation and digest identity when repairing."
+    }
+  },
   "preparedImporterCancellationCommitFaultCoverage": "LOCALLY_VERIFIED_EXACT_REVIEW_PENDING",
   "ownedReaderMidRunCancellation": "NOT_TESTED_BY_THIS_UNIT",
   "wrapperFsyncPostPublicationFaults": "NOT_RUN",
