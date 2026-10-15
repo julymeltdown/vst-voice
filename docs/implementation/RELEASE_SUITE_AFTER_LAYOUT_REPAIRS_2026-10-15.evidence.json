@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "unit": "release-suite-after-layout-repairs",
+  "sourceCommit": "3b3388df2a39f0f044607759574bc576e89ad923",
+  "sourceTree": "c6848b58995e90adb09815fce6344ac5b31fc0a6",
+  "manifest": {
+    "path": "out/evidence/release-suite-after-layout-repairs-2026-10-15/manifest.json",
+    "sizeBytes": 7139,
+    "sha256": "fb296aa4ba4c88c2ba1986f8b6988436aee419cbdfc376c8a6e8fa301a580eda"
+  },
+  "retainedArtifacts": 31,
+  "preservedBindings": 8,
+  "build": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 25.046999917016365,
+    "before": {
+      "head": "3b3388df2a39f0f044607759574bc576e89ad923",
+      "tree": "c6848b58995e90adb09815fce6344ac5b31fc0a6",
+      "trackedDiff": "",
+      "status": ""
+    },
+    "after": {
+      "head": "3b3388df2a39f0f044607759574bc576e89ad923",
+      "tree": "c6848b58995e90adb09815fce6344ac5b31fc0a6",
+      "trackedDiff": "",
+      "status": ""
+    }
+  },
+  "ctest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "--parallel",
+      "1"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 779.7071278750082,
+    "registeredTests": 240,
+    "stableExecutingInputs": true,
+    "before": {
+      "head": "3b3388df2a39f0f044607759574bc576e89ad923",
+      "tree": "c6848b58995e90adb09815fce6344ac5b31fc0a6",
+      "trackedDiff": "",
+      "status": ""
+    },
+    "after": {
+      "head": "3b3388df2a39f0f044607759574bc576e89ad923",
+      "tree": "c6848b58995e90adb09815fce6344ac5b31fc0a6",
+      "trackedDiff": "",
+      "status": ""
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/release-suite-after-layout-repairs-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/release-suite-after-layout-repairs-2026-10-15/verification.log",
+      "sizeBytes": 319,
+      "sha256": "17a9a1b2d357424260d2fa1228d27121892e2428d47fd8aa1738a6d806aaf031"
+    }
+  },
+  "retainedNativeExecutables": 5,
+  "retainedSelectedSourceFiles": 10,
+  "registeredLanesIncludeDuplicatePythonDiscovery": true,
+  "independentReview": "PENDING_FOR_REPAIR_COMMITS",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "authorizesRelease": false
+}

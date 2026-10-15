@@ -528,3 +528,8 @@ The current clean 76896845 full dependent Release build passed; the bound serial
 ## 2026-10-15 — Exact English producer review recorded
 
 Independent review APPROVED exact 210688b0 for engineering scope, one P3 follow-up/no required changes; retained final and artifact hashes checked in [the producer dossier](ENGLISH_PRODUCER_MANIFEST_2026-10-15.md). Corrected the documented arbitrary init-production layout description and clarified contract inclusion in the bound inventory digest. Help/layout-guard regression remains open. Lifecycle review attempts failed with HTTP 429 without a verdict; lifecycle/coverage/UI changes remain independently unapproved. Source, human and release gates unchanged: Alpha 0/20, U45 HELD, Beta BLOCKED; .github untouched.
+
+
+## 2026-10-15 — Full Release suite after repairs
+
+Full dependent Release rebuild PASS at exact 3b3388df; serial 240/240 registered CTest lanes PASS, exit 0, 779.707128 seconds. All 189 selected executing identities and clean Git state remained stable. [Full-suite dossier](RELEASE_SUITE_AFTER_LAYOUT_REPAIRS_2026-10-15.md) binds 31 retained artifacts/8 preserved bindings, five native executables and ten selected source files. Earlier four failed registrations now pass; duplicate Python discovery and stale historical LastTestsFailed.log are explicitly distinguished. Independent repair approval remains pending. No source admission or gate advancement: Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
