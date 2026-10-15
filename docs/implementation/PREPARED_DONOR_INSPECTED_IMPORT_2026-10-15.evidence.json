@@ -118,10 +118,25 @@
       "sizeBytes": 566,
       "sha256": "e8d184b53b869557451b9e34a33ede071c025ae8cca77c4194c3fe107e9984f6"
     },
-    "openP3": "Whole-packet reload per distinct donor; packet-level verification cache is required before production scaling",
-    "newImporterReviewed": false
+    "openP3": "CLOSED_BY_A42E8086_EXACT_INDEPENDENT_REVIEW",
+    "newImporterReviewed": true
   },
-  "independentImporterReview": "PENDING",
+  "independentImporterReview": {
+    "status": "APPROVE_ENGINEERING_ONE_P3",
+    "commit": "dd0b515dff22564e46357c896e78870f01f0657d",
+    "openP3": "New notice directory entries and new asset buckets need parent fsync before journal commit",
+    "verdict": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
+      "sizeBytes": 14576,
+      "sha256": "e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review.json",
+      "sizeBytes": 728,
+      "sha256": "1b308f60877156a18f82ec1df4290a11b9e35e4c6497895990c914f0e9d3bb0e"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no retained script/native execution, builds, tests, playback, imports or approvals."
+  },
   "realSourceRegistrationOrImport": false,
   "syntheticSourceRegistrationAndImport": true,
   "rightsOrHumanAcceptance": false,
@@ -129,7 +144,7 @@
   "fullSuite": "NOT_RUN",
   "leakDetection": "DISABLED",
   "tsan": "NOT_RUN",
-  "pythonSchemaFiveGateParity": "NOT_IMPLEMENTED",
+  "pythonSchemaFiveGateParity": "FOLLOWUP_LOCALLY_VERIFIED_SEE_PREPARED_DONOR_PYTHON_PARITY_2026-10-15",
   "candidateFourNoticeClosure": "NOT_IMPLEMENTED",
   "Alpha": [
     0,

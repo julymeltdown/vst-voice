@@ -1,6 +1,6 @@
 # Shared prepared-packet verification — 2026-10-15
 
-Repository source verification now reads and parses a shared prepared-donor packet once per `verifySnapshots` call, then looks up each take's donor in a checked digest map. This addresses the scaling P3 from the independent schema-5 review of `0ec9c143`. It is a locally verified engineering repair awaiting its own independent verdict, not real source admission or Beta acceptance.
+Repository source verification now reads and parses a shared prepared-donor packet once per `verifySnapshots` call, then looks up each take's donor in a checked digest map. This addresses the scaling P3 from the independent schema-5 review of `0ec9c143`. The exact independent review now APPROVES `a42e8086` with no findings and closes that P3. This is engineering approval only; real source admission and Beta acceptance remain blocked.
 
 ## Code and complexity
 
@@ -35,8 +35,10 @@ python3 -B out/evidence/prepared-donor-packet-cache-2026-10-15/verify.py
 
 ## Remaining boundaries
 
-The inspected importer is pushed at `dd0b515d` and awaits its own independent review. The packet-cache repair must receive an independent verdict before the schema review's P3 is called independently closed. Candidate-4 directory/package/install notice closure and per-take declaration completeness, Python schema-5 gate parity, notice display and controlled real admission remain separate work. The exact schema review and prior importer evidence remain immutable and are bound by the adjacent evidence index.
+The exact independent review APPROVES `dd0b515d` with one new P3 for directory durability, and APPROVES `a42e8086` with no findings, closing the schema-review scaling P3. The importer creates notice directories without syncing each new entry into its parent; the older asset-bucket path has the same gap. The review corrects its earlier assumption that asset sync ordering already covered new buckets. This durability repair remains open. Candidate-4 directory/package/install notice closure and per-take declaration completeness, Python schema-5 gate parity, notice display and controlled real admission remain separate work. The exact schema review and prior importer evidence remain immutable and are bound by the adjacent evidence index.
 
 The separate independent review approved the asset-loss repair `7e141c0f` with no findings and closed that P2; it also approved `24cf12d5` and closed the declared-geometry concern, with a new P3 range-bound test gap. That P3 remains open: internally consistent out-of-range metadata should isolate the range clauses from equality checks. The exact combined verdict and metadata are retained under `out/evidence/asset-and-geometry-independent-2026-10-15/` and bound by the adjacent index. That review did not review the importer or this packet-cache repair.
 
 The pending owner rights/EULA/performer disposition, actual producer/distinct reviewer, explicit assignment/phonetic/pitch decisions, failed-QC policy and listening evidence remain required. Alpha recorded 0/20; U45 HELD; Beta BLOCKED. Canonical gate bytes, `.github` and README Windows TODO remain unchanged.
+
+The exact combined verdict is retained at `out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md` (14,576 bytes, SHA-256 `e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc`). The adjacent index binds it and its metadata. Review was read-only and ran no native binary, retained script, build, test or playback. [Python schema-5 validation](PREPARED_DONOR_PYTHON_PARITY_2026-10-15.md) is now locally verified in a separate follow-up; this does not change the exact historical test scope above.

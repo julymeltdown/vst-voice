@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-python-schema-five-parity",
+  "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+  "sourcePatchSha256": "09303924892a041eeab2b4a8a65d896befdcc55323103d21921c27d7085906e1",
+  "manifest": {
+    "path": "out/evidence/prepared-donor-python-parity-2026-10-15/manifest.json",
+    "sizeBytes": 15266,
+    "sha256": "4f4a86338aa081264b0836ead951c54154bb97eed2ae2fdb711ccdfe73f686ee"
+  },
+  "retainedArtifacts": 55,
+  "preservedBindings": 8,
+  "implementationSources": [
+    "tools/external_beta/_production_draft_validation.py",
+    "tools/external_beta/_prepared_donor_evidence.py",
+    "tests/production/test_prepared_donor_workspace.py"
+  ],
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 32.18660733301658,
+    "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "sourcePatchSha256": "f1a0afa9122ae3371d2c615dd7939bb66f6af4e5cb92420bfe60e83447f25f6e",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "initialFixtureFailure": {
+    "argv": [
+      "/usr/local/bin/python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.production.test_prepared_donor_workspace.PreparedDonorWorkspaceTests.test_schema_five_retains_independent_notices_after_preparation_disappears"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.7222385000204667,
+    "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "sourcePatchSha256": "01af23222eba59422ca8181d6ad2b8517ba1f9a6996b8f34e4444cca5e964568",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBefore": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeAfter": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeBeforeEqualsAfter": true
+  },
+  "oldValidatorRegression": {
+    "argv": [
+      "/usr/local/bin/python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.production.test_prepared_donor_workspace.PreparedDonorWorkspaceTests.test_schema_five_retains_independent_notices_after_preparation_disappears"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.1721444589784369,
+    "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "sourcePatchSha256": "36252da738f193705484c95e332920397ad4a9c902f6cc1300311cb589dbee93",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBefore": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeAfter": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeBeforeEqualsAfter": true
+  },
+  "supersededPassingTests": {
+    "argv": [
+      "/usr/local/bin/python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.production.test_prepared_donor_workspace",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "tests.production.test_review_transition_mirror"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 7.33905304200016,
+    "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "sourcePatchSha256": "8804b7d2d219d7cf57cb5657d96f8e7a63d7d578639766c4384e0c619746be4b",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBefore": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeAfter": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeBeforeEqualsAfter": true
+  },
+  "finalTests": {
+    "argv": [
+      "/usr/local/bin/python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.production.test_prepared_donor_workspace",
+      "tests.production.test_production_draft_parity",
+      "tests.production.test_draft_producer_workspace",
+      "tests.production.test_generation_request_mirror",
+      "tests.production.test_review_transition_mirror"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 7.339239832974272,
+    "sourceBase": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "sourcePatchSha256": "09303924892a041eeab2b4a8a65d896befdcc55323103d21921c27d7085906e1",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBefore": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeAfter": {
+      "sizeBytes": 9967408,
+      "sha256": "dc54f74e316af6de92d809055c81f5da159bf2eb442325879bc68f4fd9c47289"
+    },
+    "nativeBeforeEqualsAfter": true
+  },
+  "focusedTestMethods": 55,
+  "newUniqueTestMethods": 8,
+  "skips": 0,
+  "syntheticPersistenceConstruction": true,
+  "newNativeImporterExecution": false,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-python-parity-2026-10-15/verification.log",
+      "sizeBytes": 382,
+      "sha256": "d73e26809cf32fb591e21b9fcd51209ad7434567a61823ed818039352bbc2b85"
+    }
+  },
+  "priorImporterAndCacheReview": {
+    "verdict": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
+      "sizeBytes": 14576,
+      "sha256": "e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review.json",
+      "sizeBytes": 728,
+      "sha256": "1b308f60877156a18f82ec1df4290a11b9e35e4c6497895990c914f0e9d3bb0e"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no retained script/native execution, builds, tests, playback, imports or approvals."
+  },
+  "independentPythonReview": "PENDING",
+  "directoryDurabilityP3": "OPEN",
+  "nativeRangeTestP3": "OPEN_NOT_CLOSED_BY_PYTHON_TESTS",
+  "candidateFourNoticeClosure": "NOT_IMPLEMENTED",
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "sanitizers": "NOT_RUN_FOR_PYTHON_UNIT",
+  "fullSuite": "NOT_RUN",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

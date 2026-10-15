@@ -175,8 +175,22 @@
       "sha256": "12a7e0323621ed838e21b2dd647a02ad72049dc67f44966a0ec1c69ba57e3826"
     }
   },
-  "independentImplementationReview": "PENDING",
-  "schemaScalingP3": "LOCALLY_VERIFIED_REPAIR_INDEPENDENT_CLOSURE_PENDING",
+  "independentImplementationReview": {
+    "status": "APPROVE_ENGINEERING_NO_FINDINGS",
+    "commit": "a42e808675d6a49c8c4af30128eb1c3a6f310765",
+    "verdict": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
+      "sizeBytes": 14576,
+      "sha256": "e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review.json",
+      "sizeBytes": 728,
+      "sha256": "1b308f60877156a18f82ec1df4290a11b9e35e4c6497895990c914f0e9d3bb0e"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no retained script/native execution, builds, tests, playback, imports or approvals."
+  },
+  "schemaScalingP3": "CLOSED_BY_EXACT_INDEPENDENT_REVIEW",
   "assetAndGeometryIndependentReview": {
     "verdict": {
       "path": "out/evidence/asset-and-geometry-independent-2026-10-15/review-7e141c0f-24cf12d5.md",

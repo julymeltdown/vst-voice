@@ -101,8 +101,8 @@
       "sizeBytes": 566,
       "sha256": "e8d184b53b869557451b9e34a33ede071c025ae8cca77c4194c3fe107e9984f6"
     },
-    "openP3": "Packet-level verification repair locally verified; independent closure pending; see PREPARED_DONOR_PACKET_CACHE_2026-10-15.md",
-    "newImporterReviewed": false
+    "openP3": "CLOSED_BY_A42E8086_EXACT_INDEPENDENT_REVIEW",
+    "newImporterReviewed": true
   },
   "preparedDonorImporter": "NOT_IMPLEMENTED",
   "packetBoundPublication": "REFUSED_UNTIL_NOTICE_CLOSURE",
@@ -110,7 +110,7 @@
   "rightsOrHumanAcceptance": false,
   "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
   "fullSuite": "NOT_RUN",
-  "pythonSchemaFiveProducerParity": "NOT_IMPLEMENTED",
+  "pythonSchemaFiveProducerParity": "FOLLOWUP_LOCALLY_VERIFIED_SEE_PREPARED_DONOR_PYTHON_PARITY_2026-10-15",
   "certifiedAssetLossP2": {
     "status": "LOCALLY_VERIFIED_INDEPENDENT_ASSET_REVIEW_PENDING",
     "report": "docs/implementation/CERTIFIED_ASSET_RECOVERY_2026-10-15.md"
@@ -120,5 +120,18 @@
     20
   ],
   "U45": "HELD",
-  "Beta": "BLOCKED"
+  "Beta": "BLOCKED",
+  "packetScalingClosureReview": {
+    "verdict": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
+      "sizeBytes": 14576,
+      "sha256": "e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review.json",
+      "sizeBytes": 728,
+      "sha256": "1b308f60877156a18f82ec1df4290a11b9e35e4c6497895990c914f0e9d3bb0e"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no retained script/native execution, builds, tests, playback, imports or approvals."
+  }
 }

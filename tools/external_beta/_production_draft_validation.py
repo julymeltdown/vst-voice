@@ -15,6 +15,7 @@ from ._production_common import ProductionResult, is_hex_digest, is_timestamp, s
 from ._production_review_transition import review_transition_errors, review_inspection_policy, CURRENT_TAKE_INSPECTOR_VERSION
 from ._source_admission import FEASIBILITY, PERMISSIONS, STRATEGY_KINDS
 from ._production_inventory import inventory_errors, producer_assignments, style_owned
+from ._prepared_donor_evidence import DONOR_FIELDS, DONOR_ID, FILE_LIMITS, prepared_packet_facts
 
 MAX_JSON_BYTES = 64 * 1024 * 1024
 MAX_HISTORY_BYTES = 256 * 1024 * 1024
@@ -439,6 +440,26 @@ def _quality_hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def _retained_packet_facts(root: Path, packet_sha256: str) -> dict:
+    directory = root
+    for part in ("source-evidence", "packets", packet_sha256):
+        directory /= part
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError("Prepared donor notice parent must be a real directory")
+    marker = directory / "INCOMPLETE"
+    if marker.exists() or marker.is_symlink():
+        raise ValueError("Prepared donor retained packet is incomplete")
+    return prepared_packet_facts({name: _read_bounded_bytes(directory / name, limit)
+                                  for name, limit in FILE_LIMITS.items()}, packet_sha256)
+
+
+def _prepared_binding_identity(project_id: str, binding: dict) -> str:
+    return "source-" + _quality_hash({"format": "take-source-binding-v2", "projectId": project_id,
+        "takeId": binding["takeId"], "audioSha256": binding["rawAssetSha256"], "strategyId": binding["strategy"]["id"],
+        "licenseSha256": binding["strategy"]["licenseSha256"], "importerId": binding["importerId"],
+        "importedAtUtc": binding["importedAtUtc"], "preparedDonor": binding["preparedDonor"]})
+
+
 def _quality_policy_identity(source: dict[str, Any]) -> str:
     return _quality_hash({"format": "seam-source-quality-policy-v1", **{key: source[key] for key in
         ("id", "kind", "rights", "licenseLocator", "licenseSha256")}, **source["permissions"]})
@@ -514,10 +535,10 @@ def _quality_reviewer_independent(project: dict[str, Any], row: dict[str, Any]) 
 
 def _project(root: Path, project: dict[str, Any], label: str, errors: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     schema = project.get("schemaVersion")
-    if type(schema) is not int or schema not in (1, 2, 3, 4) or project.get("format") != "com.project-seam.voicebank-production":
+    if type(schema) is not int or schema not in (1, 2, 3, 4, 5) or project.get("format") != "com.project-seam.voicebank-production":
         errors.append(f"{label} producer schema is invalid")
         return {}, {}
-    if (schema == 4 and project.get("language") not in ("ja", "en", "ko")) or (schema < 4 and "language" in project):
+    if (schema >= 4 and project.get("language") not in ("ja", "en", "ko")) or (schema < 4 and "language" in project):
         errors.append(f"{label} language ownership does not match its schema")
     def valid_style(row):
         if schema < 4:
@@ -591,9 +612,13 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
     reviews = _records(project, "reviews", "reviewId", label, errors)
     bindings = _records(project, "sourceBindings", "id", label, errors) if schema >= 2 else {}
     source_takes: set[str] = set()
+    packets: dict[str, list[dict]] = {}
     for binding in bindings.values():
-        if set(binding) != {"id", "takeId", "rawAssetSha256", "strategy", "importerId", "importedAtUtc", "licenseSnapshotPath"}:
-            errors.append(f"{label} source binding fields do not match schema 2")
+        fields = {"id", "takeId", "rawAssetSha256", "strategy", "importerId", "importedAtUtc", "licenseSnapshotPath"}
+        if "preparedDonor" in binding:
+            fields.add("preparedDonor")
+        if set(binding) != fields:
+            errors.append(f"{label} source binding fields do not match its schema")
         owner = takes.get(binding.get("takeId")) if isinstance(binding.get("takeId"), str) else None
         snapshot = binding.get("strategy")
         if not isinstance(snapshot, dict):
@@ -611,9 +636,36 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         if relative != f"source-evidence/{digest}.txt":
             errors.append(f"{label} retained source evidence path is not content-addressed")
         _file(root, relative, digest, 4 * 1024 * 1024, f"{label}.sourceBindings[{binding['id']}]", errors)
+        if "preparedDonor" in binding:
+            donor = binding["preparedDonor"]
+            if (schema < 5 or project.get("language") != "en" or snapshot.get("kind") != "HUMAN_RECORDING" or
+                not isinstance(donor, dict) or set(donor) != DONOR_FIELDS or
+                not isinstance(donor.get("donorId"), str) or DONOR_ID.fullmatch(donor["donorId"]) is None or
+                any(not isinstance(donor.get(key), str) or HEX64_LOWER.fullmatch(donor[key]) is None
+                    for key in DONOR_FIELDS - {"donorId"})):
+                errors.append(f"{label} prepared donor requires schema 5 English human-recording identity and five exact fields")
+                continue
+            try:
+                if binding["id"] != _prepared_binding_identity(project["projectId"], binding):
+                    raise ValueError("prepared donor v2 binding identity differs")
+            except (KeyError, TypeError, UnicodeError, ValueError) as exc:
+                errors.append(f"{label} {exc}")
+                continue
+            packets.setdefault(donor["packetSha256"], []).append(binding)
+    for packet_sha256, members in packets.items():
+        try:
+            facts = _retained_packet_facts(root, packet_sha256)
+            for binding in members:
+                donor = binding["preparedDonor"]
+                if (any(facts[key] != donor[key] for key in DONOR_FIELDS - {"donorId"}) or
+                    facts["donors"].get(donor["donorId"]) != binding["rawAssetSha256"]):
+                    errors.append(f"{label} retained prepared donor differs from captured take {binding['takeId']}")
+        except (OSError, UnicodeError, ValueError, TypeError, RecursionError) as exc:
+            errors.append(f"{label} retained prepared donor cannot be verified: {exc}")
     owned_revisions: set[str] = set()
     for take in takes.values():
-        if not valid_style(take) or (schema == 4 and not _integer(take.get("pitchLayer"), 24, 96)):
+        layers = project.get("declaredPitchLayers")
+        if not valid_style(take) or (schema >= 4 and (not isinstance(layers, list) or take.get("pitchLayer") not in layers)):
             errors.append(f"{label} take style/pitch ownership is invalid")
         if take.get("supersedesTakeId"):
             parent = takes.get(take["supersedesTakeId"]) if isinstance(take["supersedesTakeId"], str) else None
@@ -663,7 +715,7 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
     # hard-coded 24..96 window on both sides, which refused projects the producer considered valid
     # and accepted layers the inventory never offered.
     declared_layers = project.get("declaredPitchLayers")
-    if schema == 4:
+    if schema >= 4:
         if not isinstance(declared_layers, list) or not declared_layers or any(
                 not _integer(layer, 0, 127) for layer in declared_layers):
             errors.append(f"{label}.declaredPitchLayers must be a non-empty list of MIDI notes")
@@ -673,7 +725,7 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
             errors.append(f"{label} assignment identity is invalid")
             continue
         if (not valid_style(assignment)
-                or (schema == 4 and assignment.get("pitchLayer") not in declared_layers)):
+                or (schema >= 4 and assignment.get("pitchLayer") not in declared_layers)):
             errors.append(f"{label} assignment style/pitch ownership is invalid")
             continue
         if any(not isinstance(assignment.get(field), str) or not assignment[field] for field in ("coverageKey", "promptId", "plannedTakeId")) or not isinstance(assignment.get("takeId"), str) or not isinstance(assignment.get("state"), str) or assignment["state"] not in QUEUE_STATES or any(type(assignment.get(field)) is not bool for field in ("markerReviewed", "pitchReviewed")):
@@ -787,13 +839,13 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             if not isinstance(operators, list) or not any(isinstance(item, dict) and item.get("operatorId") == journal.get("operatorId") for item in operators):
                 errors.append(f"{label} journal actor is not registered")
             schema = project.get("schemaVersion")
-            if previous_generation and previous_schema == 4:
+            if previous_generation and previous_schema >= 4:
                 if project.get("language") != latest.get("language"):
                     errors.append(f"{label} rewrites immutable workspace language")
                 for identity, take in previous_takes.items():
                     if identity not in takes or any(takes[identity].get(field) != take.get(field) for field in ("style", "coverageKey", "pitchLayer")):
                         errors.append(f"{label} reassigns immutable take production identity")
-            if previous_generation and previous_schema < 4 and schema == 4:
+            if previous_generation and previous_schema < 4 and type(schema) is int and schema >= 4:
                 errors.append(f"{label} legacy migration is not yet admitted")
             if type(schema) is int and schema < previous_schema:
                 errors.append(f"{label} downgrades source-aware history")
