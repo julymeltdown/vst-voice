@@ -148,7 +148,28 @@
       "sha256": "bd9afeea4373b6c8505d1924b2eb7b67bee530d8ff45160473e8e97f3c489284"
     }
   },
-  "independentReview": "PENDING",
+  "independentReview": {
+    "schemaVersion": 1,
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13dae-e630-72a0-a721-02e329adbe88",
+    "messageId": "msg_b17d85d5cb6b4666875ad6bfd9066df7",
+    "completedAtUnixSeconds": 1792036436,
+    "durationMs": 201384,
+    "commit": "271a03b9e616d7643a6321c75a768f79c4adb786",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": 0,
+    "requiredChanges": false,
+    "resolvesQueueP3From": "47d66514349258d617853391f74da4aa14c6f8f5",
+    "supplementalCallerEvidenceReviewed": false,
+    "sourceOrHumanOrBetaApproval": false,
+    "reviewerExecution": "Own read-only Git/source/hash/log parsers; no builds/tests/native tools/retained scripts",
+    "finalAnswer": {
+      "path": "out/evidence/studio-style-owned-queue-independent-2026-10-15/review-271a03b9.md",
+      "sizeBytes": 7231,
+      "sha256": "3db493890cf1deefbd4dd9e744f4b93fecccf7f3ebdc2ecb4dde04db680325db"
+    }
+  },
   "fullSuite": "NOT_RUN",
   "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
   "appKitAcceptance": "NOT_RUN",
@@ -167,7 +188,8 @@
     "verdict": "APPROVE_ENGINEERING_ONLY",
     "p3Findings": 1,
     "queueP3ImplementedHere": true,
-    "currentUnitIndependentReview": "PENDING"
+    "currentUnitIndependentReview": "APPROVE_ENGINEERING_ONLY_ZERO_FINDINGS",
+    "queueP3Status": "CLOSED"
   },
   "originalPostCtestIdentityEvidence": "RUNNER_ASSERTION_ONLY_NO_SEPARATE_AFTER_RECORD",
   "additionalCallerVerification": {

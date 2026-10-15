@@ -134,7 +134,7 @@
     "requiredChangeToLandedFix": false,
     "finding": "Queue state lookup ignores style",
     "implementedFollowup": "271a03b9e616d7643a6321c75a768f79c4adb786",
-    "followupIndependentReview": "PENDING",
+    "followupIndependentReview": "SUPERSEDED_BY_P3_FOLLOWUP_REVIEW",
     "sourceOrHumanOrBetaApproval": false,
     "reviewerExecution": "Own read-only Git/source/hash/log parsers; no native/build/test/retained-script execution",
     "finalAnswer": {
@@ -160,6 +160,28 @@
   "p3Followup": {
     "commit": "271a03b9e616d7643a6321c75a768f79c4adb786",
     "implementation": "SHARED_ASSIGNMENT_HELPER_AND_THREE_QUEUE_REGRESSIONS",
-    "independentReview": "PENDING"
+    "independentReview": {
+      "schemaVersion": 1,
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "title": "Review in English",
+      "turnId": "01a13dae-e630-72a0-a721-02e329adbe88",
+      "messageId": "msg_b17d85d5cb6b4666875ad6bfd9066df7",
+      "completedAtUnixSeconds": 1792036436,
+      "durationMs": 201384,
+      "commit": "271a03b9e616d7643a6321c75a768f79c4adb786",
+      "verdict": "APPROVE_ENGINEERING_ONLY",
+      "findings": 0,
+      "requiredChanges": false,
+      "resolvesQueueP3From": "47d66514349258d617853391f74da4aa14c6f8f5",
+      "supplementalCallerEvidenceReviewed": false,
+      "sourceOrHumanOrBetaApproval": false,
+      "reviewerExecution": "Own read-only Git/source/hash/log parsers; no builds/tests/native tools/retained scripts",
+      "finalAnswer": {
+        "path": "out/evidence/studio-style-owned-queue-independent-2026-10-15/review-271a03b9.md",
+        "sizeBytes": 7231,
+        "sha256": "3db493890cf1deefbd4dd9e744f4b93fecccf7f3ebdc2ecb4dde04db680325db"
+      }
+    },
+    "status": "CLOSED_BY_INDEPENDENT_ENGINEERING_REVIEW"
   }
 }
