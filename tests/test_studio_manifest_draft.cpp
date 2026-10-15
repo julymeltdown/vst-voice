@@ -191,6 +191,40 @@ TEST_CASE("Studio asynchronously creates and opens every assignment-owned style"
   fixture.sourceUnchanged();
 }
 
+TEST_CASE("Studio queue state follows the owned style") {
+  Fixture fixture{false, false, false, true};
+  fixture.createLoaded();
+  fixture.project.takes[0].state = production::UnitQueueState::Rejected;
+  fixture.project.unitAssignments[0].state = production::UnitQueueState::Rejected;
+  CHECK(fixture.repository.save(fixture.project,
+      {.action = "save", .subjectId = "take-a", .operatorId = "producer",
+       .occurredAtUtc = "2026-10-15T04:00:00Z"}));
+  CHECK(fixture.controller.openProductionProject(fixture.root / "producer", fixture.project.inventorySha256, "producer"));
+  fixture.selectStyle("warm");
+  CHECK(fixture.controller.productionStateForUnit(*fixture.controller.selectedUnit()) == production::UnitQueueState::Rejected);
+  fixture.selectStyle("soft");
+  CHECK(fixture.controller.productionStateForUnit(*fixture.controller.selectedUnit()) == production::UnitQueueState::MarkerReview);
+  fixture.sourceUnchanged();
+}
+
+TEST_CASE("Studio queue state refuses an unowned style") {
+  Fixture fixture{false, false, false, true};
+  fixture.createLoaded();
+  auto unit = *fixture.controller.selectedUnit();
+  unit.style = "unowned";
+  CHECK(!fixture.controller.productionStateForUnit(unit));
+  fixture.sourceUnchanged();
+}
+
+TEST_CASE("Studio queue state preserves legacy style matching") {
+  Fixture fixture;
+  fixture.createLoaded();
+  auto unit = *fixture.controller.selectedUnit();
+  unit.style = "legacy-manifest-style";
+  CHECK(fixture.controller.productionStateForUnit(unit) == production::UnitQueueState::MarkerReview);
+  fixture.sourceUnchanged();
+}
+
 TEST_CASE("Studio style-owned bank selection retakes only the selected style") {
   Fixture fixture{false, false, false, true};
   fixture.createLoaded(); fixture.selectStyle("soft");

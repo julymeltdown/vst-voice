@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "unit": "studio-style-owned-queue-state",
+  "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+  "manifest": {
+    "path": "out/evidence/studio-style-owned-queue-2026-10-15/manifest.json",
+    "sizeBytes": 11346,
+    "sha256": "ae04f092ffe57dedd1817056e7a994756928c949783b0358485396191a916825"
+  },
+  "retainedArtifacts": 56,
+  "preservedBindings": 6,
+  "initialAttempt": {
+    "classification": "FIXTURE_ERROR_NOT_WRONG_STATE_PROOF",
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 28.895113165985094,
+      "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+      "sourcePatchSha256": "87f63cf75e82dd3ce2a0c41dd467e9ae44f21ed75a820e73bdc7d93495c3616b",
+      "stableSourceDiff": true,
+      "headUnchanged": true
+    },
+    "native": {
+      "argv": [
+        "build/release/seam_studio_manifest_draft_tests",
+        "Studio queue state"
+      ],
+      "exitCode": 1,
+      "elapsedSeconds": 0.4117801249958575,
+      "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+      "sourcePatchSha256": "87f63cf75e82dd3ce2a0c41dd467e9ae44f21ed75a820e73bdc7d93495c3616b",
+      "stableSourceDiff": true,
+      "headUnchanged": true
+    }
+  },
+  "correctedBaseline": {
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.091213540988974,
+      "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+      "sourcePatchSha256": "a97b039b08bd77434bbad866892f5f3486738402105fb268214ee50bf3048675",
+      "stableSourceDiff": true,
+      "headUnchanged": true
+    },
+    "native": {
+      "argv": [
+        "build/release/seam_studio_manifest_draft_tests",
+        "Studio queue state"
+      ],
+      "exitCode": 1,
+      "elapsedSeconds": 0.4477542079985142,
+      "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+      "sourcePatchSha256": "a97b039b08bd77434bbad866892f5f3486738402105fb268214ee50bf3048675",
+      "stableSourceDiff": true,
+      "headUnchanged": true
+    },
+    "passed": 1,
+    "genuineQueueFailures": 2
+  },
+  "finalBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 10.188092374999542,
+    "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+    "sourcePatchSha256": "8cc30f3fea3847a5d8ba1f05fdc74da09e744fd26c7f6f2b533b4d464f78a773",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "finalFocusedCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_studio_manifest_draft_tests|seam_studio_sample_review_tests|seam_style_owned_candidate_import_tests|seam_studio_recording_import_parity_tests|seam_studio_generation_bank_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 24.719783833978,
+    "sourceBase": "933c81424613fc87265f921a73800580c18114a0",
+    "sourcePatchSha256": "8cc30f3fea3847a5d8ba1f05fdc74da09e744fd26c7f6f2b533b4d464f78a773",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "passingNativeCases": {
+    "seam_style_owned_candidate_import_tests": 3,
+    "seam_studio_sample_review_tests": 14,
+    "seam_studio_manifest_draft_tests": 44,
+    "seam_studio_generation_bank_tests": 2,
+    "seam_studio_recording_import_parity_tests": 1
+  },
+  "newQueueCases": 3,
+  "nativeExecutables": [
+    {
+      "path": "seam_studio_manifest_draft_tests",
+      "sizeBytes": 10080912,
+      "sha256": "3137ad823bf7d7664bd597a2cdcfc2d3e1c92bc1268cfa9353c8f3e6dee8f654"
+    },
+    {
+      "path": "seam_studio_sample_review_tests",
+      "sizeBytes": 9834624,
+      "sha256": "35fe5ec48e68c20f936bb4d6c5b3d69e5d3c7d1377164be60144b3ed7e19dadb"
+    },
+    {
+      "path": "seam_style_owned_candidate_import_tests",
+      "sizeBytes": 9770376,
+      "sha256": "54dd2ecee5e404c384c42885903b546f2d57d4d90419647694cdaddda98299bd"
+    },
+    {
+      "path": "seam_studio_recording_import_parity_tests",
+      "sizeBytes": 9811032,
+      "sha256": "bc1ce7ad238dc20b12e79540f344f4e0d915ede1e8bf925be1ac38014147602a"
+    },
+    {
+      "path": "seam_studio_generation_bank_tests",
+      "sizeBytes": 14840784,
+      "sha256": "b72ebcd9f72ed30e670ae09f44885e03bffea13c80d996c257865d1c76e1f5ee"
+    },
+    {
+      "path": "seam_voicebank_cli",
+      "sizeBytes": 9842512,
+      "sha256": "6e5b0ca2e71f54aafd3626cf80039166fd68f93eb36053ca35beb280684668e6"
+    }
+  ],
+  "nativeEmbeddedSourceCommit": "933c81424613fc87265f921a73800580c18114a0",
+  "executedImplementation": "BASE_PLUS_RETAINED_UNIT_PATCH",
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/studio-style-owned-queue-2026-10-15/verification.log",
+      "sizeBytes": 307,
+      "sha256": "bd9afeea4373b6c8505d1924b2eb7b67bee530d8ff45160473e8e97f3c489284"
+    }
+  },
+  "independentReview": "PENDING",
+  "fullSuite": "NOT_RUN",
+  "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
+  "appKitAcceptance": "NOT_RUN",
+  "physicalMicrophoneAcceptance": "NOT_RUN",
+  "sourceOrHumanApproval": false,
+  "internetAudioImported": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}

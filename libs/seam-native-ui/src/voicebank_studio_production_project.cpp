@@ -22,6 +22,21 @@
 
 namespace seam::native_ui {
 namespace {
+const voicebank_production::UnitAssignment* productionAssignmentForUnit(
+    const voicebank_production::VoicebankProductionProject& project,
+    const voicebank::Unit& unit) noexcept {
+  const auto coverage = voicebank_studio_internal::coverageKey(unit);
+  const bool styleOwned =
+      project.schemaVersion >= voicebank_production::kProductionStyleSchemaVersion;
+  const auto assignment = std::find_if(
+      project.unitAssignments.begin(), project.unitAssignments.end(),
+      [&coverage, &unit, styleOwned](const voicebank_production::UnitAssignment& value) {
+        return value.coverageKey == coverage && value.pitchLayer == unit.rootMidi &&
+               (!styleOwned || value.style == unit.style);
+      });
+  return assignment == project.unitAssignments.end() ? nullptr : &*assignment;
+}
+
 std::string productionCommitStatus(std::string successStatus, const voicebank_production::ProductionCommitReceipt& receipt) {
   if (receipt.durabilityConfirmed) return successStatus;
   return "COMMIT DURABILITY UNCONFIRMED / RECOVER / DO NOT REPEAT / GENERATION " +
@@ -1175,18 +1190,7 @@ VoicebankStudioController::selectedProductionAssignment() const noexcept {
                : nullptr;
   }
   const auto* unit = selectedUnit();
-  if (unit == nullptr) return nullptr;
-  const auto coverage = voicebank_studio_internal::coverageKey(*unit);
-  const bool styleOwned = productionProject_->schemaVersion >= voicebank_production::kProductionStyleSchemaVersion;
-  const auto assignment = std::find_if(
-      productionProject_->unitAssignments.begin(),
-      productionProject_->unitAssignments.end(),
-      [&coverage, unit, styleOwned](const voicebank_production::UnitAssignment& value) {
-        return value.coverageKey == coverage && value.pitchLayer == unit->rootMidi &&
-               (!styleOwned || value.style == unit->style);
-      });
-  return assignment == productionProject_->unitAssignments.end()
-             ? nullptr : &*assignment;
+  return unit == nullptr ? nullptr : productionAssignmentForUnit(*productionProject_, *unit);
 }
 
 core::Result<void> VoicebankStudioController::inspectSelectedProductionTake(
@@ -1388,14 +1392,8 @@ std::optional<voicebank_production::UnitQueueState>
 VoicebankStudioController::productionStateForUnit(
     const voicebank::Unit& unit) const noexcept {
   if (!productionProject_) return std::nullopt;
-  const auto coverage = voicebank_studio_internal::coverageKey(unit);
-  const auto assignment = std::find_if(
-      productionProject_->unitAssignments.begin(),
-      productionProject_->unitAssignments.end(),
-      [&coverage, &unit](const voicebank_production::UnitAssignment& value) {
-        return value.coverageKey == coverage && value.pitchLayer == unit.rootMidi;
-      });
-  return assignment == productionProject_->unitAssignments.end()
+  const auto* assignment = productionAssignmentForUnit(*productionProject_, unit);
+  return assignment == nullptr
              ? std::nullopt : std::optional{assignment->state};
 }
 
