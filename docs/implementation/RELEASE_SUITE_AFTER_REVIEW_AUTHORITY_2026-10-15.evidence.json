@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "unit": "release-suite-after-review-authority",
+  "sourceCommit": "50f5b1d9a215ce4e239508a63a4e74a07b89a5ee",
+  "sourceTree": "4ae7c92c0caa2d56be887c5d22464b3096e19682",
+  "manifest": {
+    "path": "out/evidence/release-suite-after-review-authority-2026-10-15/manifest.json",
+    "sizeBytes": 9761,
+    "sha256": "7e831aeba2dc02154a0e194776f5e57e7aa2eabff8be8fc722afcbc8528657ce"
+  },
+  "retainedArtifacts": 45,
+  "preservedBindings": 8,
+  "build": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 24.604081750003388,
+    "before": {
+      "head": "50f5b1d9a215ce4e239508a63a4e74a07b89a5ee",
+      "tree": "4ae7c92c0caa2d56be887c5d22464b3096e19682",
+      "trackedDiff": "",
+      "status": ""
+    },
+    "after": {
+      "head": "50f5b1d9a215ce4e239508a63a4e74a07b89a5ee",
+      "tree": "4ae7c92c0caa2d56be887c5d22464b3096e19682",
+      "trackedDiff": "",
+      "status": ""
+    }
+  },
+  "ctest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "--parallel",
+      "1"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 704.5760843750031,
+    "registeredTests": 239,
+    "stableExecutingInputs": true,
+    "before": {
+      "head": "50f5b1d9a215ce4e239508a63a4e74a07b89a5ee",
+      "tree": "4ae7c92c0caa2d56be887c5d22464b3096e19682",
+      "trackedDiff": "",
+      "status": ""
+    },
+    "after": {
+      "head": "50f5b1d9a215ce4e239508a63a4e74a07b89a5ee",
+      "tree": "4ae7c92c0caa2d56be887c5d22464b3096e19682",
+      "trackedDiff": "",
+      "status": ""
+    }
+  },
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/release-suite-after-review-authority-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/release-suite-after-review-authority-2026-10-15/verification.log",
+      "sizeBytes": 321,
+      "sha256": "9ed9ca27e9032270920a84f560987de351f4bef14420ffa4dfdc5419264bb1bc"
+    }
+  },
+  "retainedNativeExecutables": 10,
+  "retainedSelectedSourceFiles": 20,
+  "registeredLanesIncludeDuplicatePythonDiscovery": false,
+  "independentReview": "EXACT_4BAFEC5E_APPROVED; OTHER_UNITS_PENDING",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "authorizesRelease": false
+}

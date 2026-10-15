@@ -9328,3 +9328,6 @@ Independent APPROVE exact a0259814, engineering only, two P3 findings/no require
 ## 2026-10-15 — English coverage P2 independently closed
 
 Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f9 coverage stress-policy P2 CLOSED. [Coverage dossier](ENGLISH_COVERAGE_CONTRACT_2026-10-15.md) binds the actual final in a separate review root. All 50 historical artifacts/7 pins rehashed; reviewer read/replayed rules offline without builds/tests/native/verifier execution. Optional notes and later-unit review statuses remain separate. New 4bafec5e authority repair review active. Source/human gates unchanged: Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+2026-10-15 — Full Release checkpoint after review authority: exact 50f5b1d9/tree 4ae7c92c; full dependent build and 239/239 serial CTest lanes PASS, 189 observed inputs/Git stable. See RELEASE_SUITE_AFTER_REVIEW_AUTHORITY_2026-10-15.md and its evidence index. Exact 4bafec5e independently approved within scope; legacy residual and other reviews remain open. Alpha 0/20; U45 HELD; Beta BLOCKED.
