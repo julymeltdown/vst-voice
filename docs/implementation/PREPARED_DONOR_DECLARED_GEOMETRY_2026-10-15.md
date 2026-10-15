@@ -23,3 +23,8 @@ python3 -B out/evidence/prepared-donor-declared-geometry-2026-10-15/verify.py
 ```
 
 Next is the inspected prepared-donor importer, followed by complete candidate-4 declaration/packet notice closure in directory/package/install checks. Schema-5 review is in progress; certified-asset repair review remains pending. Actual source admission still awaits the pending owner rights/performer decision, genuine producer/distinct reviewer, assignment/review inputs and failed-QC policy. Recorded Alpha 0/20, U45 HELD, Beta BLOCKED; `.github` untouched, Windows TODO retained.
+
+
+## Independent disposition
+
+The exact combined read-only review of `7e141c0f` and `24cf12d5` is retained under `out/evidence/asset-and-geometry-independent-2026-10-15/` (verdict 13,074 bytes, SHA-256 `3d85c506c3f83af9a4a1d881a667dbff73bf3d95529c89ea6bb618b83c5da92f`) and bound by the adjacent index. The asset repair received APPROVE with no findings and its P2 is independently closed. Declared geometry received APPROVE and its concern is closed, with one open P3: add internally consistent out-of-range test inputs so each range clause is independently protected. The reviewer inspected exact committed source and retained evidence without builds, native execution or running retained verifiers. No later importer/cache, source, human or Beta acceptance is implied. Original manifests remain immutable.

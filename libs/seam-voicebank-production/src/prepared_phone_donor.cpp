@@ -136,9 +136,24 @@ void checkDirectory(const std::filesystem::path& directory, std::stop_token stop
       error == std::errc::no_such_file_or_directory, "Prepared donor directory is incomplete");
 }
 
+void declaredPcmFacts(const J& row) {
+  // Check wire types before canonical JSON can normalize integral doubles.
+  for (const auto key : {"sampleRate", "frames", "startFrame", "endFrameExclusive"})
+    (void)integer(row, key);
+  require(field(row, "nonzeroPcm").isBool(), "Expected prepared donor boolean: nonzeroPcm");
+  require(field(row, "durationSeconds").isNumber(), "Expected prepared donor number: durationSeconds");
+  const auto rate = integer(row, "sampleRate"), frames = integer(row, "frames");
+  const auto start = integer(row, "startFrame"), end = integer(row, "endFrameExclusive");
+  require(rate >= 8000 && rate <= 192000 && frames > 0 && frames <= (64LL * 1024LL * 1024LL - 44LL) / 2LL &&
+      start >= 0 && end > start && end - start == frames &&
+      field(row, "durationSeconds").asNumber() == static_cast<double>(frames) / static_cast<double>(rate),
+      "Prepared donor declared PCM facts are inconsistent or exceed canonical WAV bounds");
+}
+
 template<class Reader>
 PreparedPhoneDonorEvidence evidenceFrom(Reader&& reader, std::string expectedPacketSha256,
-    std::string donorId, std::stop_token stopToken) {
+    std::string donorId, std::stop_token stopToken,
+    std::map<std::string, std::string>* donorDigests = nullptr) {
   PreparedPhoneDonorEvidence result;
   result.donorId = std::move(donorId);
   result.packet = reader("donors.json", std::move(expectedPacketSha256), 16U * MiB, stopToken);
@@ -213,23 +228,20 @@ PreparedPhoneDonorEvidence evidenceFrom(Reader&& reader, std::string expectedPac
     require(field(row, "sourceAudio") == field(*sourceRow, "audio") &&
         field(row, "sourceLabels") == field(*sourceRow, "labels"), "Prepared donor original bindings differ");
     require(digest(text(row, "derivedSha256")) && digest(text(row, "pcmSha256")), "Invalid prepared donor audio digest");
+    if (donorDigests) {
+      declaredPcmFacts(row);
+      donorDigests->emplace(id, text(row, "derivedSha256"));
+    }
     if (id == result.donorId) selected = &row;
   }
+  if (donorDigests) {
+    checkpoint(stopToken);
+    return result;
+  }
   require(selected != nullptr, "Selected prepared donor id is absent");
-  // Canonical JSON can serialize integral doubles as integers. Check the
-  // original selected row before that normalization can erase its wire types.
-  for (const auto key : {"sampleRate", "frames", "startFrame", "endFrameExclusive"})
-    (void)integer(*selected, key);
-  require(field(*selected, "nonzeroPcm").isBool(), "Expected prepared donor boolean: nonzeroPcm");
-  require(field(*selected, "durationSeconds").isNumber(), "Expected prepared donor number: durationSeconds");
   // Metadata can be internally checked without claiming to have measured WAV
   // bytes. The later full/owned paths still compare all facts with the audio.
-  const auto rate = integer(*selected, "sampleRate"), frames = integer(*selected, "frames");
-  const auto start = integer(*selected, "startFrame"), end = integer(*selected, "endFrameExclusive");
-  require(rate >= 8000 && rate <= 192000 && frames > 0 && frames <= (64LL * 1024LL * 1024LL - 44LL) / 2LL &&
-      start >= 0 && end > start && end - start == frames &&
-      field(*selected, "durationSeconds").asNumber() == static_cast<double>(frames) / static_cast<double>(rate),
-      "Prepared donor declared PCM facts are inconsistent or exceed canonical WAV bounds");
+  declaredPcmFacts(*selected);
   result.derivedAudioSha256 = text(*selected, "derivedSha256");
   result.proposalJson = formats::stringifyJson(*selected, false);
   checkpoint(stopToken);
@@ -251,6 +263,25 @@ PreparedPhoneDonorSnapshot finishSnapshot(PreparedPhoneDonorEvidence evidence,
   return result;
 }
 }  // namespace
+
+core::Result<PreparedPhoneDonorPacketFacts> loadPreparedPhoneDonorPacketFacts(
+    const std::filesystem::path& directory, std::string expectedPacketSha256,
+    std::stop_token stopToken) {
+  try {
+    checkDirectory(directory, stopToken);
+    PreparedPhoneDonorPacketFacts result;
+    const auto evidence = evidenceFrom([&](std::string name, std::string expected, std::uint64_t limit, std::stop_token stop) {
+      return read(directory, std::move(name), std::move(expected), limit, stop);
+    }, std::move(expectedPacketSha256), {}, stopToken, &result.derivedAudioSha256ByDonor);
+    result.packetSha256 = evidence.packet.sha256;
+    result.intakePlanSha256 = evidence.plan.sha256;
+    result.originalLicenseSha256 = evidence.license.sha256;
+    result.attributionSha256 = evidence.attribution.sha256;
+    return result;
+  } catch (const Refusal& refusal) {
+    return core::Result<PreparedPhoneDonorPacketFacts>{refusal.error};
+  }
+}
 
 core::Result<PreparedPhoneDonorEvidence> loadPreparedPhoneDonorEvidence(
     const std::filesystem::path& directory, std::string expectedPacketSha256,

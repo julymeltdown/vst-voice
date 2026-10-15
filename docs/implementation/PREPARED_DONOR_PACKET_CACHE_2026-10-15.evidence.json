@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-packet-verification-cache",
+  "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+  "sourcePatchSha256": "4873188f4b0f6f3bb8d1e29d6b721bedd7ee09269ca2b562251fd88b270341d6",
+  "manifest": {
+    "path": "out/evidence/prepared-donor-packet-cache-2026-10-15/manifest.json",
+    "sizeBytes": 25463,
+    "sha256": "7f0b86c6d952c5051423e5531ce3bfbe9ef47feced3577717c47d38ba89103e4"
+  },
+  "retainedArtifacts": 96,
+  "preservedBindings": 10,
+  "initialPassingDesign": {
+    "releaseBuild": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 80.05287429099553,
+      "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+      "sourcePatchSha256": "3a2670c53865967332ff092b1c9ae42f9bee65b3d0e3893bd1ae59cfa9cb635d",
+      "headUnchanged": true,
+      "stableSourceDiff": true
+    },
+    "releaseCtest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 7.740448625001591,
+      "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+      "sourcePatchSha256": "3a2670c53865967332ff092b1c9ae42f9bee65b3d0e3893bd1ae59cfa9cb635d",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "nativeBeforeEqualsAfter": true
+    },
+    "sanitizerBuild": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 103.29264124998008,
+      "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+      "sourcePatchSha256": "3a2670c53865967332ff092b1c9ae42f9bee65b3d0e3893bd1ae59cfa9cb635d",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    "sanitizerCtest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 38.92243204099941,
+      "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+      "sourcePatchSha256": "3a2670c53865967332ff092b1c9ae42f9bee65b3d0e3893bd1ae59cfa9cb635d",
+      "headUnchanged": true,
+      "stableSourceDiff": true,
+      "sanitizerEnvironment": {
+        "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      },
+      "nativeBeforeEqualsAfter": true
+    }
+  },
+  "finalDesign": "Group binding references by packet and verify one bounded packet fact map at a time; do not retain all packets maps",
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 10.60679879199597,
+    "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+    "sourcePatchSha256": "4873188f4b0f6f3bb8d1e29d6b721bedd7ee09269ca2b562251fd88b270341d6",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_voicebank_production_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 6.5265245829941705,
+    "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+    "sourcePatchSha256": "4873188f4b0f6f3bb8d1e29d6b721bedd7ee09269ca2b562251fd88b270341d6",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "releaseNativeCasesInCtestOrder": [
+    17,
+    28,
+    64
+  ],
+  "releaseNativeCaseExecutions": 109,
+  "sanitizerBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/sanitize",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 34.279374542005826,
+    "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+    "sourcePatchSha256": "4873188f4b0f6f3bb8d1e29d6b721bedd7ee09269ca2b562251fd88b270341d6",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "sanitizerEnvironment": {
+      "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+      "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+    }
+  },
+  "sanitizerCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/sanitize",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 42.757195624988526,
+    "sourceBase": "dd0b515dff22564e46357c896e78870f01f0657d",
+    "sourcePatchSha256": "4873188f4b0f6f3bb8d1e29d6b721bedd7ee09269ca2b562251fd88b270341d6",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "sanitizerEnvironment": {
+      "ASAN_OPTIONS": "detect_leaks=0:abort_on_error=1:strict_string_checks=1",
+      "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+    },
+    "nativeBeforeEqualsAfter": true
+  },
+  "sanitizerNativeCasesInCtestOrder": [
+    17,
+    28
+  ],
+  "sanitizerNativeCaseExecutions": 45,
+  "newUniqueCases": 3,
+  "distinctSyntheticDonors": 2,
+  "bindingRefusalForms": 5,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-packet-cache-2026-10-15/verification.log",
+      "sizeBytes": 479,
+      "sha256": "12a7e0323621ed838e21b2dd647a02ad72049dc67f44966a0ec1c69ba57e3826"
+    }
+  },
+  "independentImplementationReview": "PENDING",
+  "schemaScalingP3": "LOCALLY_VERIFIED_REPAIR_INDEPENDENT_CLOSURE_PENDING",
+  "assetAndGeometryIndependentReview": {
+    "verdict": {
+      "path": "out/evidence/asset-and-geometry-independent-2026-10-15/review-7e141c0f-24cf12d5.md",
+      "sizeBytes": 13074,
+      "sha256": "3d85c506c3f83af9a4a1d881a667dbff73bf3d95529c89ea6bb618b83c5da92f"
+    },
+    "metadata": {
+      "path": "out/evidence/asset-and-geometry-independent-2026-10-15/review.json",
+      "sizeBytes": 756,
+      "sha256": "9272605b0bd0ebb03a0c96f8a964e681e97f2b9cdaed9bada6317abbb58ba168"
+    },
+    "scope": "Exact read-only committed-source/evidence audit; no new execution or real admission"
+  },
+  "rangeBoundTestGapP3": "OPEN_NOT_ADDRESSED_IN_THIS_UNIT",
+  "loadCountInstrumentation": "NOT_ADDED_GROUP_LOOP_SOURCE_PROOF",
+  "wholeBankBenchmark": "NOT_RUN",
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "leakDetection": "DISABLED",
+  "tsan": "NOT_RUN",
+  "fullSuite": "NOT_RUN",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

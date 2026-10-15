@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -20,6 +21,16 @@ struct PreparedPhoneDonorEvidence final {
   SourceIntakeFileSnapshot packet, plan, license, attribution;
   std::string donorId, proposalJson, derivedAudioSha256;
 };
+// One bounded read/parse of shared metadata, with declared PCM consistency
+// checked for every donor. Contains no audio measurements or held file bytes.
+// Cache only within one verification operation, keyed by packetSha256.
+struct PreparedPhoneDonorPacketFacts final {
+  std::string packetSha256, intakePlanSha256, originalLicenseSha256, attributionSha256;
+  std::map<std::string, std::string> derivedAudioSha256ByDonor;
+};
+[[nodiscard]] core::Result<PreparedPhoneDonorPacketFacts> loadPreparedPhoneDonorPacketFacts(
+    const std::filesystem::path& directory, std::string expectedPacketSha256,
+    std::stop_token stopToken = {});
 // Owns the selected audio too, with facts measured from those exact WAV bytes.
 // Future import must consume/retain these bytes, not reopen preparation paths.
 struct PreparedPhoneDonorSnapshot final {

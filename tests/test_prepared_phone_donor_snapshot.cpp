@@ -20,7 +20,7 @@ struct Fixture final {
   std::filesystem::path root{seam::test::support::temporaryDirectory("prepared-donor-snapshot")};
   std::string id{"fixture_l00000_n1"}, packetSha;
   std::vector<std::byte> audio = std::vector<std::byte>(204U, std::byte{0});
-  Fixture() {
+  explicit Fixture(bool twoDonors = false) {
     const auto tag = [&](std::size_t at, std::string_view text) {
       for (const auto c : text) audio[at++] = static_cast<std::byte>(c);
     };
@@ -40,10 +40,12 @@ struct Fixture final {
         {"sourceUrl", "https://example.invalid/synthetic-test"}, {"attribution", "Synthetic fixture author"}};
     const J contract = J::Object{{"format", "festvox-end-times-v1"}, {"annotationStatus", "AUTOMATIC_UNREVIEWED"},
         {"timeUnit", "seconds"}, {"boundaryRule", "ceil-seconds-times-sample-rate-v1"}};
+    J::Array spans{J::Object{{"sourceId", "fixture"}, {"firstLabelIndex", std::int64_t{0}}, {"labelCount", std::int64_t{1}}}};
+    if (twoDonors) spans.push_back(J::Object{{"sourceId", "fixture"}, {"firstLabelIndex", std::int64_t{1}}, {"labelCount", std::int64_t{1}}});
     const J plan = J::Object{{"schemaVersion", std::int64_t{1}}, {"documentKind", "SourceLabelDonorPlan"}, {"language", "en"},
         {"labelContract", contract}, {"license", sourceLicense},
         {"sources", J::Array{J::Object{{"id", "fixture"}, {"sourceType", "speech"}, {"audio", sourceAudio}, {"labels", sourceLabels}}}},
-        {"spans", J::Array{J::Object{{"sourceId", "fixture"}, {"firstLabelIndex", std::int64_t{0}}, {"labelCount", std::int64_t{1}}}}}};
+        {"spans", std::move(spans)}};
     const auto planText = seam::formats::stringifyJson(plan);
     const J proposal = J::Object{{"id", id}, {"derivedPath", id + ".wav"}, {"derivedSha256", audioSha},
         {"pcmSha256", seam::core::sha256Hex(std::span{audio}.subspan(44U))}, {"sourceId", "fixture"}, {"sourceType", "speech"},
@@ -53,13 +55,28 @@ struct Fixture final {
         {"sourcePhones", J::Array{"aa"}}, {"startFrame", std::int64_t{0}}, {"endFrameExclusive", std::int64_t{80}}, {"sampleRate", std::int64_t{8000}},
         {"frames", std::int64_t{80}}, {"durationSeconds", 0.01}, {"nonzeroPcm", true}, {"assignment", "NOT_ASSIGNED"},
         {"pitchReview", "NOT_REVIEWED"}, {"phoneticReview", "NOT_REVIEWED"}, {"listeningReview", "NOT_REVIEWED"}};
+    J::Array proposals{proposal};
+    if (twoDonors) {
+      const std::string secondId = "fixture_l00001_n1";
+      auto secondAudio = audio; secondAudio[44] = std::byte{24};
+      auto second = proposal;
+      auto& fields = second.asObject();
+      fields["id"] = secondId; fields["derivedPath"] = secondId + ".wav";
+      fields["derivedSha256"] = seam::core::sha256Hex(secondAudio);
+      fields["pcmSha256"] = seam::core::sha256Hex(std::span{secondAudio}.subspan(44U));
+      fields["firstLabelIndex"] = std::int64_t{1}; fields["startFrame"] = std::int64_t{80}; fields["endFrameExclusive"] = std::int64_t{160};
+      fields["sourceAnnotations"] = J::Array{J::Object{{"index", std::int64_t{1}}, {"startSeconds", "0.01"}, {"endSeconds", "0.02"},
+          {"startFrame", std::int64_t{80}}, {"endFrameExclusive", std::int64_t{160}}, {"sourcePhone", "aa"}, {"opaqueColumn", "0"}}};
+      proposals.push_back(std::move(second));
+      CHECK(seam::core::durableAtomicWriteNew(root / (secondId + ".wav"), secondAudio));
+    }
     const J packet = J::Object{{"schemaVersion", std::int64_t{1}}, {"documentKind", "UnassignedPhoneDonorProposals"},
         {"status", "UNAPPROVED"}, {"language", "en"}, {"planSha256", seam::core::sha256Hex(planText)},
         {"labelContract", contract}, {"license", sourceLicense}, {"retainedLicensePath", "license-source.txt"},
         {"retainedAttributionPath", "attribution.txt"}, {"retainedAttributionSha256", seam::core::sha256Hex(notice)},
         {"changeNotice", "Synthetic PCM copied; no pitch or phone assignment."}, {"producerRegistration", "NOT_REGISTERED"},
         {"performerRights", "NOT_ESTABLISHED"}, {"rightsClearance", "NOT_APPROVED"}, {"bankAdmission", "NOT_APPROVED"},
-        {"proposals", J::Array{proposal}}};
+        {"proposals", std::move(proposals)}};
     const auto text = seam::formats::stringifyJson(packet); packetSha = seam::core::sha256Hex(text);
     CHECK(seam::core::durableAtomicWriteTextNew(root / "donors.json", text));
     CHECK(seam::core::durableAtomicWriteTextNew(root / "intake-plan.json", planText));
@@ -184,6 +201,49 @@ TEST_CASE("Prepared donor evidence refuses inconsistent declared PCM geometry wi
     snapshot.evidence.packet.sha256 = expected;
     const auto owned = p::validatePreparedPhoneDonorSnapshot(std::move(snapshot), expected, f.id); CHECK(!owned);
     CHECK(owned.error().message.find("declared PCM facts") != std::string::npos);
+  }
+}
+
+TEST_CASE("Shared packet facts identify two distinct donors without reading either WAV") {
+  Fixture f(true);
+  const auto first = f.load();
+  const auto second = p::loadPreparedPhoneDonor(f.root, f.packetSha, "fixture_l00001_n1"); CHECK(second);
+  CHECK(first.audio.sha256 != second.value().audio.sha256);
+  CHECK(std::filesystem::remove(f.root / (f.id + ".wav")));
+  CHECK(std::filesystem::remove(f.root / "fixture_l00001_n1.wav"));
+  const auto facts = p::loadPreparedPhoneDonorPacketFacts(f.root, f.packetSha); CHECK(facts);
+  CHECK(facts.value().packetSha256 == f.packetSha);
+  CHECK(facts.value().intakePlanSha256 == first.evidence.plan.sha256);
+  CHECK(facts.value().originalLicenseSha256 == first.evidence.license.sha256);
+  CHECK(facts.value().attributionSha256 == first.evidence.attribution.sha256);
+  CHECK(facts.value().derivedAudioSha256ByDonor.size() == 2U);
+  CHECK(facts.value().derivedAudioSha256ByDonor.at(f.id) == first.audio.sha256);
+  CHECK(facts.value().derivedAudioSha256ByDonor.at("fixture_l00001_n1") == second.value().audio.sha256);
+  CHECK(!p::loadPreparedPhoneDonorPacketFacts(f.root, std::string(64U, '0')));
+  std::stop_source cancelled; cancelled.request_stop();
+  CHECK(!p::loadPreparedPhoneDonorPacketFacts(f.root, f.packetSha, cancelled.get_token()));
+  CHECK(seam::core::durableAtomicWriteText(f.root / "attribution.txt", "changed after first facts read"));
+  CHECK(!p::loadPreparedPhoneDonorPacketFacts(f.root, f.packetSha));
+}
+
+TEST_CASE("Shared packet facts check every donor declared geometry before returning a digest map") {
+  for (const bool wrongWireType : {false, true}) {
+    Fixture f(true);
+    const auto raw = seam::core::readTextFileLimited(f.root / "donors.json", 1024U * 1024U); CHECK(raw);
+    auto packet = seam::formats::parseJson(raw.value()); CHECK(packet);
+    auto& fields = packet.value().asObject()["proposals"].asArray()[1].asObject();
+    fields["sampleRate"] = wrongWireType ? J{"__wire_rate__"} : J{std::int64_t{0}};
+    auto encoded = seam::formats::stringifyJson(packet.value());
+    if (wrongWireType) {
+      const auto at = encoded.find("\"__wire_rate__\""); CHECK(at != std::string::npos);
+      encoded.replace(at, std::string{"\"__wire_rate__\""}.size(), "8000.0");
+    }
+    const auto expected = seam::core::sha256Hex(encoded);
+    CHECK(seam::core::durableAtomicWriteText(f.root / "donors.json", encoded));
+    // The selected-only API retains its existing contract. The whole-packet
+    // facts API must not cache an unchecked second donor for a later binding.
+    CHECK(p::loadPreparedPhoneDonorEvidence(f.root, expected, f.id));
+    CHECK(!p::loadPreparedPhoneDonorPacketFacts(f.root, expected));
   }
 }
 
@@ -327,7 +387,7 @@ struct PreparedImportFixture final {
   std::filesystem::path workspace{prepared.root / "import-workspace"};
   p::ProductionProjectRepository repository{workspace};
   p::VoicebankProductionProject project;
-  PreparedImportFixture() {
+  explicit PreparedImportFixture(bool twoDonors = false) : prepared(twoDonors) {
     project.schemaVersion = p::kProductionStyleSchemaVersion;
     project.projectId = "synthetic-inspected-import"; project.language = "en";
     project.inventoryId = "synthetic-inventory"; project.inventorySha256 = std::string(64U, 'a');
@@ -460,5 +520,38 @@ TEST_CASE("Prepared donor inspected import refuses a stale durable writer before
   const auto before = retainedFiles(f.workspace); const auto originalStale = p::encodeProductionProject(stale);
   CHECK(!f.repository.importPreparedDonor(stale, held, expectation, take, f.event(take)));
   CHECK(p::encodeProductionProject(stale) == originalStale); CHECK(retainedFiles(f.workspace) == before); f.checkPrivateCaptureRemoved();
+}
+
+TEST_CASE("Shared packet verification preserves every distinct donor binding and rechecks later operations") {
+  PreparedImportFixture f(true);
+  for (const auto style : {"neutral", "soft"}) {
+    const auto take = f.input(style); auto expected = f.expectation();
+    if (take.style == "soft") expected.donorId = "fixture_l00001_n1";
+    auto held = p::loadPreparedPhoneDonor(f.prepared.root, expected.packetSha256, expected.donorId); CHECK(held);
+    CHECK(f.repository.importPreparedDonor(f.project, std::move(held.value()), expected, take, f.event(take)));
+  }
+  CHECK(f.project.assets.size() == 2U); CHECK(f.project.sourceBindings.size() == 2U);
+  CHECK(f.project.sourceBindings[0].rawAssetSha256 != f.project.sourceBindings[1].rawAssetSha256);
+  CHECK(f.repository.verify(f.project));
+  const auto original = p::encodeProductionProject(f.project); const auto before = retainedFiles(f.workspace);
+  for (int mode = 0; mode < 5; ++mode) {
+    auto draft = f.project;
+    auto& binding = draft.sourceBindings[1]; auto& donor = *binding.preparedDonor;
+    if (mode == 0) donor.donorId = "fixture_l00002_n1";
+    else if (mode == 1) donor.donorId = f.prepared.id; // Valid donor, wrong captured audio.
+    else if (mode == 2) donor.intakePlanSha256 = std::string(64U, '0');
+    else if (mode == 3) donor.originalLicenseSha256 = std::string(64U, '0');
+    else donor.attributionSha256 = std::string(64U, '0');
+    binding.id = p::takeSourceBindingId(draft.projectId, binding); draft.takes[1].sourceBindingId = binding.id;
+    CHECK(p::validateProductionProject(draft));
+    const auto refused = f.repository.save(draft, {"save", "wrong-second-donor", "fixture-producer", "2026-10-15T00:03:00Z"}); CHECK(!refused);
+    CHECK(refused.error().message.find("Retained prepared donor differs") != std::string::npos);
+    CHECK(retainedFiles(f.workspace) == before);
+    CHECK(p::encodeProductionProject(f.repository.recover().value()) == original);
+  }
+  const auto directory = f.workspace / "source-evidence/packets" / f.prepared.packetSha;
+  CHECK(seam::core::durableAtomicWriteText(directory / "license-source.txt", "changed after successful verification"));
+  CHECK(!f.repository.verify(f.project)); CHECK(!f.repository.recover());
+  CHECK(p::encodeProductionProject(f.project) == original); f.checkPrivateCaptureRemoved();
 }
 #endif
