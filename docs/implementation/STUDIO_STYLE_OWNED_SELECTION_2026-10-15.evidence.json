@@ -119,7 +119,30 @@
       "sha256": "e6329507487a4c0278f5c461f8535f57420003334f8c00ee4ac0c81881eeaeaf"
     }
   },
-  "independentReview": "PENDING",
+  "independentReview": {
+    "schemaVersion": 1,
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13da2-cc5b-79c3-b14e-926c401ae430",
+    "messageId": "msg_2cf3f304d6f14842abec6aed1ac78def",
+    "completedAtUnixSeconds": 1792035993,
+    "durationMs": 551584,
+    "commit": "47d66514349258d617853391f74da4aa14c6f8f5",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": 1,
+    "priority": 3,
+    "requiredChangeToLandedFix": false,
+    "finding": "Queue state lookup ignores style",
+    "implementedFollowup": "271a03b9e616d7643a6321c75a768f79c4adb786",
+    "followupIndependentReview": "PENDING",
+    "sourceOrHumanOrBetaApproval": false,
+    "reviewerExecution": "Own read-only Git/source/hash/log parsers; no native/build/test/retained-script execution",
+    "finalAnswer": {
+      "path": "out/evidence/studio-style-owned-selection-independent-2026-10-15/review-47d66514.md",
+      "sizeBytes": 9733,
+      "sha256": "d7c5096ed86e0d73fbeb8a77da5fefdf26fb0e389e006c4debff6e0004d7e6be"
+    }
+  },
   "fullSuite": "NOT_RUN",
   "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
   "appKitAcceptance": "NOT_RUN",
@@ -132,5 +155,11 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "originalPostCtestIdentityEvidence": "RUNNER_ASSERTION_ONLY_NO_SEPARATE_AFTER_RECORD",
+  "p3Followup": {
+    "commit": "271a03b9e616d7643a6321c75a768f79c4adb786",
+    "implementation": "SHARED_ASSIGNMENT_HELPER_AND_THREE_QUEUE_REGRESSIONS",
+    "independentReview": "PENDING"
+  }
 }

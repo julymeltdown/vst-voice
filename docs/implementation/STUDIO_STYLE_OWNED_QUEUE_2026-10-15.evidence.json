@@ -161,5 +161,66 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "upstreamReview": {
+    "commit": "47d66514349258d617853391f74da4aa14c6f8f5",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "p3Findings": 1,
+    "queueP3ImplementedHere": true,
+    "currentUnitIndependentReview": "PENDING"
+  },
+  "originalPostCtestIdentityEvidence": "RUNNER_ASSERTION_ONLY_NO_SEPARATE_AFTER_RECORD",
+  "additionalCallerVerification": {
+    "sourceCommit": "271a03b9e616d7643a6321c75a768f79c4adb786",
+    "manifest": {
+      "path": "out/evidence/studio-style-owned-queue-followup-2026-10-15/manifest.json",
+      "sizeBytes": 3739,
+      "sha256": "b663628fbd7a6ba3b89d00c5aed0726eb219251679058fcd8d76648a46b614ea"
+    },
+    "retainedArtifacts": 15,
+    "preservedBindings": 6,
+    "ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "--output-on-failure",
+        "-R",
+        "^(seam_tests|seam_export_tests|seam_original_singer_campaign_workflow_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 94.65817262500059,
+      "sourceCommit": "271a03b9e616d7643a6321c75a768f79c4adb786",
+      "headUnchanged": true,
+      "trackedTreeClean": true,
+      "nativeBeforeEqualsAfter": true,
+      "observedAtUtc": "2026-10-15T03:50:08.992367+00:00",
+      "rebuildReference": "out/evidence/studio-style-owned-queue-2026-10-15/final/build.json",
+      "noSourceChangesSinceReferencedFullBuild": true
+    },
+    "passingNativeCases": {
+      "seam_export_tests": 38,
+      "seam_original_singer_campaign_workflow_tests": 1,
+      "seam_tests": 1555
+    },
+    "nativeBefore": {
+      "path": "out/evidence/studio-style-owned-queue-followup-2026-10-15/native-before.json",
+      "sizeBytes": 473,
+      "sha256": "456e9da5cbfe985382231f3c7a459e70cdfc631a81b47f34419fa507fd991135"
+    },
+    "nativeAfter": {
+      "path": "out/evidence/studio-style-owned-queue-followup-2026-10-15/native-after.json",
+      "sizeBytes": 473,
+      "sha256": "456e9da5cbfe985382231f3c7a459e70cdfc631a81b47f34419fa507fd991135"
+    },
+    "nativeIdentitiesEqual": true,
+    "verification": {
+      "path": "out/evidence/studio-style-owned-queue-followup-2026-10-15/verification.log",
+      "sizeBytes": 295,
+      "sha256": "270c0ffaccc1e710c68ebd513472ddd235fa8c5ba7557afbf6bd26e0c7c506ac"
+    },
+    "fullSuite": false,
+    "sanitizers": false,
+    "sourceOrHumanOrBetaAcceptance": false
+  }
 }
