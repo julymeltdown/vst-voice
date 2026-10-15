@@ -9,6 +9,7 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include <array>
 #include <span>
 
@@ -318,3 +319,146 @@ TEST_CASE("Prepared donor retained notice damage stops recovery and saving witho
     }
   }
 }
+
+#if !defined(_WIN32)
+namespace {
+struct PreparedImportFixture final {
+  Fixture prepared;
+  std::filesystem::path workspace{prepared.root / "import-workspace"};
+  p::ProductionProjectRepository repository{workspace};
+  p::VoicebankProductionProject project;
+  PreparedImportFixture() {
+    project.schemaVersion = p::kProductionStyleSchemaVersion;
+    project.projectId = "synthetic-inspected-import"; project.language = "en";
+    project.inventoryId = "synthetic-inventory"; project.inventorySha256 = std::string(64U, 'a');
+    project.declaredPitchLayers = {60};
+    project.operators = {{"fixture-producer", "PRODUCER"}, {"fixture-reviewer", "REVIEWER"}};
+    for (const auto style : {"neutral", "soft"}) project.unitAssignments.push_back({.coverageKey = "sustain:aa", .pitchLayer = 60,
+        .promptId = "prompt-" + std::string{style}, .plannedTakeId = "take-" + std::string{style}, .style = style});
+    CHECK(repository.initialize(project, {"create", project.projectId, "fixture-producer", "2026-10-15T00:00:00Z"}));
+    const auto declaration = prepared.root / "reviewed-declaration.txt";
+    CHECK(seam::core::durableAtomicWriteTextNew(declaration, "SYNTHETIC IMPORT TEST DECLARATION; NO REAL SINGER OR RIGHTS ACCEPTANCE"));
+    p::SourceStrategyAssessment source{.id = "fixture-human-source", .kind = p::SourceStrategyKind::HumanRecording,
+        .rights = p::Feasibility::Pass, .permissions = {true, true, false, false},
+        .licenseLocator = declaration.string(), .licenseSha256 = seam::core::sha256File(declaration).value()};
+    CHECK(repository.registerSource(project, source, seam::core::sha256Hex(p::encodeProductionProject(project)),
+        "fixture-producer", "2026-10-15T00:01:00Z"));
+  }
+  p::PreparedDonorImportExpectation expectation() const {
+    return {seam::core::sha256Hex(p::encodeProductionProject(project)), prepared.packetSha, prepared.id, project.selectedSourceStrategyId};
+  }
+  p::RawTakeInput input(std::string style = "neutral") const {
+    return {.takeId = "take-" + style, .promptId = "prompt-" + style, .coverageKey = "sustain:aa", .pitchLayer = 60, .style = style};
+  }
+  p::ProductionJournalEvent event(const p::RawTakeInput& take) const {
+    return {take.supersedesTakeId.empty() ? "import" : "retake", take.takeId, "fixture-producer", "2026-10-15T00:02:00Z"};
+  }
+  void checkPrivateCaptureRemoved() const {
+    for (const auto& item : std::filesystem::directory_iterator(workspace))
+      CHECK(!item.path().filename().string().starts_with(".prepared-import-"));
+  }
+};
+}
+
+TEST_CASE("Prepared donor inspected import consumes held bytes and atomically retains distinct declarations") {
+  PreparedImportFixture f; auto snapshot = f.prepared.load(); const auto held = snapshot;
+  const auto expectation = f.expectation(); const auto take = f.input(); const auto generation = f.project.lastDurableGeneration;
+  for (const auto name : {"donors.json", "intake-plan.json", "license-source.txt", "attribution.txt"}) CHECK(std::filesystem::remove(f.prepared.root / name));
+  CHECK(std::filesystem::remove(f.prepared.root / (f.prepared.id + ".wav")));
+  snapshot.evidence.proposalJson = "stale cached data"; snapshot.frames = 1U; snapshot.sampleRate = 1U;
+  const auto result = f.repository.importPreparedDonor(f.project, std::move(snapshot), expectation, take, f.event(take)); CHECK(result);
+  CHECK(result.value().durabilityConfirmed); CHECK(f.project.lastDurableGeneration == generation + 1U);
+  CHECK(f.project.schemaVersion == 5); CHECK(f.project.takes.size() == 1U); CHECK(f.project.sourceBindings.size() == 1U);
+  CHECK(f.project.takes[0].state == p::UnitQueueState::MarkerReview); CHECK(f.project.reviews.empty());
+  CHECK(f.project.sourceQualityAssessments.empty()); CHECK(!p::selectedStrategyReady(f.project));
+  const auto& binding = f.project.sourceBindings[0]; CHECK(binding.preparedDonor);
+  CHECK(binding.preparedDonor->packetSha256 == expectation.packetSha256); CHECK(binding.preparedDonor->donorId == expectation.donorId);
+  CHECK(binding.strategy.licenseSha256 != binding.preparedDonor->originalLicenseSha256);
+  CHECK(binding.id == p::takeSourceBindingId(f.project.projectId, binding)); CHECK(binding.rawAssetSha256 == held.audio.sha256);
+  const auto raw = seam::core::readFileBytesLimited(p::ImmutableAssetStore{f.workspace / "assets"}.pathFor(result.value()), 1024U); CHECK(raw);
+  CHECK(raw.value() == held.audio.bytes);
+  const auto inspection = p::currentTakeInspection(f.project, take.takeId); CHECK(inspection);
+  CHECK(inspection->inspection.sourceSha256 == held.audio.sha256); CHECK(inspection->inspection.measurements.sampleRate == 8000U);
+  CHECK(inspection->inspection.measurements.frameCount == 80U); CHECK(!inspection->inspection.accepted());
+  const auto directory = f.workspace / "source-evidence/packets" / expectation.packetSha256;
+  for (const auto* file : {&held.evidence.packet, &held.evidence.plan, &held.evidence.license, &held.evidence.attribution}) {
+    const auto retained = seam::core::readFileBytesLimited(directory / file->relativePath, 1024U * 1024U); CHECK(retained);
+    CHECK(retained.value() == file->bytes);
+  }
+  CHECK(std::filesystem::remove(f.prepared.root / "reviewed-declaration.txt"));
+  CHECK(f.repository.verify(f.project));
+  CHECK(p::encodeProductionProject(f.repository.recover().value()) == p::encodeProductionProject(f.project));
+  f.checkPrivateCaptureRemoved();
+}
+
+TEST_CASE("Prepared donor inspected import refuses mismatched requests actors assignments and held mutation without writes") {
+  for (int mode = 0; mode < 13; ++mode) {
+    PreparedImportFixture f; auto snapshot = f.prepared.load(); auto expected = f.expectation(); auto take = f.input(); auto event = f.event(take);
+    if (mode == 0) expected.projectSha256 = std::string(64U, '0');
+    else if (mode == 1) expected.packetSha256 = std::string(64U, '0');
+    else if (mode == 2) expected.donorId = "other_l00000_n1";
+    else if (mode == 3) expected.sourceStrategyId = "other-source";
+    else if (mode == 4) take.promptId = "other-prompt";
+    else if (mode == 5) take.style = "other-style";
+    else if (mode == 6) event.operatorId = "fixture-reviewer";
+    else if (mode == 7) take.initialState = p::UnitQueueState::Approved;
+    else if (mode == 8) snapshot.audio.bytes.push_back(std::byte{1});
+    else if (mode == 9) snapshot.evidence.attribution.bytes.push_back(std::byte{1});
+    else if (mode == 10) event.subjectId = "other-take";
+    else if (mode == 11) event.occurredAtUtc = "invalid";
+    const auto before = retainedFiles(f.workspace); const auto project = p::encodeProductionProject(f.project);
+    std::stop_source cancelled; if (mode == 12) cancelled.request_stop();
+    const auto result = f.repository.importPreparedDonor(f.project, std::move(snapshot), expected, take, event, cancelled.get_token()); CHECK(!result);
+    CHECK(retainedFiles(f.workspace) == before); CHECK(p::encodeProductionProject(f.project) == project);
+    CHECK(p::encodeProductionProject(f.repository.recover().value()) == project); f.checkPrivateCaptureRemoved();
+  }
+}
+
+TEST_CASE("Prepared donor inspected imports retain one shared packet while preserving style and retake ownership") {
+  PreparedImportFixture f; const auto held = f.prepared.load(); const auto firstGeneration = f.project.lastDurableGeneration;
+  for (const auto style : {"neutral", "soft", "neutral"}) {
+    auto take = f.input(style);
+    if (f.project.takes.size() == 2U) { take.takeId = "take-neutral-retake"; take.supersedesTakeId = "take-neutral"; }
+    CHECK(f.repository.importPreparedDonor(f.project, held, f.expectation(), take, f.event(take)));
+    f.checkPrivateCaptureRemoved();
+  }
+  CHECK(f.project.lastDurableGeneration == firstGeneration + 3U); CHECK(f.project.assets.size() == 1U);
+  CHECK(f.project.sourceBindings.size() == 3U); CHECK(f.project.takes[0].state == p::UnitQueueState::Retake);
+  CHECK(f.project.sourceBindings[0].id != f.project.sourceBindings[1].id);
+  CHECK(f.project.sourceBindings[1].id != f.project.sourceBindings[2].id);
+  std::size_t files = 0U;
+  for (const auto& entry : std::filesystem::directory_iterator(f.workspace / "source-evidence/packets" / held.evidence.packet.sha256)) {
+    CHECK(entry.is_regular_file()); ++files;
+  }
+  CHECK(files == 4U); CHECK(f.repository.verify(f.project)); CHECK(f.project.reviews.empty());
+  CHECK(!f.project.sourceStrategies[0].permissions.singingBankRedistribution);
+}
+
+TEST_CASE("Prepared donor inspected import refuses unsafe or conflicting notice storage without partial project commit") {
+  for (const bool linkedParent : {false, true}) {
+    PreparedImportFixture f; const auto held = f.prepared.load(); const auto expectation = f.expectation(); const auto take = f.input();
+    const auto outside = f.prepared.root / "unrelated"; std::filesystem::create_directory(outside);
+    CHECK(seam::core::durableAtomicWriteTextNew(outside / "keep.txt", "unrelated bytes")); const auto unrelated = retainedFiles(outside);
+    const auto packets = f.workspace / "source-evidence/packets";
+    if (linkedParent) std::filesystem::create_directory_symlink(outside, packets);
+    else CHECK(seam::core::durableAtomicWriteTextNew(packets / expectation.packetSha256 / "attribution.txt", "pre-existing different notice"));
+    const auto project = p::encodeProductionProject(f.project); const auto generation = f.project.lastDurableGeneration;
+    const auto result = f.repository.importPreparedDonor(f.project, held, expectation, take, f.event(take)); CHECK(!result);
+    CHECK(f.project.lastDurableGeneration == generation); CHECK(p::encodeProductionProject(f.project) == project);
+    CHECK(p::encodeProductionProject(f.repository.recover().value()) == project); CHECK(retainedFiles(outside) == unrelated);
+    if (!linkedParent) {
+      const auto notice = seam::core::readTextFileLimited(packets / expectation.packetSha256 / "attribution.txt", 1024U); CHECK(notice);
+      CHECK(notice.value() == "pre-existing different notice");
+    }
+    f.checkPrivateCaptureRemoved();
+  }
+}
+
+TEST_CASE("Prepared donor inspected import refuses a stale durable writer before staging") {
+  PreparedImportFixture f; const auto held = f.prepared.load(); auto stale = f.project; const auto expectation = f.expectation(); const auto take = f.input();
+  CHECK(f.repository.save(f.project, {"save", "another-writer", "fixture-producer", "2026-10-15T00:02:00Z"}));
+  const auto before = retainedFiles(f.workspace); const auto originalStale = p::encodeProductionProject(stale);
+  CHECK(!f.repository.importPreparedDonor(stale, held, expectation, take, f.event(take)));
+  CHECK(p::encodeProductionProject(stale) == originalStale); CHECK(retainedFiles(f.workspace) == before); f.checkPrivateCaptureRemoved();
+}
+#endif

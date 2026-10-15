@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/voicebank_production/asset_store.hpp"
 #include "seam/voicebank_production/operations.hpp"
+#include "seam/voicebank_production/prepared_phone_donor.hpp"
 #include "seam/synthesis/singer_resource.hpp"
 
 #include <filesystem>
@@ -115,6 +116,11 @@ struct CommittedImportBatch final : ProductionCommitReceipt {
   std::vector<AssetRecord> assets;
 };
 
+// The owning request retains these independently of mutable snapshot fields.
+struct PreparedDonorImportExpectation final {
+  std::string projectSha256, packetSha256, donorId, sourceStrategyId;
+};
+
 class ProductionProjectRepository final {
 public:
   explicit ProductionProjectRepository(std::filesystem::path root);
@@ -153,6 +159,14 @@ public:
       VoicebankProductionProject& project,
       const std::filesystem::path& source,
       const RawTakeInput& take,
+      const ProductionJournalEvent& event, std::stop_token stopToken = {});
+  // Consumes held bytes; never reopens preparation paths. Requires an exact
+  // English style-owned durable project, authorized human-recording strategy,
+  // registered producer and explicit assignment. Retains notices and commits
+  // a schema-five unapproved take with current native inspection evidence.
+  [[nodiscard]] core::Result<CommittedAssetRecord> importPreparedDonor(
+      VoicebankProductionProject& project, PreparedPhoneDonorSnapshot snapshot,
+      const PreparedDonorImportExpectation& expectation, const RawTakeInput& take,
       const ProductionJournalEvent& event, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<CommittedAssetRecord> importProceduralCandidate(
       VoicebankProductionProject& project, const std::filesystem::path& metadataPath,

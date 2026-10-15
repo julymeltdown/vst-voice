@@ -6,9 +6,15 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
+#include "seam/voicebank/asset_path.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <set>
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace seam::voicebank_production {
 namespace {
@@ -79,6 +85,74 @@ core::Result<std::string> snapshotSourceEvidence(const std::filesystem::path& ro
   }
   return relative;
 }
+
+class PrivatePreparedAudio final {
+public:
+  PrivatePreparedAudio() = default;
+  PrivatePreparedAudio(const PrivatePreparedAudio&) = delete;
+  PrivatePreparedAudio& operator=(const PrivatePreparedAudio&) = delete;
+  ~PrivatePreparedAudio() {
+#if !defined(_WIN32)
+    struct stat current{};
+    if (!directory_.empty() && ::lstat(directory_.c_str(), &current) == 0 && S_ISDIR(current.st_mode) &&
+        current.st_dev == identity_.st_dev && current.st_ino == identity_.st_ino) {
+      // Remove only our known file and empty directory, never a recursive tree.
+      ::unlink(path().c_str());
+      ::rmdir(directory_.c_str());
+    }
+#endif
+  }
+  core::Result<void> create(const std::filesystem::path& workspace) {
+#if defined(_WIN32)
+    (void)workspace;
+    return core::failure(core::ErrorCode::Unsupported, "Private prepared-donor capture requires Windows implementation and verification");
+#else
+    auto pattern = (workspace / ".prepared-import-XXXXXX").string();
+    const auto* made = ::mkdtemp(pattern.data());  // Exclusive creation, mode 0700.
+    if (!made) return core::failure(core::ErrorCode::IoError, "Cannot create private prepared-donor capture");
+    directory_ = made;
+    if (::lstat(directory_.c_str(), &identity_) != 0 || !S_ISDIR(identity_.st_mode))
+      return core::failure(core::ErrorCode::Conflict, "Private prepared-donor capture identity is unavailable");
+    return core::success();
+#endif
+  }
+  std::filesystem::path path() const { return directory_ / "take.wav"; }
+private:
+  std::filesystem::path directory_;
+#if !defined(_WIN32)
+  struct stat identity_{};
+#endif
+};
+
+core::Result<void> retainPreparedEvidence(const std::filesystem::path& workspace,
+    const PreparedPhoneDonorEvidence& evidence, std::stop_token stop) {
+  const auto directory = workspace / "source-evidence/packets" / evidence.packet.sha256;
+  for (const auto& parent : {workspace, workspace / "source-evidence", workspace / "source-evidence/packets", directory}) {
+    std::error_code error;
+    auto status = std::filesystem::symlink_status(parent, error);
+    if (error == std::errc::no_such_file_or_directory || (!error && status.type() == std::filesystem::file_type::not_found)) {
+      error.clear(); std::filesystem::create_directory(parent, error);
+      if (error && error != std::errc::file_exists)
+        return core::failure(core::ErrorCode::IoError, "Cannot create retained prepared-donor directory", error.message());
+      error.clear(); status = std::filesystem::symlink_status(parent, error);
+    }
+    if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status))
+      return core::failure(core::ErrorCode::Conflict, "Retained prepared-donor directory is unsafe", parent.string());
+  }
+  for (const auto* file : {&evidence.packet, &evidence.plan, &evidence.license, &evidence.attribution}) {
+    if (stop.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Prepared donor import cancelled before notice retention");
+    const auto target = directory / file->relativePath;
+    const auto written = core::durableAtomicWriteNew(target, file->bytes);
+    if (!written) {
+      const auto resolved = voicebank::resolveBankAsset(workspace, target.lexically_relative(workspace));
+      if (!resolved) return core::Result<void>{resolved.error()};
+      const auto existing = core::readFileBytesLimited(resolved.value(), file->bytes.size());
+      if (!existing || existing.value() != file->bytes)
+        return core::failure(core::ErrorCode::Conflict, "Retained prepared-donor notice differs; refusing overwrite", target.string());
+    }
+  }
+  return core::success();
+}
 }  // namespace
 
 ProceduralTakeIdentity nextProceduralTakeIdentity(
@@ -139,6 +213,57 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importRaw(
   const auto committed = commitImportedDraft(*this, project, std::move(draft), event, stopToken);
   if (!committed) return core::Result<CommittedAssetRecord>{committed.error()};
   return CommittedAssetRecord{imported.value(), committed.value()};
+}
+
+core::Result<CommittedAssetRecord> ProductionProjectRepository::importPreparedDonor(
+    VoicebankProductionProject& project, PreparedPhoneDonorSnapshot snapshot,
+    const PreparedDonorImportExpectation& expectation, const RawTakeInput& take,
+    const ProductionJournalEvent& event, std::stop_token stopToken) {
+  using Output = CommittedAssetRecord;
+  if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Prepared donor import cancelled");
+  if (project.schemaVersion < kProductionStyleSchemaVersion || project.language != "en" ||
+      expectation.projectSha256 != core::sha256Hex(encodeProductionProject(project)) ||
+      expectation.sourceStrategyId.empty() || expectation.sourceStrategyId != project.selectedSourceStrategyId)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Prepared donor import requires the exact English producer and selected source");
+  const auto verified = verify(project); if (!verified) return core::Result<Output>{verified.error()};
+  const auto selected = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
+      [&](const auto& value) { return value.id == expectation.sourceStrategyId; });
+  if (selected == project.sourceStrategies.end() || selected->kind != SourceStrategyKind::HumanRecording ||
+      std::none_of(project.operators.begin(), project.operators.end(), [&](const auto& actor) {
+        return actor.operatorId == event.operatorId && actor.role == "PRODUCER";
+      }) || !isProductionUtcTimestamp(event.occurredAtUtc) || event.subjectId != take.takeId ||
+      event.action != (take.supersedesTakeId.empty() ? "import" : "retake") ||
+      (take.initialState != UnitQueueState::MarkerReview && take.initialState != UnitQueueState::Rejected))
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Prepared donor import requires a registered producer and an unapproved human-recording take");
+  const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
+    return value.style == take.style && value.coverageKey == take.coverageKey && value.pitchLayer == take.pitchLayer &&
+        value.promptId == take.promptId && value.takeId == take.supersedesTakeId;
+  });
+  if (assignment == project.unitAssignments.end())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Prepared donor target differs from its explicit current assignment");
+  const auto authorized = requireSelectedSourceExecution(project); if (!authorized) return core::Result<Output>{authorized.error()};
+  auto held = validatePreparedPhoneDonorSnapshot(std::move(snapshot), expectation.packetSha256, expectation.donorId, stopToken);
+  if (!held) return core::Result<Output>{held.error()};
+  PrivatePreparedAudio capture;
+  const auto created = capture.create(root_); if (!created) return core::Result<Output>{created.error()};
+  const auto written = core::durableAtomicWriteNew(capture.path(), held.value().audio.bytes);
+  if (!written) return core::Result<Output>{written.error()};
+  auto draft = project;
+  const auto imported = importRawBound(draft, capture.path(), take, event, held.value().audio.sha256,
+      std::nullopt, take.technicalInspection, stopToken);
+  if (!imported) return core::Result<Output>{imported.error()};
+  auto& binding = draft.sourceBindings.back();
+  const auto& evidence = held.value().evidence;
+  binding.preparedDonor = PreparedDonorBinding{evidence.packet.sha256, evidence.donorId, evidence.plan.sha256,
+      evidence.license.sha256, evidence.attribution.sha256};
+  binding.id = takeSourceBindingId(draft.projectId, binding);
+  draft.takes.back().sourceBindingId = binding.id;
+  draft.schemaVersion = kProductionPreparedDonorSchemaVersion;
+  const auto retained = retainPreparedEvidence(root_, evidence, stopToken);
+  if (!retained) return core::Result<Output>{retained.error()};
+  const auto committed = commitImportedDraft(*this, project, std::move(draft), event, stopToken);
+  if (!committed) return core::Result<Output>{committed.error()};
+  return Output{imported.value(), committed.value()};
 }
 
 core::Result<std::optional<CollectedGenerationResult>> ProductionProjectRepository::findCollectedGeneration(
