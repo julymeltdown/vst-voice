@@ -9357,3 +9357,8 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 ### 2026-10-15 — Additional original f1 slow-dynamic recordings
 
 [Fresh acquisition and native measurements](FEMALE_F1_SLOW_SOURCE_EXTENSION_2026-10-15.md):40 additional unchanged VocalSet f1 originals,420.386575964s; fresh publisher CC-BY4 metadata, exact HTTP206/member CRC/SHA and40 native reader/40 native analysis checks. Combined1469 distinct originals (65f1 singing,272growls,1132speech); all1429 earlier originals rehash unchanged. Unchanged stability thresholds yield only3 measured intervals/0.708208617s, nearest60/65 and **zero near66**;28 clipped samples in one original. No coverage, source/actor/listening/QC/import/Beta approval.434artifacts/13pins; independent review pending. Alpha0/20; U45HELD; BetaBLOCKED; full goalACTIVE.
+
+
+### 2026-10-15 — Packet-integrity approval and native execution correction
+
+Exact21c04d3a independently APPROVED for engineering with one evidence P3/no required code change; reviewer independently reconstructed all312 donors from originals/automatic labels. [Correction and controlled repeats](SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.md):historical37/38 Python-method suites did invoke native integration; old no-native wording is superseded, old binary identities UNKNOWN. Separate exact21c37-method/1a38-method repeats PASS with an explicitly retained native executable/hash/embedded1a0cfceb literal.24artifacts/5pins; P3 correction addressed, closure review pending. Other optional notes/durable admissionOPEN; encoding/new acquisition independently unreviewed. No source/human/Beta approval; Alpha0/20,U45HELD,BetaBLOCKED,full goalACTIVE.

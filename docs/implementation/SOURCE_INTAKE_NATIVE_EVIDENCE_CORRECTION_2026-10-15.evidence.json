@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "unit": "source-intake-native-evidence-correction",
+  "sourceBase": "bc29b1d0c1f8df72948dd503031baa48c820f0a8",
+  "manifest": {
+    "path": "out/evidence/phone-donor-integrity-independent-2026-10-15/manifest.json",
+    "sizeBytes": 5560,
+    "sha256": "5559b6609dc716094e8c2f15edcb95d56f52366509d5b2e3391709de6946cfa7"
+  },
+  "retainedArtifacts": 24,
+  "preservedBindings": 5,
+  "review": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13d57-3838-72b1-9428-75fccd294972",
+    "completedAtUnixSeconds": 1792031145,
+    "durationMs": 656571,
+    "commit": "21c04d3a94d75b047fc7769570f1793d3d69168a",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": {
+      "P3": 1
+    },
+    "requiredCodeChanges": false,
+    "reviewerExecution": "Read-only own Git/hash/JSON/RIFF/Decimal replay; no scripts/build/tests/native execution",
+    "durableBankAdmission": "OPEN",
+    "releaseEligible": false,
+    "finalAnswer": {
+      "path": "out/evidence/phone-donor-integrity-independent-2026-10-15/review-21c04d3a.md",
+      "sizeBytes": 10994,
+      "sha256": "7fe6d25c451aa993b78966734fa9415a893c7b86ce6110e2d456b79642d96255"
+    }
+  },
+  "historicalNativeExecution": true,
+  "historicalNativeBinaryIdentity": "UNKNOWN_NOT_CAPTURED",
+  "ctestExecution": false,
+  "controlledRepeats": [
+    {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*intake.py",
+        "-v"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/phone-donor-integrity-independent-2026-10-15/packet-21c04d3a",
+      "sourceCommit": "21c04d3a94d75b047fc7769570f1793d3d69168a",
+      "sourceFiles": [
+        {
+          "path": "tools/voicebank_source_intake/prepare_phone_donors.py",
+          "sizeBytes": 19314,
+          "sha256": "b41d75eb94b1e792e77414f2370783094a2a92e3fb01c10af015aa29e78c955e"
+        },
+        {
+          "path": "tools/voicebank_source_intake/prepare_sustain_cuts.py",
+          "sizeBytes": 13024,
+          "sha256": "8b9d69a09ce77d6575ad07052036bd23698dbf7b68f37138d2cf0b8f382bfd2a"
+        },
+        {
+          "path": "tools/voicebank_source_intake/__init__.py",
+          "sizeBytes": 73,
+          "sha256": "f9ef159069cd8db904e7fa93b763a94d42e58a40c32fbd80744f79356e949131"
+        },
+        {
+          "path": "tests/test_phone_donor_intake.py",
+          "sizeBytes": 20014,
+          "sha256": "81acd2ea4667f45c28924ec48524ed62b9aec008e1fab42ce366259bc8caec6e"
+        },
+        {
+          "path": "tests/test_voicebank_source_intake.py",
+          "sizeBytes": 18648,
+          "sha256": "930c5950f72bf9259a6d260d14e393a6d6d5d535505624c99f87ca7cdb5686cf"
+        }
+      ],
+      "SEAM_SOURCE_INTAKE_CLI": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/phone-donor-integrity-independent-2026-10-15/native/seam_voicebank_cli",
+      "exitCode": 0,
+      "elapsedSeconds": 0.9289734169724397,
+      "expectedMethods": 37,
+      "nativeBinary": {
+        "path": "native/seam_voicebank_cli",
+        "sizeBytes": 9841392,
+        "sha256": "812abe00aba817de9df1078efc0cdf1193f1c27995f8cf044805716828f7f2a9",
+        "embeddedSourceCommitLiteral": "1a0cfcebf8435020002dc91b96f25b008907454a",
+        "embeddedLiteralOccurrences": 1
+      },
+      "runtime": {
+        "python": "3.14.3 (v3.14.3:323c59a5e34, Feb  3 2026, 11:41:37) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "platform": "macOS-27.2-arm64-arm-64bit-Mach-O"
+      },
+      "headAtRun": "bc29b1d0c1f8df72948dd503031baa48c820f0a8"
+    },
+    {
+      "argv": [
+        "/usr/local/bin/python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*intake.py",
+        "-v"
+      ],
+      "cwd": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/phone-donor-integrity-independent-2026-10-15/encoding-1a0cfceb",
+      "sourceCommit": "1a0cfcebf8435020002dc91b96f25b008907454a",
+      "sourceFiles": [
+        {
+          "path": "tools/voicebank_source_intake/prepare_phone_donors.py",
+          "sizeBytes": 19315,
+          "sha256": "46f37407e115719a0fafa49c5124a49ce976f1f2d69f11e8e69796907945ae7a"
+        },
+        {
+          "path": "tools/voicebank_source_intake/prepare_sustain_cuts.py",
+          "sizeBytes": 13024,
+          "sha256": "8b9d69a09ce77d6575ad07052036bd23698dbf7b68f37138d2cf0b8f382bfd2a"
+        },
+        {
+          "path": "tools/voicebank_source_intake/__init__.py",
+          "sizeBytes": 73,
+          "sha256": "f9ef159069cd8db904e7fa93b763a94d42e58a40c32fbd80744f79356e949131"
+        },
+        {
+          "path": "tests/test_phone_donor_intake.py",
+          "sizeBytes": 21286,
+          "sha256": "30d2c7d5a3a344d0782c35507e68063dbde6cdf5ccfddd1d52b0880695d274e8"
+        },
+        {
+          "path": "tests/test_voicebank_source_intake.py",
+          "sizeBytes": 18648,
+          "sha256": "930c5950f72bf9259a6d260d14e393a6d6d5d535505624c99f87ca7cdb5686cf"
+        }
+      ],
+      "SEAM_SOURCE_INTAKE_CLI": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/out/evidence/phone-donor-integrity-independent-2026-10-15/native/seam_voicebank_cli",
+      "exitCode": 0,
+      "elapsedSeconds": 0.6033698329993058,
+      "expectedMethods": 38,
+      "nativeBinary": {
+        "path": "native/seam_voicebank_cli",
+        "sizeBytes": 9841392,
+        "sha256": "812abe00aba817de9df1078efc0cdf1193f1c27995f8cf044805716828f7f2a9",
+        "embeddedSourceCommitLiteral": "1a0cfcebf8435020002dc91b96f25b008907454a",
+        "embeddedLiteralOccurrences": 1
+      },
+      "runtime": {
+        "python": "3.14.3 (v3.14.3:323c59a5e34, Feb  3 2026, 11:41:37) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "platform": "macOS-27.2-arm64-arm-64bit-Mach-O"
+      },
+      "headAtRun": "bc29b1d0c1f8df72948dd503031baa48c820f0a8"
+    }
+  ],
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/phone-donor-integrity-independent-2026-10-15/verification.log",
+      "sizeBytes": 366,
+      "sha256": "73e1b64fe321fdafc4a63b81c256bae0415cbbb45e93015ca400c258917f9273"
+    }
+  },
+  "p3Correction": "ADDRESSED_PENDING_INDEPENDENT_CLOSURE",
+  "sourceOrHumanOrBetaApproval": false
+}

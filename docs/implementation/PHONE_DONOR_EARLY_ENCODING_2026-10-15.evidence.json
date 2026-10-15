@@ -47,7 +47,7 @@
     }
   },
   "independentReview": "PENDING",
-  "nativeOrCtestExecution": false,
+  "nativeOrCtestExecution": true,
   "newOriginalAudio": 0,
   "sourceOrHumanApproval": false,
   "Alpha": [
@@ -56,5 +56,9 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "nativeExecution": true,
+  "ctestExecution": false,
+  "historicalNativeBinaryIdentity": "UNKNOWN_NOT_CAPTURED",
+  "executionCorrection": "SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.evidence.json"
 }

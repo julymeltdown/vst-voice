@@ -64,8 +64,21 @@
       "sha256": "3f9eecee47890299f3f1e35b2ddabeb4622336e927be2a44f8b3fe238d3bc39b"
     }
   },
-  "independentReview": "PENDING",
-  "nativeOrCtestExecution": false,
+  "independentReview": {
+    "commit": "21c04d3a94d75b047fc7769570f1793d3d69168a",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": {
+      "P3": 1
+    },
+    "requiredCodeChanges": false,
+    "finalAnswer": {
+      "path": "out/evidence/phone-donor-integrity-independent-2026-10-15/review-21c04d3a.md",
+      "sizeBytes": 10994,
+      "sha256": "7fe6d25c451aa993b78966734fa9415a893c7b86ce6110e2d456b79642d96255"
+    },
+    "evidenceCorrection": "ADDRESSED_PENDING_INDEPENDENT_CLOSURE"
+  },
+  "nativeOrCtestExecution": true,
   "newOriginalAudio": 0,
   "existingPacketsRewritten": false,
   "downstreamAtomicBankAdmission": "OPEN",
@@ -76,5 +89,9 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "nativeExecution": true,
+  "ctestExecution": false,
+  "historicalNativeBinaryIdentity": "UNKNOWN_NOT_CAPTURED",
+  "executionCorrection": "SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.evidence.json"
 }
