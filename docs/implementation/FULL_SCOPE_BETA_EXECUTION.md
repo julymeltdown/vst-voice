@@ -9298,3 +9298,8 @@ Independent review APPROVED exact 210688b0 for engineering scope, one P3 follow-
 ## 2026-10-15 — Full Release suite after repairs
 
 Full dependent Release rebuild PASS at exact 3b3388df; serial 240/240 registered CTest lanes PASS, exit 0, 779.707128 seconds. All 189 selected executing identities and clean Git state remained stable. [Full-suite dossier](RELEASE_SUITE_AFTER_LAYOUT_REPAIRS_2026-10-15.md) binds 31 retained artifacts/8 preserved bindings, five native executables and ten selected source files. Earlier four failed registrations now pass; duplicate Python discovery and stale historical LastTestsFailed.log are explicitly distinguished. Independent repair approval remains pending. No source admission or gate advancement: Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.
+
+
+## 2026-10-15 — Original publisher license checkpoint
+
+Five fresh publisher HTTP-200 responses and body hashes verified: VocalSet original/current record APIs CC-BY 4.0, Karoryfer female Merry Orks/CC0 except Marie Ork, SLT female publisher page and unchanged commercial/copy/modify COPYING. [Source refresh](FEMALE_INTERNET_SOURCE_REFRESH_2026-10-15.md) and its new license evidence index retain 9 artifacts/7 bindings; read-only checks PASS. No new audio, bank rights/actor/QC approval or acceptance advancement. Existing 1,429 originals preserved; Alpha 0/20, U45 HELD, Beta BLOCKED; full goal ACTIVE; .github untouched.

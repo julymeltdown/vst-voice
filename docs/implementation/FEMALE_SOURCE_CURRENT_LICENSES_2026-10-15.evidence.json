@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "unit": "female-source-current-licenses",
+  "sourceBase": "3b3388df2a39f0f044607759574bc576e89ad923",
+  "manifest": {
+    "path": "out/evidence/female-source-current-licenses-2026-10-15/manifest.json",
+    "sizeBytes": 2985,
+    "sha256": "64a345e76a322a55edb7c3ea8a18b515817d9ba93a2b40e38aa39ba589cfa57e"
+  },
+  "retainedArtifacts": 9,
+  "preservedBindings": 7,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "command": [
+      "python3",
+      "-B",
+      "out/evidence/female-source-current-licenses-2026-10-15/verify.py"
+    ],
+    "log": {
+      "path": "out/evidence/female-source-current-licenses-2026-10-15/verification.log",
+      "sizeBytes": 166,
+      "sha256": "fa67753f286a2f723a869cb3ab2a82524ba6172db71bf3749ac263f45cb648ab"
+    }
+  },
+  "freshPrimaryResponses": 5,
+  "newAudioDownloads": 0,
+  "originalAudioCountUnchanged": 1429,
+  "sourceAdmission": "UNCHANGED",
+  "independentReview": "PENDING_FOR_THIS_REFRESH",
+  "alphaRecordedPasses": [
+    0,
+    20
+  ],
+  "Beta": "BLOCKED",
+  "authorizesRelease": false
+}
