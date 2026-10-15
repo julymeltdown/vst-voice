@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "sourceBase": "76896845c7128f427ec2e583a920eaa0fee69e7a",
+  "engineeringResult": "FOCUSED_PASS",
+  "independentReview": "PENDING",
+  "fullReleaseBaseline": {
+    "exitCode": 8,
+    "registeredLanes": 240,
+    "passedLanes": 236,
+    "failedLanes": 4,
+    "distinctNativeCaseFailures": 3,
+    "distinctPythonCarrierSubtestFailures": 3,
+    "duplicatedPythonDiscovery": true,
+    "stableExecutingInputs": 189
+  },
+  "finalVerification": {
+    "fullDependentBuild": "PASS",
+    "focusedCTestLanes": 4,
+    "nativeCases": 123,
+    "rasterFrames": 15,
+    "fullSuiteAfterRepair": "NOT_RUN"
+  },
+  "roots": [
+    {
+      "path": "out/evidence/release-suite-after-english-2026-10-15/manifest.json",
+      "sizeBytes": 6536,
+      "sha256": "652c13565fa81645b82168a9173ea7dee8325af5a03d4fbb0b4f075663bf051c",
+      "artifactCount": 27,
+      "pinCount": 7
+    },
+    {
+      "path": "out/evidence/diagnostics-minimum-layout-2026-10-15/manifest.json",
+      "sizeBytes": 6964,
+      "sha256": "54a4dda3cf7e4a0cbdc96ddbada32ce16c25b11f2c4195140e4d04aa91fe47fb",
+      "artifactCount": 30,
+      "pinCount": 8
+    }
+  ],
+  "acceptance": {
+    "usableAlphaPassed": 0,
+    "usableAlphaRequired": 20,
+    "U45": "HELD",
+    "externalBeta": "BLOCKED",
+    "releaseEligible": false
+  }
+}

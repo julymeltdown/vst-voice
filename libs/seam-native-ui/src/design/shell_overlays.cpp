@@ -1180,6 +1180,8 @@ constexpr double kDiagnosticActions = 26.0;
 constexpr double kDiagnosticBlock = kDiagnosticRow + 4.0 + kDiagnosticActions + 8.0;
 constexpr double kDiagnosticsTop = 48.0;
 constexpr double kDiagnosticsPager = 34.0;
+constexpr double kDiagnosticsPagerButtonWidth = 88.0;
+constexpr double kDiagnosticsFooterGap = 8.0;
 
 class DiagnosticsOverlay final : public ShellOverlay {
 public:
@@ -1200,7 +1202,8 @@ public:
                          static_cast<double>(state.diagnostics.size()) * kDiagnosticBlock + 4.0;
     const auto width = std::min(slot.width, 460.0);
     const auto height = std::min(slot.height, std::min(natural, 560.0));
-    if (width < kMinimumPanelWidth || height < kMinimumPanelHeight) return {};
+    const auto minimumHeight = kDiagnosticsTop + kDiagnosticRow + 4.0 + kDiagnosticActions + 4.0;
+    if (width < kMinimumPanelWidth || height < minimumHeight) return {};
     const auto right = std::max(slot.x, std::min(layout.settings.right(), slot.right()));
     return {std::max(slot.x, right - width), std::max(slot.y, slot.bottom() - height - 2.0), width,
             height};
@@ -1263,6 +1266,13 @@ private:
     const auto room = panel.height - kDiagnosticsTop - pager - 4.0;
     return std::max<std::size_t>(1U, static_cast<std::size_t>(std::max(0.0, room) / kDiagnosticBlock));
   }
+  // The toast leaves only 122 points at 480x320: a row and its actions fit, but a separate
+  // pager would overlap those actions. Keep the two recovery actions and the pager on one
+  // footer row there. Painting, semantics and pointer input all use these same rectangles.
+  [[nodiscard]] static bool sharedFooter(const EditorSceneState& state, ui::Rect panel) {
+    return paged(state, panel) &&
+           panel.height < kDiagnosticsTop + kDiagnosticBlock + kDiagnosticsPager + 4.0;
+  }
   [[nodiscard]] std::size_t first(const EditorSceneState& state, ui::Rect panel) const {
     const auto page = perPage(state, panel);
     const auto count = state.diagnostics.size();
@@ -1284,6 +1294,15 @@ std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorContr
   pageHint_ = page;
   const auto start = first(state, panel);
   const auto width = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  const auto shared = sharedFooter(state, panel);
+  // At most two primary recovery actions are presented. Reserve room for those and both
+  // pager buttons even if an embedding gives this overlay less than the usual 448-point slot.
+  const auto pagerButtonWidth = shared
+      ? std::min(kDiagnosticsPagerButtonWidth, (width - 3.0 * kDiagnosticsFooterGap) / 4.0)
+      : kDiagnosticsPagerButtonWidth;
+  const auto pagerWidth = 2.0 * pagerButtonWidth + kDiagnosticsFooterGap;
+  auto actionPanel = panel;
+  if (shared) actionPanel.width -= pagerWidth + kDiagnosticsFooterGap;
   for (std::size_t i = start; i < state.diagnostics.size() && i < start + page; ++i) {
     const auto top = panel.y + kDiagnosticsTop + static_cast<double>(i - start) * kDiagnosticBlock;
     const auto& diagnostic = state.diagnostics[i];
@@ -1295,18 +1314,23 @@ std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorContr
                    presentation.title, SemanticRole::Status, true, false, false});
     const auto count = presentation.primaryActionKinds.size();
     if (count == 0U) continue;
-    const auto cells = grid(panel, top + kDiagnosticRow + 4.0, kDiagnosticActions, count, count, 8.0);
+    const auto cells = grid(actionPanel, top + kDiagnosticRow + 4.0, kDiagnosticActions, count,
+                            count, 8.0);
     for (std::size_t a = 0U; a < cells.size(); ++a)
       out.push_back({diagnosticActionId(i, diagnostic, presentation.primaryActionKinds[a]),
                      cells[a], diagnosticActionLabel(presentation.primaryActionKinds[a])});
   }
   if (paged(state, panel)) {
-    const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
+    const auto top = shared ? panel.y + kDiagnosticsTop + kDiagnosticRow + 4.0
+                            : panel.bottom() - kDiagnosticsPager + 2.0;
+    const auto left = shared ? panel.right() - kPanelInset - pagerWidth
+                             : panel.x + kPanelInset;
     out.push_back({"shell.overlay.diagnostics.previous",
-                   {panel.x + kPanelInset, top, 88.0, 26.0}, tr(Str::PreviousIssues),
+                   {left, top, pagerButtonWidth, kDiagnosticActions}, tr(Str::PreviousIssues),
                    SemanticRole::Button, start > 0U});
     out.push_back({"shell.overlay.diagnostics.next",
-                   {panel.x + kPanelInset + 96.0, top, 88.0, 26.0}, tr(Str::NextIssues),
+                   {left + pagerButtonWidth + kDiagnosticsFooterGap, top, pagerButtonWidth,
+                    kDiagnosticActions}, tr(Str::NextIssues),
                    SemanticRole::Button, start + page < state.diagnostics.size()});
   }
   return out;
@@ -1342,7 +1366,7 @@ void DiagnosticsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeE
     paintOverlayControl(c, t, control.bounds, control.name, SemanticRole::Button, control.enabled,
                         false, false);
   }
-  if (paged(state, panel)) {
+  if (paged(state, panel) && !sharedFooter(state, panel)) {
     const auto page = perPage(state, panel);
     const auto start = first(state, panel);
     const auto end = std::min(start + page, state.diagnostics.size());

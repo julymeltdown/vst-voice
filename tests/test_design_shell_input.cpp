@@ -23,6 +23,8 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <map>
@@ -3710,7 +3712,10 @@ TEST_CASE("every diagnostic's recovery actions are reachable from the popover, n
   }
   // At the minimum window only one block fits: the pager reaches every other one, by pointer and
   // through accessibility, and every action of every diagnostic runs through the host path.
-  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{1600.0, 900.0}}) {
+  // Check the compact footer and both sides of its transition to a separate pager row.
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{480.0, 351.0},
+                                     std::pair{480.0, 352.0}, std::pair{720.0, 320.0},
+                                     std::pair{1600.0, 900.0}}) {
     OverlayFixture f;
     CHECK(f.frame(width, height));
     f.controller.setDiagnostics(issues);
@@ -3726,6 +3731,37 @@ TEST_CASE("every diagnostic's recovery actions are reachable from the popover, n
         CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
       }
       CHECK(f.frame(width, height));
+      const auto* panelNode = f.node("shell.overlay.diagnostics.panel");
+      CHECK(panelNode != nullptr);
+      if (panelNode == nullptr) return;
+      const auto panel = panelNode->bounds;
+      std::vector<ui::Rect> placed;
+      const auto checkPlaced = [&](std::string_view id) {
+        const auto* node = f.node(id);
+        if (node == nullptr) return;
+        const auto r = node->bounds;
+        CHECK(r.width >= 26.0 && r.height >= 26.0);
+        CHECK(r.x >= panel.x && r.y >= panel.y);
+        CHECK(r.right() <= panel.right() && r.bottom() <= panel.bottom());
+        for (const auto& other : placed)
+          CHECK(r.right() <= other.x || other.right() <= r.x ||
+                r.bottom() <= other.y || other.bottom() <= r.y);
+        placed.push_back(r);
+      };
+      // Check every visible issue, including both actions on the bank-missing page.
+      for (std::size_t visible = 0U; visible < issues.size(); ++visible) {
+        checkPlaced(native_ui::diagnosticRowId(visible, issues[visible]));
+        for (const auto& id : actionIds(visible)) checkPlaced(id);
+      }
+      checkPlaced("shell.overlay.diagnostics.previous");
+      checkPlaced("shell.overlay.diagnostics.next");
+      if (const auto* directory = std::getenv("SEAM_DIAGNOSTICS_PREVIEW_DIR");
+          directory != nullptr && *directory != '\0') {
+        const auto name = "diagnostics-" + std::to_string(static_cast<int>(width)) + "x" +
+                          std::to_string(static_cast<int>(height)) + "-issue-" +
+                          std::to_string(i) + ".ppm";
+        CHECK(f.surface.writePpm(std::filesystem::path{directory} / name));
+      }
       for (const auto& id : actionIds(i)) {
         if (f.node(id) == nullptr) throw test::Failure{id + " is not published"};
         const auto performed = f.shell.dispatchController(f.controller, id, SemanticAction::Activate);
