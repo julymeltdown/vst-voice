@@ -201,7 +201,23 @@
     "sizeBytes": 8906,
     "sha256": "ab660e427de93c6b51f6e60d42cbfca56d57626599f125f3a5f9276d3a335a4a"
   },
-  "independentReview": "PENDING_EXACT_COMMITTED_UNIT",
+  "independentReview": {
+    "commit": "59002e9119cea7efa60688a5ec5fc97c5a9b3def",
+    "verdict": "APPROVE_ENGINEERING_ZERO_FINDINGS",
+    "productPointerReconciliation": "CLOSED_ENGINEERING",
+    "optionalItems": 9,
+    "final": {
+      "path": "out/evidence/producer-pointer-reconciliation-independent-2026-10-15/review-59002e91.md",
+      "sizeBytes": 15763,
+      "sha256": "e29e3143d8c91be50446a9c80759bc071b5661e5a87036e3ff64aa8aab7faa44"
+    },
+    "metadata": {
+      "path": "out/evidence/producer-pointer-reconciliation-independent-2026-10-15/metadata.json",
+      "sizeBytes": 594,
+      "sha256": "00847a5e2c947b3add549af833087380b970c333765a8f7712a2e06560ab658c"
+    },
+    "scope": "Read-only exact source and retained evidence, including viewed harness PNG; no reviewer builds, native execution, tests, verifier/scripts or playback."
+  },
   "sourceAdmission": false,
   "humanAcceptance": false,
   "Alpha": "0/20",
@@ -213,5 +229,12 @@
     "Directory obstruction is a real filesystem refusal, not a power-loss or fsync test.",
     "Final captures use the application test harness, scripted dialogs and fallback font, not live AppKit.",
     "An initial manifest setup used the wrong dossier directory; corrected using discovered docs/voicebank path. It was not a runtime/test result."
-  ]
+  ],
+  "implementationCommit": "59002e9119cea7efa60688a5ec5fc97c5a9b3def",
+  "postcommitReadOnlyVerification": {
+    "path": "out/evidence/producer-pointer-reconciliation-2026-10-15/verification-postcommit.log",
+    "sizeBytes": 423,
+    "sha256": "dba25548ebc3021cbde1a7f76597e6a83f641914a8ad10de7e2d878b67d8131e"
+  },
+  "optionalReceiptWordingClarified": "Names actual import receipt generation/projectSha256 and durabilityConfirmed false recovery case; no code or test change."
 }

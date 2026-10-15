@@ -1,6 +1,6 @@
 # Shipped producer pointer reconciliation
 
-Source base: `c7e451970bb15f4af3e77f8a6829e8836f968296`. Local implementation and focused checks pass; exact independent review of this unit is pending. The prior source-assessment P3 is independently closed by `b3998f99` and is separate from this product action.
+Source base: `c7e451970bb15f4af3e77f8a6829e8836f968296`. Exact `59002e9119cea7efa60688a5ec5fc97c5a9b3def` is independently **APPROVED for engineering with zero new findings**, closing the earlier optional product-pointer-reconciliation gap. Nine nonblocking suggestions are retained in the exact verdict. The prior source-assessment P3 is independently closed by `b3998f99` and is separate from this product action.
 
 ## User-visible recovery
 
@@ -14,7 +14,7 @@ The CLI now exposes:
 seam_voicebank_cli reconcile-producer-pointer WORKSPACE GENERATION PROJECT_SHA256
 ```
 
-Use the exact generation and full SHA-256 from the confirmed commit receipt, not a guessed generation. Generation must parse completely as a nonzero uint64; the digest must be 64 lowercase hexadecimal characters. Failure returns exit 2 with `Pointer reconciliation refused:`; signal cancellation retains the existing 128+signal convention. Success emits `ProductionPointerReconciled`, the same generation/hash, `pointerReconciled: true`, and `generationAppended`, `nativeImport`, `sourceRightsApproved`, `releaseEligible` all false. A completed reconciliation reports the state at that operation; it does not promise that no subsequent writer can advance the producer.
+Use the import receipt's exact `generation` and `projectSha256`. A receipt with `durabilityConfirmed: false` reports a confirmed immutable generation whose current-pointer durability was not confirmed; this is a recovery case for this command. Repairing the pointer does not require repeating the import. Generation must parse completely as a nonzero uint64; the digest must be 64 lowercase hexadecimal characters. Failure returns exit 2 with `Pointer reconciliation refused:`; signal cancellation retains the existing 128+signal convention. Success emits `ProductionPointerReconciled`, the same generation/hash, `pointerReconciled: true`, and `generationAppended`, `nativeImport`, `sourceRightsApproved`, `releaseEligible` all false. A completed reconciliation reports the state at that operation; it does not promise that no subsequent writer can advance the producer.
 
 ## Code and invariants
 
@@ -58,3 +58,9 @@ Frozen root: `out/evidence/producer-pointer-reconciliation-2026-10-15`. Manifest
 The final [720×520 harness capture](../../out/evidence/producer-pointer-reconciliation-2026-10-15/producer-pointer-reconciled-after-reopen-720x520.png) was visually inspected: the three donor/recovery controls fit without overlap and the reconciled status is visible. It uses the fallback font. Live AppKit remains unverified because the Mac was locked; the existing unlock question is still pending. No full suite, leak detection, TSan, OS/power-loss/fsync injection, physical recording, DAW, Windows, signing or listening result is claimed. The test's directory obstruction is not a power-loss/fsync test.
 
 All **1,469 downloaded originals remain unadmitted**. This unit does not resolve performer/rights/EULA disposition, genuine producer/reviewer roles, phone mapping/missing phones, pitch/style suitability, failed-QC policy or human listening. The [current source handoff](FEMALE_SOURCE_CURRENT_HANDOFF_2026-10-15.md) remains the source-admission entry point. Alpha **0/20**, U45 **HELD**, External Beta **BLOCKED**, full goal **ACTIVE**. Stash preserved; `.github` untouched; README Windows TODO unchanged.
+
+## Exact independent closure
+
+The final verdict at `out/evidence/producer-pointer-reconciliation-independent-2026-10-15/review-59002e91.md` is **15,763 bytes**, SHA-256 `e29e3143d8c91be50446a9c80759bc071b5661e5a87036e3ff64aa8aab7faa44`; metadata is **594 bytes**, SHA-256 `00847a5e2c947b3add549af833087380b970c333765a8f7712a2e06560ab658c`. The reviewer read the exact committed source, logs, source/evidence bindings and 720×520 harness PNG, and ran no builds, native binaries, tests, retained verifier/scripts or playback. The product recovery item is **CLOSED at the engineering level**, with no new findings. The nine optional suggestions remain separately recorded; the receipt-field wording suggestion is clarified above. No additional code or native test was needed for this documentation clarification.
+
+Full-hash post-commit read-only verification of `59002e9119cea7efa60688a5ec5fc97c5a9b3def` passed: log **423 bytes**, SHA-256 `dba25548ebc3021cbde1a7f76597e6a83f641914a8ad10de7e2d878b67d8131e`. It is intentionally outside the frozen artifact list. Current prerequisite execution still refuses the canonical bank dossier; see the [source handoff](FEMALE_SOURCE_CURRENT_HANDOFF_2026-10-15.md). Independent engineering approval supplies no human, source-rights, AppKit or release acceptance.
