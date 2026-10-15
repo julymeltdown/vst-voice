@@ -154,8 +154,8 @@
       "sha256": "a3fd9be9a1b0e8b7b4765517a744994c2db411081f9cbe664c58d16e74b0d42e"
     }
   },
-  "independentClosure": "PENDING",
-  "full239SuiteAfterUnit": "NOT_RUN",
+  "independentClosure": "APPROVE_EXACT_4BAFEC5E_PRIOR_P3S_CLOSED_WITHIN_SCOPE",
+  "full239SuiteAfterUnit": "PASS_EXACT_50F5B1D9; SEE_RELEASE_SUITE_AFTER_REVIEW_AUTHORITY",
   "sourceOrHumanApproval": false,
   "Alpha": [
     0,
@@ -163,5 +163,38 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "review": {
+    "schemaVersion": 1,
+    "reviewedCommit": "4bafec5ebdfc9c7bbc51c6aa8eb325dcbe075943",
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "turnId": "01a13d2e-1cf0-7570-9bc3-4c6f47fa3eeb",
+    "completedAtUnixSeconds": 1792028406,
+    "verdict": "APPROVE",
+    "requiredChanges": false,
+    "priorA025P3s": "BOTH_CLOSED_WITHIN_SPECIFIED_SCOPE",
+    "newP3": "Legacy English producers may add an inventory-unauthorized folding contract before review",
+    "newP3Status": "OPEN",
+    "execution": "Read-only Git/source/artifact/hash and own offline checks; no build/native/CLI/tests/retained-script execution",
+    "retainedFinal": {
+      "path": "out/evidence/english-review-authority-independent-2026-10-15/review-4bafec5e.md",
+      "sizeBytes": 13850,
+      "sha256": "9a329a93886241cf6327b5ffba293cf9f373ace1a0ccc1bc743efe9c748ae3fb"
+    },
+    "historicalManifest": {
+      "path": "out/evidence/english-review-inventory-authority-2026-10-15/manifest.json",
+      "sizeBytes": 14860,
+      "sha256": "2cc3531eaa1e4b2a634a2461454dbf83f5dc684cb49f96adae336cff200a3de5"
+    },
+    "leadRehashedArtifacts": 73,
+    "leadRehashedPins": 8,
+    "laterCommitsApproved": false,
+    "sourceOrHumanOrBetaApproval": false,
+    "manifest": {
+      "path": "out/evidence/english-review-authority-independent-2026-10-15/manifest.json",
+      "sizeBytes": 1464,
+      "sha256": "661e5fa9388b118f8ab66373c527a732d26f33ac0664350fd7f4a261c3d257e7"
+    }
+  },
+  "refinedCommitCaseBaseline": "Not executed against unchanged production; baseline outcome inferred from source. Earlier unregistered-identity reproduction is distinct."
 }
