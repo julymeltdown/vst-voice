@@ -55,3 +55,8 @@ Exact21c04d3a independently APPROVED for engineering with one evidence P3/no req
 ### 2026-10-15 — Installed export with backing media
 
 [Backing-media export and replay](INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md) replaces the blanket installed sample/recipe refusal with existing verified staging/rendering and closed v2 track-to-WAV bindings. Unchanged production refuses both real family cases; final full build, two focused CTest lanes/68 native cases and10 mocked Python policy methods PASS. Separate synthetic sample export/replay and changed-input/coherent-geometry-forgery refusals retained; original87-artifact/seven-pin fixture unchanged.124artifacts/five pins; independent review pending. No internet audio/source/human acceptance, full-suite or release claim. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.
+
+
+### 2026-10-15 — Backing-media independent approval and ASan/UBSan
+
+[Verification follow-up](INSTALLED_BACKING_MEDIA_VERIFICATION_2026-10-15.md): exact67e3e68b independently APPROVED for engineering, zero findings/no required changes. Full dependent sanitizer build at code-equivalent6b0acfb5 PASS; focused ASan/UBSan CTest2/2,38+30native cases PASS in180.436s. Initial unsupported leak-runtime abort and evidence-copy path failure retained; leak detection UNAVAILABLE.41artifacts/six pins; original124/five root unchanged. Path-resolution/test-scope wording clarified, other optional notes retained. No full-suite/TSan/source/human/release acceptance. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.

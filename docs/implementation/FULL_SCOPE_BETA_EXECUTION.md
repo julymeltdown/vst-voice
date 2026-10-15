@@ -9372,3 +9372,8 @@ Exact21c04d3a independently APPROVED for engineering with one evidence P3/no req
 ### 2026-10-15 — Source-intake independent review closure
 
 [Terminal source-intake verdict](SOURCE_INTAKE_REVIEW_CLOSURE_2026-10-15.md): exact1a0cfceb APPROVED for engineering with zero findings; exact6f6380ce independently closes the21c04d3a evidence P3, zero new findings. Retained final answer9692B/SHA e05ede840d856821074cf1ae384dc9e65c51b9f93fedccd5db4901bd5cd9b1ff; historical native binary identity remains UNKNOWN. No production/test changes or additional execution. Optional review notes/durable bank import remain OPEN. Later acquisition/export excluded. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.
+
+
+### 2026-10-15 — Backing-media independent approval and ASan/UBSan
+
+[Verification follow-up](INSTALLED_BACKING_MEDIA_VERIFICATION_2026-10-15.md): exact67e3e68b independently APPROVED for engineering, zero findings/no required changes. Full dependent sanitizer build at code-equivalent6b0acfb5 PASS; focused ASan/UBSan CTest2/2,38+30native cases PASS in180.436s. Initial unsupported leak-runtime abort and evidence-copy path failure retained; leak detection UNAVAILABLE.41artifacts/six pins; original124/five root unchanged. Path-resolution/test-scope wording clarified, other optional notes retained. No full-suite/TSan/source/human/release acceptance. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.

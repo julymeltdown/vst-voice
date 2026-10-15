@@ -98,9 +98,121 @@
       "sha256": "ec4c8c6fef2890dfc917f9ccb08296127684abb5f81fa984a9a9c9a3d55a049c"
     }
   },
-  "independentReview": "PENDING",
+  "independentReview": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "title": "Review in English",
+    "turnId": "01a13d7d-184e-7610-aa97-a12c67061656",
+    "completedAtUnixSeconds": 1792034245,
+    "durationMs": 1274320,
+    "messageId": "msg_bc90124627c94ebca53bc85dd077b147",
+    "commit": "67e3e68bc00f7bfcff8e07d167302724ccebc438",
+    "verdict": "APPROVE_ENGINEERING_ONLY",
+    "findings": 0,
+    "requiredChanges": false,
+    "reviewerExecution": "Read-only own Git/source/hash/log inspections; no builds/tests/native binaries/retained scripts",
+    "sourceOrHumanOrBetaApproval": false,
+    "finalAnswer": {
+      "path": "out/evidence/installed-backing-media-independent-2026-10-15/review-67e3e68b.md",
+      "sizeBytes": 17709,
+      "sha256": "1076ca22f899fa99d2c598af77529b0375baa800eeb9eef1da590db8e10c6fb0"
+    }
+  },
   "fullSuite": "NOT_RUN",
-  "sanitizers": "NOT_RUN",
+  "sanitizers": {
+    "status": "PASS_FOCUSED_ASAN_UBSAN",
+    "sourceCommit": "6b0acfb589e7ce0b559b4a382a1b62b9e56639f1",
+    "codeEquivalentToImplementationCommit": "67e3e68bc00f7bfcff8e07d167302724ccebc438",
+    "manifest": {
+      "path": "out/evidence/installed-backing-media-sanitizers-2026-10-15/manifest.json",
+      "sizeBytes": 7947,
+      "sha256": "f3076609546de098ce6f6e6a24d67bec47cd06dbf6067102afcce85e62715d3a"
+    },
+    "retainedArtifacts": 41,
+    "preservedBindings": 6,
+    "configure": {
+      "argv": [
+        "cmake",
+        "--preset",
+        "sanitize"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.8921896670071874,
+      "sourceCommit": "6b0acfb589e7ce0b559b4a382a1b62b9e56639f1",
+      "headUnchanged": true,
+      "trackedTreeClean": true,
+      "environmentOverrides": {
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      }
+    },
+    "build": {
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 218.44491516597918,
+      "sourceCommit": "6b0acfb589e7ce0b559b4a382a1b62b9e56639f1",
+      "headUnchanged": true,
+      "trackedTreeClean": true,
+      "environmentOverrides": {
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      }
+    },
+    "supportedRun": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "--output-on-failure",
+        "-R",
+        "^(seam_sample_review_cli_tests|seam_export_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 180.43604554099147,
+      "sourceCommit": "6b0acfb589e7ce0b559b4a382a1b62b9e56639f1",
+      "headUnchanged": true,
+      "trackedTreeClean": true,
+      "environmentOverrides": {
+        "ASAN_OPTIONS": "detect_leaks=0:halt_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "leakDetection": "UNAVAILABLE_ON_THIS_RUNTIME"
+    },
+    "nativeCases": 68,
+    "nativeBinaries": [
+      {
+        "path": "build/sanitize/seam_voicebank_cli",
+        "sizeBytes": 110049392,
+        "sha256": "7b8f37404156f6b78e8189a33bd98579044fc40f7766f5a8bfc82245a7da058b"
+      },
+      {
+        "path": "build/sanitize/seam_sample_review_cli_tests",
+        "sizeBytes": 104422464,
+        "sha256": "f2bae68a7aca4cf4da0826a5907f89fc3865fa68154827f2f93ae3c2eb6eafe3"
+      },
+      {
+        "path": "build/sanitize/seam_export_tests",
+        "sizeBytes": 148830224,
+        "sha256": "491a78eec4a52e7d47e251462575f9af00f736f81b85d13ecc0034f27d166a7f"
+      }
+    ],
+    "initialLeakAttempt": {
+      "exitCode": 8,
+      "nativeCasesRecorded": 0,
+      "reason": "ASan detect_leaks unsupported on this platform"
+    },
+    "leakDetection": "UNAVAILABLE",
+    "tsan": "NOT_RUN",
+    "verification": {
+      "path": "out/evidence/installed-backing-media-sanitizers-2026-10-15/verification.log",
+      "sizeBytes": 295,
+      "sha256": "d0dea2da28d9fa9c0bcfb2174356dcbc2430760c695fa5698f633b93c7e03e10"
+    }
+  },
   "internetAudioImported": false,
   "sourceOrHumanAcceptance": false,
   "Alpha": [
@@ -109,5 +221,9 @@
   ],
   "U45": "HELD",
   "Beta": "BLOCKED",
-  "releaseEligible": false
+  "releaseEligible": false,
+  "documentationClarifications": [
+    "Relative paths resolve against the project directory; absolute paths are retained; no containment rule",
+    "Missing audible file, changed audible bytes and changed muted-alias bytes are distinct native controls; explicit immediate installation digest check is sample-only"
+  ]
 }
