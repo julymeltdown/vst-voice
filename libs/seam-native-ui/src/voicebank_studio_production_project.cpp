@@ -1177,11 +1177,13 @@ VoicebankStudioController::selectedProductionAssignment() const noexcept {
   const auto* unit = selectedUnit();
   if (unit == nullptr) return nullptr;
   const auto coverage = voicebank_studio_internal::coverageKey(*unit);
+  const bool styleOwned = productionProject_->schemaVersion >= voicebank_production::kProductionStyleSchemaVersion;
   const auto assignment = std::find_if(
       productionProject_->unitAssignments.begin(),
       productionProject_->unitAssignments.end(),
-      [&coverage, unit](const voicebank_production::UnitAssignment& value) {
-        return value.coverageKey == coverage && value.pitchLayer == unit->rootMidi;
+      [&coverage, unit, styleOwned](const voicebank_production::UnitAssignment& value) {
+        return value.coverageKey == coverage && value.pitchLayer == unit->rootMidi &&
+               (!styleOwned || value.style == unit->style);
       });
   return assignment == productionProject_->unitAssignments.end()
              ? nullptr : &*assignment;

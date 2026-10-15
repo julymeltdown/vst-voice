@@ -107,21 +107,14 @@ core::Result<voicebank_production::CommittedMetadataRevision> VoicebankStudioCon
     return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::NotFound,
                          "No unit is selected for metadata revision");
   }
-  const auto coverage = voicebank_studio_internal::coverageKey(*unit);
-  const auto assignment = std::find_if(
-      productionProject_->unitAssignments.begin(),
-      productionProject_->unitAssignments.end(),
-      [&coverage, unit](const voicebank_production::UnitAssignment& value) {
-        return value.coverageKey == coverage && value.pitchLayer == unit->rootMidi;
-      });
-  if (assignment == productionProject_->unitAssignments.end() ||
-      assignment->takeId.empty()) {
+  const auto* assignment = selectedProductionAssignment();
+  if (assignment == nullptr || assignment->takeId.empty()) {
     return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::NotFound,
                          "Selected unit has no imported production take");
   }
   const auto take = std::find_if(
       productionProject_->takes.begin(), productionProject_->takes.end(),
-      [&assignment](const voicebank_production::TakeRecord& value) {
+      [assignment](const voicebank_production::TakeRecord& value) {
         return value.takeId == assignment->takeId;
       });
   if (take == productionProject_->takes.end()) {

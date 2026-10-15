@@ -73,6 +73,13 @@ struct Fixture final {
     CHECK(controller.beginSampleManifestDraftCreation(context.value(), identity, root / name, std::move(options)));
   }
   void createLoaded() { begin(); CHECK(collectDraft(controller)); CHECK(controller.createdSampleManifestDraft()); CHECK(controller.selectedUnit()); }
+  void selectStyle(std::string_view style) {
+    const auto& units = controller.manifest().units;
+    const auto found = std::find_if(units.begin(), units.end(),
+        [&](const auto& unit) { return unit.style == style; });
+    CHECK(found != units.end());
+    CHECK(controller.selectUnit(static_cast<std::size_t>(found - units.begin())));
+  }
   void sourceUnchanged() const {
     const auto recovered = repository.recover(); CHECK(recovered);
     CHECK(production::encodeProductionProject(recovered.value()) == production::encodeProductionProject(project));
@@ -182,6 +189,68 @@ TEST_CASE("Studio asynchronously creates and opens every assignment-owned style"
   CHECK(fixture.controller.manifest().units[0].style != fixture.controller.manifest().units[1].style);
   CHECK(fixture.controller.createdSampleManifestDraft()->missingAssignments.empty());
   fixture.sourceUnchanged();
+}
+
+TEST_CASE("Studio style-owned bank selection retakes only the selected style") {
+  Fixture fixture{false, false, false, true};
+  fixture.createLoaded(); fixture.selectStyle("soft");
+  CHECK(fixture.controller.inspectSelectedProductionTake(fixture.root / "raw.wav"));
+  CHECK(fixture.controller.importSelectedTake(fixture.root / "raw.wav", "2026-10-15T03:00:00Z"));
+  const auto durable = fixture.repository.recover(); CHECK(durable);
+  CHECK(durable.value().takes.size() == 3U);
+  const auto& imported = durable.value().takes.back();
+  if (imported.style != "soft")
+    throw test::Failure{"Selected soft unit retake was stored in style " + imported.style +
+        ", superseding " + imported.supersedesTakeId};
+  CHECK(imported.supersedesTakeId == "soft-a");
+  CHECK(durable.value().unitAssignments[0].takeId == "take-a");
+  CHECK(durable.value().unitAssignments[1].takeId == imported.takeId);
+  CHECK(imported.state == production::UnitQueueState::MarkerReview || imported.state == production::UnitQueueState::Rejected);
+  CHECK(durable.value().reviews.empty());
+  CHECK(production::encodeProductionProject(durable.value()) == production::encodeProductionProject(*fixture.controller.productionProject()));
+}
+
+TEST_CASE("Studio style-owned marker save targets only the selected style") {
+  Fixture fixture{false, false, false, true};
+  fixture.createLoaded(); fixture.selectStyle("soft");
+  const auto frame = fixture.controller.selectedUnit()->markers.stableStart + 8;
+  CHECK(fixture.controller.moveSelectedMarker(ui::AcousticMarkerKind::StableStart,
+      fixture.controller.microscope().frameToPixel(frame)));
+  CHECK(fixture.controller.save());
+  const auto durable = fixture.repository.recover(); CHECK(durable);
+  CHECK(durable.value().metadataRevisions.size() == fixture.project.metadataRevisions.size() + 1U);
+  const auto& metadata = durable.value().metadataRevisions.back();
+  CHECK(metadata.kind == "MARKERS_AND_PITCH");
+  if (metadata.takeId != "soft-a")
+    throw test::Failure{"Selected soft unit markers were stored on take " + metadata.takeId};
+  CHECK(durable.value().takes.size() == fixture.project.takes.size());
+  for (std::size_t i = 0U; i < fixture.project.takes.size(); ++i) {
+    CHECK(durable.value().takes[i].takeId == fixture.project.takes[i].takeId);
+    CHECK(durable.value().takes[i].style == fixture.project.takes[i].style);
+    CHECK(durable.value().takes[i].rawAssetSha256 == fixture.project.takes[i].rawAssetSha256);
+  }
+  CHECK(durable.value().sourceBindings == fixture.project.sourceBindings);
+  CHECK(durable.value().unitAssignments[0].takeId == "take-a");
+  CHECK(durable.value().unitAssignments[1].takeId == "soft-a");
+  CHECK(durable.value().reviews.empty());
+}
+
+TEST_CASE("Studio style-owned bank refuses an unowned selected style") {
+  Fixture fixture{false, false, false, true};
+  auto unit = test::support::makeUnit("unowned-a", {"a"}, "raw.wav", 69,
+      voicebank::UnitKind::Sustain, 9600U);
+  unit.style = "unowned";
+  auto manifest = test::support::makeManifest({unit});
+  manifest.language = domain::Language::Korean; manifest.styles = {"unowned"};
+  const auto path = fixture.root / "unowned.json";
+  CHECK(voicebank::ManifestJsonCodec{}.save(manifest, path));
+  CHECK(fixture.controller.openManifest(path));
+  CHECK(fixture.controller.openProductionProject(fixture.root / "producer", fixture.project.inventorySha256, "producer"));
+  CHECK(!fixture.controller.inspectSelectedProductionTake(fixture.root / "raw.wav"));
+  CHECK(!fixture.controller.importSelectedTake(fixture.root / "raw.wav", "2026-10-15T03:00:00Z"));
+  const auto durable = fixture.repository.recover(); CHECK(durable);
+  CHECK(production::encodeProductionProject(durable.value()) == production::encodeProductionProject(fixture.project));
+  CHECK(production::encodeProductionProject(*fixture.controller.productionProject()) == production::encodeProductionProject(fixture.project));
 }
 
 TEST_CASE("Studio asynchronous workspace entry defers adoption and cancellation retains the empty context") {

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "unit": "studio-style-owned-selection-and-durable-markers",
+  "sourceBase": "c47c30b51c20064055bdb00d07751aaf9621b577",
+  "manifest": {
+    "path": "out/evidence/studio-style-owned-selection-2026-10-15/manifest.json",
+    "sizeBytes": 7997,
+    "sha256": "f058b72ebd58f951ef19e7dd29339a64ac743813a54c09bb4cafb54be08fca57"
+  },
+  "retainedArtifacts": 41,
+  "preservedBindings": 4,
+  "baselineBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 33.65488516699406,
+    "sourceBase": "c47c30b51c20064055bdb00d07751aaf9621b577",
+    "sourcePatchSha256": "51e989bff17ec4d4015811fad38980d272acf6acedddc9e3a57c809a41470cfe",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "baselineNative": {
+    "argv": [
+      "build/release/seam_studio_manifest_draft_tests",
+      "Studio style-owned"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.531600874994183,
+    "sourceBase": "c47c30b51c20064055bdb00d07751aaf9621b577",
+    "sourcePatchSha256": "51e989bff17ec4d4015811fad38980d272acf6acedddc9e3a57c809a41470cfe",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "baselineCases": {
+    "passed": 0,
+    "failed": 3
+  },
+  "finalBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 11.572430000000168,
+    "sourceBase": "c47c30b51c20064055bdb00d07751aaf9621b577",
+    "sourcePatchSha256": "d8b7cd8aa4e58d4b14b5416276cbf38bd37295ac02a2bf99e8a264cce9658a43",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "finalFocusedCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_studio_manifest_draft_tests|seam_studio_sample_review_tests|seam_style_owned_candidate_import_tests|seam_studio_recording_import_parity_tests|seam_studio_generation_bank_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 25.55836491601076,
+    "sourceBase": "c47c30b51c20064055bdb00d07751aaf9621b577",
+    "sourcePatchSha256": "d8b7cd8aa4e58d4b14b5416276cbf38bd37295ac02a2bf99e8a264cce9658a43",
+    "stableSourceDiff": true,
+    "headUnchanged": true
+  },
+  "passingNativeCases": {
+    "seam_style_owned_candidate_import_tests": 3,
+    "seam_studio_sample_review_tests": 14,
+    "seam_studio_manifest_draft_tests": 41,
+    "seam_studio_generation_bank_tests": 2,
+    "seam_studio_recording_import_parity_tests": 1
+  },
+  "newRegressionCases": 3,
+  "nativeExecutables": [
+    {
+      "path": "seam_studio_manifest_draft_tests",
+      "sizeBytes": 10080512,
+      "sha256": "223a3028552042bd6da9aa22761b7d08ea25295ab43b5830a02c368f762e6363"
+    },
+    {
+      "path": "seam_studio_sample_review_tests",
+      "sizeBytes": 9834512,
+      "sha256": "3f2e13686ca9e49f867f18c50b299af047769815de252f693c0263288a45a249"
+    },
+    {
+      "path": "seam_style_owned_candidate_import_tests",
+      "sizeBytes": 9770248,
+      "sha256": "4ca782774ff999aeb711ae5f528ec8394587f315bfc7e1c3ffeff9efd7779acf"
+    },
+    {
+      "path": "seam_studio_recording_import_parity_tests",
+      "sizeBytes": 9810920,
+      "sha256": "066c13cf5044a2ffcfa8ce3042c13da3f5700dc6a3067bb830d42aa455c0f1d1"
+    },
+    {
+      "path": "seam_studio_generation_bank_tests",
+      "sizeBytes": 14840672,
+      "sha256": "af5349e604753d346ffd026319e7cac974c7cbabf468085c6221fbf05df3987a"
+    },
+    {
+      "path": "seam_voicebank_cli",
+      "sizeBytes": 9842512,
+      "sha256": "eb64b30eae7dbf674ee1b703eda48651102fe62c1097bfbe1199a4a2a4796a66"
+    }
+  ],
+  "nativeEmbeddedSourceCommit": "c47c30b51c20064055bdb00d07751aaf9621b577",
+  "executedImplementation": "BASE_PLUS_RETAINED_UNIT_PATCH",
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/studio-style-owned-selection-2026-10-15/verification.log",
+      "sizeBytes": 332,
+      "sha256": "e6329507487a4c0278f5c461f8535f57420003334f8c00ee4ac0c81881eeaeaf"
+    }
+  },
+  "independentReview": "PENDING",
+  "fullSuite": "NOT_RUN",
+  "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
+  "appKitAcceptance": "NOT_RUN",
+  "physicalMicrophoneAcceptance": "NOT_RUN",
+  "internetAudioImported": false,
+  "sourceOrHumanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED",
+  "releaseEligible": false
+}
