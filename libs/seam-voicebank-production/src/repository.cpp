@@ -196,9 +196,17 @@ core::Result<void> ProductionProjectRepository::save(
   return writeGeneration(project, event, stopToken, false);
 }
 
+core::Result<void> ProductionProjectRepository::saveWithAttempt(
+    VoicebankProductionProject& project, const ProductionJournalEvent& event,
+    ProductionPublicationAttempt& attempt, std::stop_token stopToken) {
+  return writeGeneration(project, event, stopToken, false, &attempt);
+}
+
 core::Result<void> ProductionProjectRepository::writeGeneration(
     VoicebankProductionProject& project, const ProductionJournalEvent& event,
-    std::stop_token stopToken, bool allowStyleOwnershipTransition) {
+    std::stop_token stopToken, bool allowStyleOwnershipTransition,
+    ProductionPublicationAttempt* attempt) {
+  if (attempt) *attempt = {};
   if (stopToken.stop_requested()) return core::failure(
       core::ErrorCode::Conflict, "Production save cancelled before commit");
   if (!isProductionJournalAction(event.action) || event.subjectId.empty() ||
@@ -293,6 +301,7 @@ core::Result<void> ProductionProjectRepository::writeGeneration(
   // protocol and report its actual result, even if cancellation arrives later.
   if (stopToken.stop_requested()) return core::failure(
       core::ErrorCode::Conflict, "Production save cancelled before commit");
+  if (attempt) *attempt = {next.lastDurableGeneration, projectDigest};
   auto journalWrite = writeImmutableText(
       journalPath(next.lastDurableGeneration), journalText);
   if (!journalWrite) return journalWrite;

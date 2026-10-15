@@ -9588,3 +9588,8 @@ Final full Release rebuild and seven CTest lanes PASS (112 native cases); actual
 ## 2026-10-15 — Exact importer-wrapper review receipt
 
 Retained exact f7d2559c APPROVE: originating importer-wrapper cancellation/commit-fault item CLOSED. Report/index `PREPARED_DONOR_TRANSACTION_BOUNDARIES_2026-10-15` now bind the 15,644-byte final verdict and 605-byte metadata. A separate pre-existing schema-transition/pointer-recognition P3 remains OPEN; no Beta or human acceptance follows. Studio a7f81e07 is pushed and postcommit evidence verified, exact independent review pending. Alpha 0/20, U45 HELD, Beta BLOCKED; goal ACTIVE.
+
+
+## 2026-10-15 — Exact post-transition publication identity
+
+Locally repaired the separate f7d2559c P3: importer and style-migration recognition now require the writer's exact attempted post-review-transition generation and full digest. An attempt is not a receipt; prepublication cancellation/invalid/stale calls clear it. The identical bound-English-producer regression passed its normal control and failed the intended pointer form on parent runtime, then passed both forms after repair while preserving review history. Full Release rebuild PASS (actual untimed compile retained); final full dependency check, 3 Release CTest lanes/39 cases, 6 actual CLI methods and focused ASan/UBSan 3 lanes/39 cases PASS. Report/index `IMPORT_PUBLICATION_IDENTITY_2026-10-15`; frozen 52 artifacts/14 pins, manifest SHA-256 `029b2bf249abe6eebe6ab03c94c85ecbec53a2bae36f6fb2da49105ab3485ffc`. Independent repair closure pending after active exact Studio review; no actual source admission/listening/rights approval. Alpha 0/20, U45 HELD, Beta BLOCKED; goal ACTIVE. `.github` and README untouched; Windows TODO.

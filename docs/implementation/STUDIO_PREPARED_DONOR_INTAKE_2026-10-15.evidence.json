@@ -110,7 +110,7 @@
     "commit": "f7d2559c1870c53cd55c210841b8928201641bf8",
     "verdict": "APPROVE",
     "wrapperCancellationAndCommitFaultItem": "CLOSED",
-    "preExistingP3": "OPEN: schema migration review transition in import commit recognition",
+    "preExistingP3": "REPAIRED_LOCALLY_REVIEW_PENDING: see IMPORT_PUBLICATION_IDENTITY_2026-10-15.md",
     "final": {
       "path": "out/evidence/prepared-donor-transaction-independent-2026-10-15/review-f7d2559c.md",
       "sizeBytes": 15644,

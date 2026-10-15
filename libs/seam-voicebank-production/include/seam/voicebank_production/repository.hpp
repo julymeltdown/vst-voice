@@ -101,6 +101,13 @@ struct ExportedU57Inputs final {
   std::string status;
 };
 
+// Identity of the post-review-transition generation about to be published.
+// This is not a receipt: a write can fail before that generation exists.
+// Confirm it only against recovery's exact generation AND complete project hash.
+struct ProductionPublicationAttempt final {
+  std::uint64_t generation{0U};
+  std::string projectSha256;
+};
 // Transient commit information, never serialized as source or edit history.
 // A returned value means committed; pointer/directory durability may still need
 // inspection before retrying or issuing the next dependent operation.
@@ -140,6 +147,11 @@ public:
   [[nodiscard]] core::Result<void> save(
       VoicebankProductionProject& project,
       const ProductionJournalEvent& event, std::stop_token stopToken = {});
+  // Clears attempt before validation; fills it only after the final cancellation
+  // check, immediately before publication. Existing save() callers are unchanged.
+  [[nodiscard]] core::Result<void> saveWithAttempt(
+      VoicebankProductionProject& project, const ProductionJournalEvent& event,
+      ProductionPublicationAttempt& attempt, std::stop_token stopToken = {});
   // Supported corrupt/incomplete/over-limit generation or journal files may
   // fall back. Missing/changed evidence or assets of a certified generation
   // refuse instead: those files were durable before its journal was committed.
@@ -270,7 +282,8 @@ private:
   // legacy bytes into style ownership; every other writer passes false and keeps the refusal.
   [[nodiscard]] core::Result<void> writeGeneration(
       VoicebankProductionProject& project, const ProductionJournalEvent& event,
-      std::stop_token stopToken, bool allowStyleOwnershipTransition);
+      std::stop_token stopToken, bool allowStyleOwnershipTransition,
+      ProductionPublicationAttempt* attempt = nullptr);
   [[nodiscard]] core::Result<AssetRecord> importProceduralCandidateBound(
       VoicebankProductionProject& project, const std::filesystem::path& metadataPath,
       const std::filesystem::path& audioPath, const synthesis::ProceduralSingerResource& recipe,

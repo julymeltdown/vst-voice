@@ -135,8 +135,9 @@
       "sha256": "c9c3ff99ff9e984351e8c644e39ab2e12b1088b48c2deb4b030a987ac746dee3"
     },
     "preExistingP3": {
-      "status": "OPEN",
-      "summary": "Post-transition committed import can differ from the pre-transition draft during pointer-failure recognition; preserve exact generation and digest identity when repairing."
+      "status": "REPAIRED_LOCALLY_REVIEW_PENDING",
+      "summary": "Post-transition committed import can differ from the pre-transition draft during pointer-failure recognition; preserve exact generation and digest identity when repairing.",
+      "followupReport": "docs/implementation/IMPORT_PUBLICATION_IDENTITY_2026-10-15.md"
     }
   },
   "preparedImporterCancellationCommitFaultCoverage": "LOCALLY_VERIFIED_EXACT_REVIEW_PENDING",

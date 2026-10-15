@@ -148,17 +148,17 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::applyStyleMig
     const auto existing = core::readFileBytesLimited(retained, 4ULL * 1024ULL * 1024ULL);
     if (!existing || existing.value() != planBytes.value()) return core::Result<Output>{written.error()};
   }
+  ProductionPublicationAttempt attempt;
   const auto saved = writeGeneration(draft,
-      {"style-migration", planSha256, std::move(producerId), std::move(occurredAtUtc)}, stop, true);
+      {"style-migration", planSha256, std::move(producerId), std::move(occurredAtUtc)}, stop, true, &attempt);
   bool durable = true;
   std::string diagnostic;
   if (!saved) {
     const auto recovered = recover();
     if (!recovered || recovered.value().lastDurableGeneration <= project.lastDurableGeneration)
       return core::Result<Output>{saved.error()};
-    auto recoveredComparable = recovered.value();
-    recoveredComparable.lastDurableGeneration = draft.lastDurableGeneration;
-    if (encodeProductionProject(recoveredComparable) != encodeProductionProject(draft))
+    if (attempt.generation == 0U || recovered.value().lastDurableGeneration != attempt.generation ||
+        core::sha256Hex(encodeProductionProject(recovered.value())) != attempt.projectSha256)
       return core::failure<Output>(core::ErrorCode::Conflict,
           "Style migration was not confirmed; recovery found different work");
     draft = recovered.value();

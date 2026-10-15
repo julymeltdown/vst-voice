@@ -211,3 +211,27 @@ TEST_CASE("cancelled procedural and batch imports return no receipt and leave ca
   CHECK(production::encodeProductionProject(fixture.project) == before);
   CHECK(production::encodeProductionProject(fixture.repository.recover().value()) == before);
 }
+
+TEST_CASE("Production publication attempts clear stale identity until the final publication boundary") {
+  ImportFixture fixture;
+  const auto initial=fixture.project;
+  production::ProductionPublicationAttempt attempt{999U,std::string(64U,'a')};
+  std::stop_source cancelled; cancelled.request_stop();
+  CHECK(!fixture.repository.saveWithAttempt(fixture.project,fixture.event("save",fixture.project.projectId),attempt,cancelled.get_token()));
+  CHECK(attempt.generation==0U); CHECK(attempt.projectSha256.empty());
+  CHECK(production::encodeProductionProject(fixture.project)==production::encodeProductionProject(initial));
+  attempt={999U,std::string(64U,'a')};
+  auto invalid=fixture.event("save",fixture.project.projectId); invalid.occurredAtUtc="invalid";
+  CHECK(!fixture.repository.saveWithAttempt(fixture.project,invalid,attempt));
+  CHECK(attempt.generation==0U); CHECK(attempt.projectSha256.empty());
+  CHECK(fixture.repository.saveWithAttempt(fixture.project,fixture.event("save",fixture.project.projectId),attempt));
+  CHECK(attempt.generation==initial.lastDurableGeneration+1U);
+  CHECK(attempt.generation==fixture.project.lastDurableGeneration);
+  CHECK(attempt.projectSha256==core::sha256Hex(production::encodeProductionProject(fixture.project)));
+  auto stale=initial;
+  CHECK(!fixture.repository.saveWithAttempt(stale,fixture.event("save",fixture.project.projectId),attempt));
+  CHECK(attempt.generation==0U); CHECK(attempt.projectSha256.empty());
+  CHECK(production::encodeProductionProject(stale)==production::encodeProductionProject(initial));
+  CHECK(production::encodeProductionProject(fixture.repository.recover().value())==production::encodeProductionProject(fixture.project));
+  std::cout << "[PUBLICATION-ATTEMPT] CANCEL_INVALID_STALE_CLEARED / EXACT_SUCCESS_BOUND\n";
+}

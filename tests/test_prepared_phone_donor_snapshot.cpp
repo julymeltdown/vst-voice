@@ -9,6 +9,7 @@
 #include "seam/voicebank_production/prepared_phone_donor.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include <algorithm>
@@ -480,10 +481,24 @@ TEST_CASE("Prepared donor retained notice damage stops recovery and saving witho
 namespace {
 struct PreparedImportFixture final {
   Fixture prepared;
-  std::filesystem::path workspace{prepared.root / "import-workspace"};
+  std::filesystem::path workspace;
   p::ProductionProjectRepository repository{workspace};
   p::VoicebankProductionProject project;
-  explicit PreparedImportFixture(bool twoDonors = false) : prepared(twoDonors) {
+  explicit PreparedImportFixture(bool twoDonors = false, bool boundInventory = false)
+      : prepared(twoDonors), workspace(prepared.root / (boundInventory?"bound/producer":"import-workspace")) {
+    // Repository is declared after workspace and receives the selected root.
+    if (boundInventory) {
+      auto profile=p::draftInventoryPresetProfile(p::DraftInventoryPreset::EnglishFull,"synthetic-inventory");
+      profile.vowels={"aa"}; profile.includeKinds={"sustain"}; profile.pitchLayers={60,61};
+      profile.requestedMinMidi=59; profile.requestedMaxMidi=62; profile.alternateTakes=1;
+      profile.supportedStyles={"neutral","soft"};
+      const auto created=p::createDraftProducerWorkspace(std::filesystem::absolute(workspace.parent_path()),profile,
+          "synthetic-inspected-import","fixture-producer","2026-10-15T00:00:00Z");
+      if (!created) throw seam::test::Failure{"bound producer fixture: "+created.error().message};
+      auto recovered=repository.recover(); CHECK(recovered); project=std::move(recovered.value());
+      CHECK(repository.registerReviewer(project,"fixture-reviewer",seam::core::sha256Hex(p::encodeProductionProject(project)),
+          "fixture-producer","2026-10-15T00:00:30Z"));
+    } else {
     project.schemaVersion = p::kProductionStyleSchemaVersion;
     project.projectId = "synthetic-inspected-import"; project.language = "en";
     project.inventoryId = "synthetic-inventory"; project.inventorySha256 = std::string(64U, 'a');
@@ -492,6 +507,7 @@ struct PreparedImportFixture final {
     for (const auto style : {"neutral", "soft"}) project.unitAssignments.push_back({.coverageKey = "sustain:aa", .pitchLayer = 60,
         .promptId = "prompt-" + std::string{style}, .plannedTakeId = "take-" + std::string{style}, .style = style});
     CHECK(repository.initialize(project, {"create", project.projectId, "fixture-producer", "2026-10-15T00:00:00Z"}));
+    }
     const auto declaration = prepared.root / "reviewed-declaration.txt";
     CHECK(seam::core::durableAtomicWriteTextNew(declaration, "SYNTHETIC IMPORT TEST DECLARATION; NO REAL SINGER OR RIGHTS ACCEPTANCE"));
     p::SourceStrategyAssessment source{.id = "fixture-human-source", .kind = p::SourceStrategyKind::HumanRecording,
@@ -504,7 +520,9 @@ struct PreparedImportFixture final {
     return {seam::core::sha256Hex(p::encodeProductionProject(project)), prepared.packetSha, prepared.id, project.selectedSourceStrategyId};
   }
   p::RawTakeInput input(std::string style = "neutral") const {
-    return {.takeId = "take-" + style, .promptId = "prompt-" + style, .coverageKey = "sustain:aa", .pitchLayer = 60, .style = style};
+    const auto row=std::find_if(project.unitAssignments.begin(),project.unitAssignments.end(),[&](const auto& value) { return value.style==style; });
+    CHECK(row!=project.unitAssignments.end());
+    return {.takeId=row->plannedTakeId,.promptId=row->promptId,.coverageKey=row->coverageKey,.pitchLayer=row->pitchLayer,.style=style};
   }
   p::ProductionJournalEvent event(const p::RawTakeInput& take) const {
     return {take.supersedesTakeId.empty() ? "import" : "retake", take.takeId, "fixture-producer", "2026-10-15T00:02:00Z"};
@@ -765,5 +783,66 @@ TEST_CASE("Shared packet verification preserves every distinct donor binding and
   CHECK(seam::core::durableAtomicWriteText(directory / "license-source.txt", "changed after successful verification"));
   CHECK(!f.repository.verify(f.project)); CHECK(!f.repository.recover());
   CHECK(p::encodeProductionProject(f.project) == original); f.checkPrivateCaptureRemoved();
+}
+
+TEST_CASE("First prepared import recognizes post-transition commit after reopening earlier approvals") {
+  for (const bool obstructPointer : {false,true}) {
+    PreparedImportFixture f(false,true);
+    const auto wav=f.prepared.root/"earlier-approved.wav";
+    constexpr double frequency=261.6255653005986;
+    CHECK(seam::voicebank::writeWav(wav,{.sampleRate=48000U,.channels=1U,.sampleFormat=seam::voicebank::WavSampleFormat::Pcm24},
+        seam::test::support::sineWave(48000U,frequency,0.2,0.25F)));
+    const auto earlier=f.input("neutral");
+    CHECK(f.repository.importRaw(f.project,wav,earlier,f.event(earlier)));
+    seam::voicebank::Manifest manifest{.id="synthetic.prior.review",.version="0.1.0",.displayName="Synthetic prior review",
+        .characterId={},.characterVersion={},.language=seam::domain::Language::English,.expectedSampleRate=48000U,.styles={"neutral"}};
+    const auto profile=p::draftInventoryPresetProfile(p::DraftInventoryPreset::EnglishFull,"synthetic-inventory");
+    manifest.languageContract=seam::voicebank::Manifest::EnglishPhoneContract{profile.vocabularyId,profile.vocabularySha256,profile.stressPolicy};
+    manifest.units.push_back({.id="aa-60",.alias="aa",.phones={"aa"},.kind=seam::voicebank::UnitKind::Sustain,
+        .audioPath="audio/pending.wav",.rootMidi=60,.style="neutral",.take=1,.priority=0,.gainDb=0.0F,
+        .renderer=seam::voicebank::RendererHint::ClassicPsola,
+        .markers={.audioOffset=0,.consonantEnd=0,.vowelOnset=0,.stableStart=480,.loopStart=480,.loopEnd=8640,.releaseStart=9120,.audioEnd=9600},
+        .pitchMarks={},.enabled=true});
+    for (std::int64_t period=1; ; ++period) {
+      const auto frame=static_cast<seam::time::SampleFrame>(std::llround(static_cast<double>(period)*48000.0/frequency));
+      if (frame>=9600) break;
+      manifest.units.front().pitchMarks.push_back({.frame=frame,.confidence=1.0F,.locked=true});
+    }
+    const auto packet=p::prepareSampleCandidateReview(f.workspace,f.project,manifest);
+    if (!packet) throw seam::test::Failure{"prior review packet: "+packet.error().message};
+    const auto reviewed=p::commitSampleCandidateReview(f.workspace,f.project,packet.value(),"fixture-reviewer",
+        "2026-10-15T00:02:30Z",p::SampleCandidateReviewDecision::Accept);
+    if (!reviewed) throw seam::test::Failure{"prior review decision: "+reviewed.error().message};
+    CHECK(f.project.schemaVersion==4); CHECK(f.project.takes.front().state==p::UnitQueueState::Approved);
+    CHECK(f.project.unitAssignments.front().markerReviewed); CHECK(f.project.unitAssignments.front().pitchReviewed);
+    const auto history=*seam::formats::parseJson(p::encodeProductionProject(f.project)).value().find("reviews"); const auto generation=f.project.lastDurableGeneration;
+    const auto take=f.input("soft"); p::PreparedDonorImportOptions options;
+    options.faultInjector=[&](p::PreparedDonorImportStage stage) {
+      if (obstructPointer && stage==p::PreparedDonorImportStage::NoticesRetained) {
+        CHECK(std::filesystem::remove(f.workspace/"project.json")); CHECK(std::filesystem::create_directory(f.workspace/"project.json"));
+      }
+      return seam::core::success();
+    };
+    const auto result=f.repository.importPreparedDonor(f.project,f.prepared.load(),f.expectation(),take,f.event(take),{},options);
+    if (!result) std::cout << "[TRANSITION-COMMIT] refused: " << result.error().message << '\n';
+    CHECK(result); CHECK(result.value().durabilityConfirmed==!obstructPointer);
+    CHECK(result.value().committedGeneration==generation+1U);
+    CHECK(result.value().committedProjectSha256==seam::core::sha256Hex(p::encodeProductionProject(f.project)));
+    CHECK(f.project.schemaVersion==5); CHECK(f.project.takes.size()==2U);
+    CHECK(f.project.takes.front().state==p::UnitQueueState::MarkerReview);
+    CHECK(!f.project.unitAssignments.front().markerReviewed); CHECK(!f.project.unitAssignments.front().pitchReviewed);
+    CHECK(*seam::formats::parseJson(p::encodeProductionProject(f.project)).value().find("reviews")==history); CHECK(f.project.takes.back().state==p::UnitQueueState::MarkerReview);
+    CHECK(p::encodeProductionProject(f.repository.recover().value())==p::encodeProductionProject(f.project));
+    if (obstructPointer) {
+      CHECK(result.value().diagnostic.starts_with("The exact import is recoverably committed, but pointer durability is uncertain."));
+      CHECK(!f.repository.verify(f.project)); CHECK(std::filesystem::remove(f.workspace/"project.json"));
+      CHECK(f.repository.reconcileCurrentPointer(result.value().committedGeneration,result.value().committedProjectSha256));
+    }
+    CHECK(f.repository.verify(f.project));
+    const auto before=retainedFiles(f.workspace); const auto expected=f.expectation();
+    CHECK(!f.repository.importPreparedDonor(f.project,f.prepared.load(),expected,take,f.event(take)));
+    CHECK(retainedFiles(f.workspace)==before);
+    std::cout << "[TRANSITION-COMMIT] " << (obstructPointer?"POINTER_FAILURE_RECOGNIZED":"SUCCESS") << ": REVIEW_HISTORY_PRESERVED\n";
+  }
 }
 #endif

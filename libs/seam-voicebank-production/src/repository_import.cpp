@@ -24,15 +24,15 @@ core::Result<ProductionCommitReceipt> commitImportedDraft(ProductionProjectRepos
     VoicebankProductionProject& project, VoicebankProductionProject draft,
     const ProductionJournalEvent& event, std::stop_token stop) {
   const auto previousGeneration = project.lastDurableGeneration;
-  const auto saved = repository.save(draft, event, stop);
+  ProductionPublicationAttempt attempt;
+  const auto saved = repository.saveWithAttempt(draft, event, attempt, stop);
   bool durabilityConfirmed = true;
   std::string diagnostic;
   if (!saved) {
     const auto recovered = repository.recover();
     if (recovered && recovered.value().lastDurableGeneration > previousGeneration) {
-      auto comparable = recovered.value();
-      comparable.lastDurableGeneration = draft.lastDurableGeneration;
-      if (encodeProductionProject(comparable) != encodeProductionProject(draft))
+      if (attempt.generation == 0U || recovered.value().lastDurableGeneration != attempt.generation ||
+          core::sha256Hex(encodeProductionProject(recovered.value())) != attempt.projectSha256)
         return core::failure<ProductionCommitReceipt>(core::ErrorCode::Conflict,
             "Import save failed and recovery found different work. Recover before retrying; no matching import is confirmed.", event.subjectId);
       draft = recovered.value();

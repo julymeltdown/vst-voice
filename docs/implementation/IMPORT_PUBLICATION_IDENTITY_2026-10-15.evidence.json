@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "unit": "import-publication-identity",
+  "sourceBase": "cd6464c77f2d4fb39a2acc449e12d8eeb7adbbef",
+  "sourcePatchSha256": "be56e537eaff7bf83c805ba70ed278400920e00d3ca8f450bcd3fef5bfc0d3e8",
+  "implementationSources": [
+    "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp",
+    "libs/seam-voicebank-production/src/repository.cpp",
+    "libs/seam-voicebank-production/src/repository_import.cpp",
+    "libs/seam-voicebank-production/src/style_migration.cpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp",
+    "tests/test_production_import_outcomes.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/import-publication-identity-2026-10-15/manifest.json",
+    "sizeBytes": 12956,
+    "sha256": "029b2bf249abe6eebe6ab03c94c85ecbec53a2bae36f6fb2da49105ab3485ffc"
+  },
+  "retainedArtifacts": 52,
+  "preservedBindings": 14,
+  "parentRegression": {
+    "base": "cd6464c77f2d4fb39a2acc449e12d8eeb7adbbef",
+    "modifiedPaths": [
+      "tests/test_prepared_phone_donor_snapshot.cpp"
+    ],
+    "runtimeSourceHashes": {
+      "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp": "4421d6fd11012c98bb90918ccf120cb136714c3408e0de73ac8e7f086f00181d",
+      "libs/seam-voicebank-production/src/repository.cpp": "59bf5d1e096fe35a05da2b3384f3cce5514ed44a1ab8e35ed0a1e5d3e32ea6ae",
+      "libs/seam-voicebank-production/src/repository_import.cpp": "393de4afb5e257cdc86f0f449ea7c31315f8c3bed105a61d70b6a292381d9685",
+      "libs/seam-voicebank-production/src/style_migration.cpp": "13d69cc80167a02375c17db3ba5adc8608f0df8999416ac3ea649153cd0b14f1"
+    },
+    "regressionTestSha256": "b8b7e0aac1399f1fe94fdcb3ab7cd344510899f3bd465b6532f9ee3bdbb30a73",
+    "testPatchSha256": "3f9758bf0ae2d3eeba37b98b44668bf6d75e152e29608093910e1e5c63bc24fa",
+    "nativeBinarySha256": "91f0ea785baca880a31e843768f66c701d0f0e993a0f4699bc93a187685cea98",
+    "expectedResult": "24 existing cases pass; successful transition control passes; pointer-obstruction form refuses its recoverable commit as different work; CTest exit 8"
+  },
+  "executions": [
+    {
+      "name": "full-release-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/release",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.07202145899645984
+    },
+    {
+      "name": "release-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/release",
+        "-V",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_import_outcome_tests|seam_production_style_migration_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.9449417919968255
+    },
+    {
+      "name": "actual-cli",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.production.test_prepared_donor_intake_cli"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.7760258330090437
+    },
+    {
+      "name": "focused-sanitized-build",
+      "argv": [
+        "cmake",
+        "--build",
+        "build/sanitize",
+        "--target",
+        "seam_prepared_phone_donor_snapshot_tests",
+        "seam_production_import_outcome_tests",
+        "seam_production_style_migration_tests",
+        "-j6"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 16.685223499982385
+    },
+    {
+      "name": "sanitized-ctest",
+      "argv": [
+        "ctest",
+        "--test-dir",
+        "build/sanitize",
+        "-V",
+        "--output-on-failure",
+        "-R",
+        "^(seam_prepared_phone_donor_snapshot_tests|seam_production_import_outcome_tests|seam_production_style_migration_tests)$"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 9.442806292005116
+    }
+  ],
+  "releaseNativeCases": 39,
+  "sanitizedNativeCases": 39,
+  "newNativeCases": 2,
+  "actualCliMethods": 6,
+  "skips": 0,
+  "precommitReadOnlyVerification": {
+    "path": "out/evidence/import-publication-identity-2026-10-15/verification-precommit.log",
+    "sizeBytes": 224,
+    "sha256": "54aafdb81f7b3ef7001fb802912fa56fe87856973ce6c18f576a67b0931e4dfb"
+  },
+  "independentReview": "PENDING_EXACT_COMMIT_AFTER_ACTIVE_STUDIO_REVIEW",
+  "originatingFinding": {
+    "commit": "f7d2559c1870c53cd55c210841b8928201641bf8",
+    "priority": "P3",
+    "status": "REPAIRED_LOCALLY_REVIEW_PENDING",
+    "scope": "Commit recognition after schema-triggered review lowering; strict attempted generation and complete post-transition digest"
+  },
+  "acceptance": {
+    "downloadedRecordingsImported": 0,
+    "humanListeningEstablished": false,
+    "sourceRightsApproved": false,
+    "alphaAccepted": 0,
+    "alphaTotal": 20,
+    "U45": "HELD",
+    "Beta": "BLOCKED",
+    "goal": "ACTIVE"
+  }
+}
