@@ -33,6 +33,20 @@ enum class HeldReadStage {
 using HeldReadFaultInjector =
     std::function<Result<void>(HeldReadStage stage)>;
 
+enum class DirectoryCreateStage { DirectoryReady, ParentSyncCompleted };
+using DirectoryCreateFaultInjector = std::function<Result<void>(
+    DirectoryCreateStage stage, const std::filesystem::path& directory)>;
+
+// Create missing components from the nearest real existing ancestor outward.
+// On POSIX, sync each directory entry into its parent BEFORE creating children.
+// Existing leaves are synced too, so retrying a failed sync is safe. Refuse
+// linked/non-directory components in this checked chain. This is not protection
+// against arbitrary concurrent ancestor replacement. Windows parent sync retains
+// the existing best-effort/no-op behavior and requires platform verification.
+[[nodiscard]] Result<void> durableCreateDirectories(
+    const std::filesystem::path& path,
+    const DirectoryCreateFaultInjector& faultInjector = {});
+
 struct AtomicWriteOptions final {
   std::filesystem::path backupPath;
   std::uint64_t maximumBackupBytes{128ULL * 1024ULL * 1024ULL};

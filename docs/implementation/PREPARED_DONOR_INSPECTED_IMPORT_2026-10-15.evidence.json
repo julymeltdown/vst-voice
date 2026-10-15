@@ -124,7 +124,7 @@
   "independentImporterReview": {
     "status": "APPROVE_ENGINEERING_ONE_P3",
     "commit": "dd0b515dff22564e46357c896e78870f01f0657d",
-    "openP3": "New notice directory entries and new asset buckets need parent fsync before journal commit",
+    "openP3": "Directory repair locally verified, independent closure pending; see PREPARED_DONOR_DIRECTORY_DURABILITY_2026-10-15",
     "verdict": {
       "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
       "sizeBytes": 14576,

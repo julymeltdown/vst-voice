@@ -10,6 +10,7 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
+#include <algorithm>
 #include <array>
 #include <span>
 
@@ -90,6 +91,86 @@ struct Fixture final {
   }
 };
 }
+
+#if !defined(_WIN32)
+TEST_CASE("Durable directory creation syncs ancestors before children and resyncs existing leaves") {
+  const auto root = seam::test::support::temporaryDirectory("durable-directory-order");
+  const auto target = root / "source-evidence/packets/packet";
+  using Stage = seam::core::DirectoryCreateStage;
+  std::vector<std::pair<std::filesystem::path, Stage>> events;
+  const std::array chain{root, root / "source-evidence", root / "source-evidence/packets", target};
+  const auto result = seam::core::durableCreateDirectories(target,
+      [&](Stage stage, const std::filesystem::path& directory) -> seam::core::Result<void> {
+        const auto found = std::find(chain.begin(), chain.end(), directory); CHECK(found != chain.end());
+        const auto next = found + 1;
+        if (next != chain.end()) CHECK(!std::filesystem::exists(*next));
+        CHECK(std::filesystem::is_directory(directory));
+        events.emplace_back(directory, stage); return seam::core::success();
+      });
+  CHECK(result);
+  std::vector<std::pair<std::filesystem::path, Stage>> expected;
+  for (const auto& directory : chain) {
+    expected.emplace_back(directory, Stage::DirectoryReady);
+    expected.emplace_back(directory, Stage::ParentSyncCompleted);
+  }
+  CHECK(events == expected);
+  events.clear();
+  CHECK(seam::core::durableCreateDirectories(target,
+      [&](Stage stage, const std::filesystem::path& directory) {
+        events.emplace_back(directory, stage); return seam::core::success();
+      }));
+  expected = {{target, Stage::DirectoryReady}, {target, Stage::ParentSyncCompleted}};
+  CHECK(events == expected);
+  std::filesystem::remove_all(root);
+}
+
+TEST_CASE("Durable directory failures stop before descendants and retry the unsynced component") {
+  const auto root = seam::test::support::temporaryDirectory("durable-directory-failure");
+  using Stage = seam::core::DirectoryCreateStage;
+  std::size_t caseId = 0U;
+  for (const auto stage : {Stage::DirectoryReady, Stage::ParentSyncCompleted}) {
+    for (const auto depth : {1U, 2U, 3U}) {
+      const auto base = root / std::to_string(caseId++);
+      const auto target = base / "source-evidence/packets/packet/leaf";
+      const std::array chain{base, base / "source-evidence", base / "source-evidence/packets", base / "source-evidence/packets/packet"};
+      const auto stop = chain[depth]; bool injected = false;
+      const auto failed = seam::core::durableCreateDirectories(target,
+          [&](Stage at, const std::filesystem::path& directory) {
+            if (directory == stop && at == stage) {
+              injected = true;
+              return seam::core::failure(seam::core::ErrorCode::IoError, "Injected directory durability failure");
+            }
+            return seam::core::success();
+          });
+      CHECK(!failed); CHECK(injected); CHECK(!std::filesystem::exists(target));
+      bool retried = false;
+      CHECK(seam::core::durableCreateDirectories(target,
+          [&](Stage at, const std::filesystem::path& directory) {
+            if (directory == stop && at == Stage::ParentSyncCompleted) retried = true;
+            return seam::core::success();
+          }));
+      CHECK(retried); CHECK(std::filesystem::is_directory(target));
+    }
+  }
+  std::filesystem::remove_all(root);
+}
+
+TEST_CASE("Durable directory creation refuses links and non-directory ancestors without traversing them") {
+  const auto root = seam::test::support::temporaryDirectory("durable-directory-unsafe");
+  const auto outside = root / "outside"; std::filesystem::create_directory(outside);
+  std::filesystem::create_directory_symlink(outside, root / "linked");
+  std::filesystem::create_directory_symlink(root / "missing", root / "dangling");
+  CHECK(seam::core::durableAtomicWriteTextNew(root / "file", "unrelated bytes"));
+  for (const auto name : {"linked", "dangling", "file"}) {
+    CHECK(!seam::core::durableCreateDirectories(root / name));
+    CHECK(!seam::core::durableCreateDirectories(root / name / "child"));
+  }
+  CHECK(!seam::core::durableCreateDirectories({}));
+  CHECK(std::filesystem::is_empty(outside)); CHECK(!std::filesystem::exists(root / "missing"));
+  CHECK(seam::core::readTextFileLimited(root / "file", 100U).value() == "unrelated bytes");
+  std::filesystem::remove_all(root);
+}
+#endif
 
 TEST_CASE("Prepared donor evidence verifies packet and notices without claiming raw audio") {
   Fixture f;

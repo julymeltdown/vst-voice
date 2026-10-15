@@ -128,22 +128,17 @@ core::Result<void> retainPreparedEvidence(const std::filesystem::path& workspace
     const PreparedPhoneDonorEvidence& evidence, std::stop_token stop) {
   const auto directory = workspace / "source-evidence/packets" / evidence.packet.sha256;
   for (const auto& parent : {workspace, workspace / "source-evidence", workspace / "source-evidence/packets", directory}) {
-    std::error_code error;
-    auto status = std::filesystem::symlink_status(parent, error);
-    if (error == std::errc::no_such_file_or_directory || (!error && status.type() == std::filesystem::file_type::not_found)) {
-      error.clear(); std::filesystem::create_directory(parent, error);
-      if (error && error != std::errc::file_exists)
-        return core::failure(core::ErrorCode::IoError, "Cannot create retained prepared-donor directory", error.message());
-      error.clear(); status = std::filesystem::symlink_status(parent, error);
-    }
-    if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status))
-      return core::failure(core::ErrorCode::Conflict, "Retained prepared-donor directory is unsafe", parent.string());
+    const auto created = core::durableCreateDirectories(parent);
+    if (!created) return created;
   }
   for (const auto* file : {&evidence.packet, &evidence.plan, &evidence.license, &evidence.attribution}) {
     if (stop.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Prepared donor import cancelled before notice retention");
     const auto target = directory / file->relativePath;
     const auto written = core::durableAtomicWriteNew(target, file->bytes);
     if (!written) {
+      // Only an explicit existing-file conflict permits byte-identical reuse.
+      // Never hide a failed write/flush merely because it published the name.
+      if (written.error().code != core::ErrorCode::Conflict) return written;
       const auto resolved = voicebank::resolveBankAsset(workspace, target.lexically_relative(workspace));
       if (!resolved) return core::Result<void>{resolved.error()};
       const auto existing = core::readFileBytesLimited(resolved.value(), file->bytes.size());

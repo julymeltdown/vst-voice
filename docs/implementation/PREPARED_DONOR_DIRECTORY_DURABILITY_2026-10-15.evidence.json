@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-directory-durability",
+  "sourceBase": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+  "sourcePatchSha256": "1275157bdd9f23ed680554a8a85c2bfa7d7bd5a4943d17d177010253eb305b21",
+  "implementationSources": [
+    "libs/seam-core/include/seam/core/file_io.hpp",
+    "libs/seam-core/src/file_io.cpp",
+    "libs/seam-voicebank-production/src/asset_store.cpp",
+    "libs/seam-voicebank-production/src/repository_import.cpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-directory-durability-2026-10-15/manifest.json",
+    "sizeBytes": 15620,
+    "sha256": "29a958b5aaf4766dcf4f2eaa86c69a902b2b3927b9fac62121c533e346df1908"
+  },
+  "retainedArtifacts": 53,
+  "preservedBindings": 11,
+  "initialFullBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 199.1193953330221,
+    "sourceBase": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+    "sourcePatchSha256": "36d54458a1452950c17ca150ac834cd012f2a8d223db2673e2c9affa8cd0121b",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "finalFullBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 7.254878916020971,
+    "sourceBase": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+    "sourcePatchSha256": "1275157bdd9f23ed680554a8a85c2bfa7d7bd5a4943d17d177010253eb305b21",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_production_import_outcome_tests|seam_voicebank_production_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 6.986477708007442,
+    "sourceBase": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+    "sourcePatchSha256": "1275157bdd9f23ed680554a8a85c2bfa7d7bd5a4943d17d177010253eb305b21",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "nativeCasesInCtestOrder": [
+    20,
+    28,
+    8,
+    64
+  ],
+  "nativeCaseExecutions": 120,
+  "newUniqueDirectoryCases": 3,
+  "stageFailureRetryForms": 6,
+  "pythonInteroperability": {
+    "argv": [
+      "/usr/local/bin/python3",
+      "-B",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.production.test_prepared_donor_workspace"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 3.099844167008996,
+    "sourceBase": "c9ef0d21cf4696a08259d0a4f7b57f637df20003",
+    "sourcePatchSha256": "1275157bdd9f23ed680554a8a85c2bfa7d7bd5a4943d17d177010253eb305b21",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "pythonTestMethods": 8,
+  "pythonSkips": 0,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-directory-durability-2026-10-15/verification.log",
+      "sizeBytes": 448,
+      "sha256": "ffb814af76eb1dcaa2dea6209a83f32b78daf84036e738b88c06190e861a1b8e"
+    }
+  },
+  "originatingIndependentReview": {
+    "verdict": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review-dd0b515d-a42e8086.md",
+      "sizeBytes": 14576,
+      "sha256": "e5779512ede831f87b628e8510e820fa8f49496a77847463a1a114ff5d57c8dc"
+    },
+    "metadata": {
+      "path": "out/evidence/prepared-donor-import-cache-independent-2026-10-15/review.json",
+      "sizeBytes": 728,
+      "sha256": "1b308f60877156a18f82ec1df4290a11b9e35e4c6497895990c914f0e9d3bb0e"
+    }
+  },
+  "directoryDurabilityP3": "LOCALLY_VERIFIED_REPAIR_INDEPENDENT_CLOSURE_PENDING",
+  "pythonUnitReview": "IN_PROGRESS_C9EF0D21",
+  "nativeRangeTestP3": "OPEN",
+  "candidateFourNoticeClosure": "NOT_IMPLEMENTED",
+  "newSanitizers": "NOT_RUN",
+  "fullSuite": "NOT_RUN",
+  "powerLossTest": "NOT_RUN",
+  "operatingSystemFsyncFailureInjection": "NOT_RUN",
+  "noticeFileFlushFailureInjection": "NOT_RUN",
+  "windows": "UNVERIFIED_TODO_DIRECTORY_SYNC_NOOP_PRIVATE_CAPTURE_UNSUPPORTED",
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

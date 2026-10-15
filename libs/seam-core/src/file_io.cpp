@@ -164,7 +164,7 @@ Result<void> publishNewFile(const std::filesystem::path& temporary,
   return success();
 }
 
-Result<void> syncParentDirectory(const std::filesystem::path&) {
+Result<void> syncDirectoryImpl(const std::filesystem::path&) {
   // MoveFileExW with MOVEFILE_WRITE_THROUGH provides the strongest portable
   // replacement guarantee available through the Win32 file API used here.
   return success();
@@ -244,9 +244,7 @@ Result<void> publishNewFile(const std::filesystem::path& temporary,
   return success();
 }
 
-Result<void> syncParentDirectory(const std::filesystem::path& path) {
-  const auto directory = path.has_parent_path() ? path.parent_path()
-                                                : std::filesystem::path{"."};
+Result<void> syncDirectoryImpl(const std::filesystem::path& directory) {
 #ifdef O_DIRECTORY
   const int descriptor = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY);
 #else
@@ -267,6 +265,11 @@ Result<void> syncParentDirectory(const std::filesystem::path& path) {
 }
 
 #endif
+
+Result<void> syncParentDirectory(const std::filesystem::path& path) {
+  return syncDirectoryImpl(path.has_parent_path() ? path.parent_path()
+                                                : std::filesystem::path{"."});
+}
 
 Result<void> writeImpl(const std::filesystem::path& path,
                        std::span<const std::byte> bytes,
@@ -351,6 +354,56 @@ Result<void> writeImpl(const std::filesystem::path& path,
 }
 
 }  // namespace
+
+Result<void> durableCreateDirectories(
+    const std::filesystem::path& path,
+    const DirectoryCreateFaultInjector& faultInjector) {
+  recordRealtimeFileIo();
+  if (path.empty()) return failure(ErrorCode::InvalidArgument, "Durable directory path is empty");
+  std::error_code error;
+  auto current = std::filesystem::absolute(path, error).lexically_normal();
+  if (error) return failure(ErrorCode::IoError, "Cannot resolve durable directory", error.message());
+  // Drop a trailing separator, while preserving a filesystem root.
+  if (current.filename().empty() && current != current.root_path()) current = current.parent_path();
+  std::vector<std::filesystem::path> chain;
+  while (true) {
+    const auto status = std::filesystem::symlink_status(current, error);
+    const bool missing = error == std::errc::no_such_file_or_directory ||
+        (!error && status.type() == std::filesystem::file_type::not_found);
+    if (!missing && (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status)))
+      return failure(ErrorCode::Conflict, "Durable directory component is unsafe", current.string());
+    chain.push_back(current);
+    if (!missing) break;
+    error.clear();
+    const auto parent = current.parent_path();
+    if (parent == current || parent.empty())
+      return failure(ErrorCode::IoError, "Durable directory has no existing ancestor", current.string());
+    current = parent;
+  }
+  for (auto item = chain.rbegin(); item != chain.rend(); ++item) {
+    error.clear();
+    std::filesystem::create_directory(*item, error);
+    if (error && error != std::errc::file_exists)
+      return failure(ErrorCode::IoError, "Cannot create durable directory", error.message());
+    error.clear();
+    const auto status = std::filesystem::symlink_status(*item, error);
+    if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status))
+      return failure(ErrorCode::Conflict, "Durable directory component is unsafe", item->string());
+    auto result = faultInjector ? faultInjector(DirectoryCreateStage::DirectoryReady, *item) : success();
+    if (!result) return result;
+    result = syncParentDirectory(*item);
+    if (!result) return result;
+    // Also flush entries within a reused directory. A prior interrupted write
+    // may have published identical notice/asset names before its directory sync.
+    result = syncDirectoryImpl(*item);
+    if (!result) return result;
+    if (faultInjector) {
+      result = faultInjector(DirectoryCreateStage::ParentSyncCompleted, *item);
+      if (!result) return result;
+    }
+  }
+  return success();
+}
 
 Result<std::vector<std::byte>> readFileBytesLimited(
     const std::filesystem::path& path,

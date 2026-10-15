@@ -1,5 +1,6 @@
 #include "seam/voicebank_production/asset_store.hpp"
 
+#include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 
 #include <array>
@@ -121,11 +122,11 @@ core::Result<AssetRecord> ImmutableAssetStore::importFile(
                         digest.value().substr(0U, 2U) /
                         (digest.value() + ".wav");
   const auto target = root_ / relative;
-  std::filesystem::create_directories(target.parent_path(), error);
-  if (error) {
-    return core::failure<AssetRecord>(
-        core::ErrorCode::IoError, "Unable to create immutable asset directory",
-        error.message());
+  // Persist every address component, including an existing component left by
+  // an interrupted attempt, before any later project journal can name the blob.
+  for (const auto& directory : {root_, root_ / kindName, target.parent_path()}) {
+    const auto created = core::durableCreateDirectories(directory);
+    if (!created) return core::Result<AssetRecord>{created.error()};
   }
   AssetRecord record{
       .sha256 = digest.value(),
