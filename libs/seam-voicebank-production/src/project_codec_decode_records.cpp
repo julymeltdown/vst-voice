@@ -228,9 +228,11 @@ core::Result<TakeRecord> decodeTake(const formats::JsonValue& value, std::int64_
   return result;
 }
 
-core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& value) {
+core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& value, std::int64_t schemaVersion) {
   TakeSourceBinding result;
-  if (!value.isObject() || value.asObject().size() != 7U ||
+  const auto* prepared = value.find("preparedDonor");
+  if ((prepared && schemaVersion < kProductionPreparedDonorSchemaVersion) ||
+      !value.isObject() || value.asObject().size() != (prepared ? 8U : 7U) ||
       !readString(value, "id", result.id) || !readString(value, "takeId", result.takeId) ||
       !readString(value, "rawAssetSha256", result.rawAssetSha256) ||
       !readString(value, "importerId", result.importerId) || !readString(value, "importedAtUtc", result.importedAtUtc) ||
@@ -239,6 +241,16 @@ core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& va
   const auto strategy = decodeStrategy(*value.find("strategy"));
   if (!strategy) return core::Result<TakeSourceBinding>{strategy.error()};
   result.strategy = strategy.value();
+  if (prepared) {
+    PreparedDonorBinding donor;
+    if (!prepared->isObject() || prepared->asObject().size() != 5U ||
+        !readString(*prepared, "packetSha256", donor.packetSha256) || !readString(*prepared, "donorId", donor.donorId) ||
+        !readString(*prepared, "intakePlanSha256", donor.intakePlanSha256) ||
+        !readString(*prepared, "originalLicenseSha256", donor.originalLicenseSha256) ||
+        !readString(*prepared, "attributionSha256", donor.attributionSha256))
+      return parseFailure<TakeSourceBinding>("Prepared donor source binding is malformed");
+    result.preparedDonor = std::move(donor);
+  }
   return result;
 }
 

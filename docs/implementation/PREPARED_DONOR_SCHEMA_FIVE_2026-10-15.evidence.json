@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "unit": "prepared-donor-schema-and-retained-evidence",
+  "sourceBase": "bd35ddac9851940c9b62a8c3c4546d10632b6989",
+  "sourcePatchSha256": "af3df32449cd2a0100d78afbf9ca71117b6a35176c81d43079d16811a843fe91",
+  "implementationSources": [
+    "libs/seam-voicebank-production/include/seam/voicebank_production/project.hpp",
+    "libs/seam-voicebank-production/src/project.cpp",
+    "libs/seam-voicebank-production/src/project_codec_decode.cpp",
+    "libs/seam-voicebank-production/src/project_codec_decode_records.cpp",
+    "libs/seam-voicebank-production/src/project_codec_encode.cpp",
+    "libs/seam-voicebank-production/src/project_codec_internal.hpp",
+    "libs/seam-voicebank-production/src/project_codec_validation.cpp",
+    "libs/seam-voicebank-production/src/repository_candidate.cpp",
+    "libs/seam-voicebank-production/src/repository_import.cpp",
+    "libs/seam-voicebank-production/src/repository_verify.cpp",
+    "tests/test_prepared_phone_donor_snapshot.cpp"
+  ],
+  "manifest": {
+    "path": "out/evidence/prepared-donor-schema-five-2026-10-15/manifest.json",
+    "sizeBytes": 14785,
+    "sha256": "ccb79452ebfeaf242aca2395c48acf4552ff7f9a8f4142c40b3cc8af64e322d5"
+  },
+  "retainedArtifacts": 50,
+  "preservedBindings": 10,
+  "initialCompileFailure": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 10.101114332996076,
+    "sourceBase": "bd35ddac9851940c9b62a8c3c4546d10632b6989",
+    "sourcePatchSha256": "8cfbd613ae67968eb8eb5fb179728fb94a7eff8688d2ec97b29871b52039b9b1",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseBuild": {
+    "argv": [
+      "cmake",
+      "--build",
+      "build/release",
+      "-j6"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 80.18073362499126,
+    "sourceBase": "bd35ddac9851940c9b62a8c3c4546d10632b6989",
+    "sourcePatchSha256": "af3df32449cd2a0100d78afbf9ca71117b6a35176c81d43079d16811a843fe91",
+    "headUnchanged": true,
+    "stableSourceDiff": true
+  },
+  "releaseCtest": {
+    "argv": [
+      "ctest",
+      "--test-dir",
+      "build/release",
+      "--output-on-failure",
+      "-R",
+      "^(seam_prepared_phone_donor_snapshot_tests|seam_production_draft_tests|seam_production_import_outcome_tests|seam_production_review_tests|seam_voicebank_production_tests|seam_production_style_migration_tests|seam_style_owned_candidate_import_tests|seam_english_candidate_lifecycle_tests)$"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 14.70678599999519,
+    "sourceBase": "bd35ddac9851940c9b62a8c3c4546d10632b6989",
+    "sourcePatchSha256": "af3df32449cd2a0100d78afbf9ca71117b6a35176c81d43079d16811a843fe91",
+    "headUnchanged": true,
+    "stableSourceDiff": true,
+    "nativeBeforeEqualsAfter": true
+  },
+  "nativeCasesInCtestOrder": [
+    8,
+    3,
+    26,
+    4,
+    8,
+    1,
+    24,
+    62
+  ],
+  "nativeCaseExecutions": 136,
+  "newUniqueCases": 3,
+  "verification": {
+    "status": "PASS_READ_ONLY",
+    "log": {
+      "path": "out/evidence/prepared-donor-schema-five-2026-10-15/verification.log",
+      "sizeBytes": 351,
+      "sha256": "8f0e990f9cdf3a4390b7aaec945f17aeb21800a37dc97ebc9fc6d11bb1ed87c3"
+    }
+  },
+  "independentImplementationReview": "PENDING",
+  "preparedDonorImporter": "NOT_IMPLEMENTED",
+  "packetBoundPublication": "REFUSED_UNTIL_NOTICE_CLOSURE",
+  "realSourceRegistrationOrImport": false,
+  "rightsOrHumanAcceptance": false,
+  "sanitizers": "NOT_RUN_FOR_THIS_UNIT",
+  "fullSuite": "NOT_RUN",
+  "pythonSchemaFiveProducerParity": "NOT_IMPLEMENTED",
+  "certifiedAssetLossP2": "OPEN_PREEXISTING_FOLLOWUP",
+  "Alpha": [
+    0,
+    20
+  ],
+  "U45": "HELD",
+  "Beta": "BLOCKED"
+}

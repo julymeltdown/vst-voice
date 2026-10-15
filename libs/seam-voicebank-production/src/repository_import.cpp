@@ -414,12 +414,11 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
     project.assets.push_back(imported.value());
   }
   if (superseded != project.takes.end()) superseded->state = UnitQueueState::Retake;
-  const auto bindingId = "source-" + core::sha256Hex(formats::stringifyJson(formats::JsonValue{formats::JsonValue::Object{
-      {"format", "take-source-binding-v1"}, {"projectId", project.projectId}, {"takeId", take.takeId},
-      {"audioSha256", imported.value().sha256}, {"strategyId", sourceStrategy.id}, {"licenseSha256", sourceStrategy.licenseSha256},
-      {"importerId", event.operatorId}, {"importedAtUtc", event.occurredAtUtc}}}, false));
-  project.sourceBindings.push_back({bindingId, take.takeId, imported.value().sha256, sourceStrategy,
-      event.operatorId, event.occurredAtUtc, evidence.value()});
+  TakeSourceBinding binding{"", take.takeId, imported.value().sha256, sourceStrategy,
+      event.operatorId, event.occurredAtUtc, evidence.value(), std::nullopt};
+  binding.id = takeSourceBindingId(project.projectId, binding);
+  const auto bindingId = binding.id;
+  project.sourceBindings.push_back(std::move(binding));
   project.takes.push_back(TakeRecord{
       .takeId = take.takeId,
       .promptId = take.promptId,

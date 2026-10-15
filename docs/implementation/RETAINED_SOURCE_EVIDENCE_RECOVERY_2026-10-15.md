@@ -1,6 +1,6 @@
 # Retained source-evidence recovery — 2026-10-15
 
-Recovery now refuses to hide a committed generation whose captured source declaration or reviewer-quality evidence is missing, changed or replaced by a link. Previously, those failures caused recovery to return older work. This repairs the independent architecture audit's existing P2 finding; independent implementation review is pending.
+Recovery now refuses to hide a committed generation whose captured source declaration or reviewer-quality evidence is missing, changed or replaced by a link. Previously, those failures caused recovery to return older work. Independent engineering review of exact `7aae8bdf1f17243da2461261eade2f18ef37c88e` is APPROVE and closes this P2 for declaration/quality evidence. The exact supplemental verdict and metadata are bound by the adjacent index; the original execution manifest remains immutable.
 
 ## Behavior and implementation
 
@@ -32,7 +32,7 @@ No sanitizer, full-suite, real recording import, listening, AppKit, physical-dev
 
 ## Next development units
 
-1. Obtain independent review of the pushed recovery change. The preceding donor-evidence API review is a separate active review.
+1. Repair the review's separate pre-existing P2: committed raw/derived asset loss still silently falls back. The reviewer recommends the same terminal treatment after certification, with removal/change/link tests and the journal fallback control. This follow-up is open; the approved declaration/quality repair does not close it.
 2. Add schema-5 durable prepared-donor provenance using the existing owned-byte validator. Retain packet, intake plan, original corpus license and attribution once per packet; capture the selected donor and all five provenance identities with the take in one project commit. Keep the reviewed rights declaration distinct from the corpus license. Use synthetic fixtures while real source admission is held.
 3. Enforce candidate notice closure in directory and package verification: every take's reviewed declaration plus the exact packet/plan/original-license/attribution union. Preserve dependency-set semantics for existing candidate schema 3 while introducing schema 4 for the new required notices. Test a legitimately re-signed package with omitted notices, not only a broken manifest hash.
 4. Verify publication, package and installation using distinct declaration/license fixtures, then complete real admission only with the missing owner rights/EULA/performer disposition, genuine producer and distinct reviewer, assignment/phonetic decisions, failed-QC policy and listening evidence. Existing independent findings about notice closure remain open until implementation is verified.

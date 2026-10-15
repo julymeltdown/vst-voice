@@ -613,6 +613,12 @@ core::Result<PublishedSampleCandidate> publishReviewedCandidate(
   using Output = PublishedSampleCandidate;
   auto checkpoint = cancelled(stop);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  // Packet-bound takes require the forthcoming candidate notice-closure
+  // format. Never publish them with the current descriptor's incomplete set.
+  if (std::any_of(project.sourceBindings.begin(), project.sourceBindings.end(),
+      [](const auto& binding) { return binding.preparedDonor.has_value(); }))
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+        "Prepared donor publication requires complete packet notice closure");
   if (!destination.is_absolute() || destination != destination.lexically_normal() ||
       destination.filename().empty() || destination.filename() == "." || destination.filename() == ".." ||
       destination.filename().string().front() == '.' ||

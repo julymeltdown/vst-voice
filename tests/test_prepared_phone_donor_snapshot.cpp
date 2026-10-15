@@ -6,6 +6,9 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/prepared_phone_donor.hpp"
+#include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/candidate_publication.hpp"
 #include <array>
 #include <span>
 
@@ -155,5 +158,138 @@ TEST_CASE("Prepared donor selected fact types are checked before JSON normalizat
     const auto owned = p::validatePreparedPhoneDonorSnapshot(std::move(snapshot), expected, f.id); CHECK(!owned);
     CHECK(owned.error().code == seam::core::ErrorCode::InvalidArgument);
     CHECK(owned.error().message.find(key) != std::string::npos);
+  }
+}
+
+namespace {
+// Deliberately constructs a synthetic persisted model. This is not the future
+// inspected prepared-donor importer and does not establish admission or QC.
+struct BoundFixture final {
+  Fixture prepared;
+  std::filesystem::path workspace{prepared.root / "workspace"};
+  p::VoicebankProductionProject project;
+  p::ProductionProjectRepository repository{workspace};
+  BoundFixture() {
+    project.schemaVersion = p::kProductionPreparedDonorSchemaVersion;
+    project.projectId = "synthetic-packet-binding"; project.language = "en";
+    project.declaredPitchLayers = {60}; project.operators = {{"synthetic-producer", "PRODUCER"}};
+    CHECK(repository.initialize(project, {"create", project.projectId, "synthetic-producer", "2026-10-15T00:00:00Z"}));
+    const auto snapshot = prepared.load();
+    const auto declaration = workspace / "source-evidence" / (seam::core::sha256Hex("SYNTHETIC REVIEWED DECLARATION") + ".txt");
+    CHECK(seam::core::durableAtomicWriteTextNew(declaration, "SYNTHETIC REVIEWED DECLARATION"));
+    p::SourceStrategyAssessment strategy{.id = "synthetic-source", .kind = p::SourceStrategyKind::HumanRecording,
+        .rights = p::Feasibility::Pass, .permissions = {true, true, false, false},
+        .licenseLocator = declaration.string(), .licenseSha256 = seam::core::sha256File(declaration).value(),
+        .evidenceState = "SYNTHETIC_TEST_ONLY_NO_RIGHTS_OR_QC_ACCEPTANCE"};
+    project.sourceStrategies.push_back(strategy); project.selectedSourceStrategyId = strategy.id;
+    project.licenseLocator = strategy.licenseLocator; project.licenseSha256 = strategy.licenseSha256;
+    const auto asset = p::ImmutableAssetStore{workspace / "assets"}.importFile(prepared.root / (prepared.id + ".wav"), p::AssetKind::Raw);
+    CHECK(asset); project.assets.push_back(asset.value());
+    project.inventoryId = "synthetic-inventory"; project.inventorySha256 = std::string(64U, 'a');
+    const auto directory = workspace / "source-evidence/packets" / prepared.packetSha;
+    for (const auto* file : {&snapshot.evidence.packet, &snapshot.evidence.plan, &snapshot.evidence.license, &snapshot.evidence.attribution})
+      CHECK(seam::core::durableAtomicWriteNew(directory / file->relativePath, file->bytes));
+    p::TakeSourceBinding binding{"", "take-neutral", asset.value().sha256, strategy, "synthetic-producer",
+        "2026-10-15T00:01:00Z", "source-evidence/" + strategy.licenseSha256 + ".txt",
+        p::PreparedDonorBinding{prepared.packetSha, prepared.id, snapshot.evidence.plan.sha256,
+            snapshot.evidence.license.sha256, snapshot.evidence.attribution.sha256}};
+    CHECK(binding.strategy.licenseSha256 != binding.preparedDonor->originalLicenseSha256);
+    binding.id = p::takeSourceBindingId(project.projectId, binding); project.sourceBindings.push_back(binding);
+    project.takes.push_back({.takeId = binding.takeId, .promptId = "prompt-neutral", .coverageKey = "sustain:a", .pitchLayer = 60,
+        .rawAssetSha256 = asset.value().sha256, .state = p::UnitQueueState::MarkerReview, .sourceBindingId = binding.id, .style = "neutral"});
+    project.unitAssignments.push_back({.coverageKey = "sustain:a", .pitchLayer = 60, .promptId = "prompt-neutral",
+        .plannedTakeId = binding.takeId, .takeId = binding.takeId, .state = p::UnitQueueState::MarkerReview, .style = "neutral"});
+    project.lifecycle = p::ProductionLifecycle::Experimental;
+    CHECK(repository.save(project, {"save", "synthetic-model", "synthetic-producer", "2026-10-15T00:01:00Z"}));
+  }
+};
+std::map<std::string, std::string> retainedFiles(const std::filesystem::path& root) {
+  std::map<std::string, std::string> result;
+  for (const auto& item : std::filesystem::recursive_directory_iterator(root)) {
+    const auto name = item.path().lexically_relative(root).generic_string();
+    if (item.is_symlink()) result[name] = "link:" + std::filesystem::read_symlink(item.path()).string();
+    else if (item.is_regular_file()) { const auto digest = seam::core::sha256File(item.path()); CHECK(digest); result[name] = digest.value(); }
+  }
+  return result;
+}
+}
+
+TEST_CASE("Prepared donor schema five round trips exact provenance and rejects partial or legacy bindings") {
+  BoundFixture f;
+  const auto encoded = p::encodeProductionProject(f.project);
+  const auto decoded = p::decodeProductionProject(encoded); CHECK(decoded);
+  CHECK(p::encodeProductionProject(decoded.value()) == encoded);
+  CHECK(decoded.value().sourceBindings == f.project.sourceBindings);
+  const auto json = seam::formats::parseJson(encoded); CHECK(json);
+  for (const auto key : {"packetSha256", "donorId", "intakePlanSha256", "originalLicenseSha256", "attributionSha256"}) {
+    auto missing = json.value(); missing.asObject()["sourceBindings"].asArray()[0].asObject()["preparedDonor"].asObject().erase(key);
+    CHECK(!p::decodeProductionProject(seam::formats::stringifyJson(missing)));
+    auto changed = f.project; auto& donor = *changed.sourceBindings[0].preparedDonor;
+    if (std::string_view{key} == "packetSha256") donor.packetSha256 = "bad";
+    else if (std::string_view{key} == "donorId") donor.donorId = "../untrusted";
+    else if (std::string_view{key} == "intakePlanSha256") donor.intakePlanSha256 = "bad";
+    else if (std::string_view{key} == "originalLicenseSha256") donor.originalLicenseSha256 = "bad";
+    else donor.attributionSha256 = "bad";
+    CHECK(p::takeSourceBindingId(changed.projectId, changed.sourceBindings[0]) != changed.sourceBindings[0].id);
+    changed.sourceBindings[0].id = p::takeSourceBindingId(changed.projectId, changed.sourceBindings[0]);
+    changed.takes[0].sourceBindingId = changed.sourceBindings[0].id;
+    CHECK(!p::validateProductionProject(changed));
+  }
+  for (const auto schema : {std::int64_t{4}, std::int64_t{6}}) {
+    auto changed = json.value(); changed.asObject()["schemaVersion"] = schema;
+    const auto result = p::decodeProductionProject(seam::formats::stringifyJson(changed)); CHECK(!result);
+    if (schema == 6) CHECK(result.error().code == seam::core::ErrorCode::Unsupported);
+  }
+  for (const bool unknown : {false, true}) {
+    auto changed = json.value(); auto& value = changed.asObject()["sourceBindings"].asArray()[0].asObject()["preparedDonor"];
+    if (unknown) value.asObject()["untrusted"] = true; else value = J{};
+    CHECK(!p::decodeProductionProject(seam::formats::stringifyJson(changed)));
+  }
+  auto wrongSource = f.project; wrongSource.sourceBindings[0].strategy.kind = p::SourceStrategyKind::ProceduralSynthesis;
+  CHECK(!p::validateProductionProject(wrongSource));
+  auto wrongLanguage = f.project; wrongLanguage.language = "ja"; CHECK(!p::validateProductionProject(wrongLanguage));
+}
+
+TEST_CASE("Prepared donor retained evidence survives source deletion and supports independent reuse without reassigning a take") {
+  BoundFixture f;
+  for (const auto name : {"donors.json", "intake-plan.json", "license-source.txt", "attribution.txt"}) CHECK(std::filesystem::remove(f.prepared.root / name));
+  CHECK(std::filesystem::remove(f.prepared.root / (f.prepared.id + ".wav")));
+  CHECK(f.repository.verify(f.project));
+  auto recovered = f.repository.recover(); CHECK(recovered);
+  CHECK(p::encodeProductionProject(recovered.value()) == p::encodeProductionProject(f.project));
+  const auto before = p::encodeProductionProject(f.project);
+  auto changed = f.project; changed.sourceBindings[0].preparedDonor->attributionSha256 = std::string(64U, 'b');
+  changed.sourceBindings[0].id = p::takeSourceBindingId(changed.projectId, changed.sourceBindings[0]);
+  changed.takes[0].sourceBindingId = changed.sourceBindings[0].id;
+  CHECK(!f.repository.save(changed, {"save", "rewrite", "synthetic-producer", "2026-10-15T00:02:00Z"}));
+  CHECK(p::encodeProductionProject(f.repository.recover().value()) == before);
+  auto binding = f.project.sourceBindings[0]; binding.takeId = "take-soft"; binding.id = p::takeSourceBindingId(f.project.projectId, binding);
+  auto take = f.project.takes[0]; take.takeId = binding.takeId; take.promptId = "prompt-soft"; take.style = "soft"; take.sourceBindingId = binding.id;
+  auto assignment = f.project.unitAssignments[0]; assignment.takeId = binding.takeId; assignment.plannedTakeId = binding.takeId;
+  assignment.promptId = take.promptId; assignment.style = take.style;
+  f.project.sourceBindings.push_back(binding); f.project.takes.push_back(take); f.project.unitAssignments.push_back(assignment);
+  CHECK(f.repository.save(f.project, {"save", "independent-reuse", "synthetic-producer", "2026-10-15T00:03:00Z"}));
+  CHECK(f.project.sourceBindings[0].id != f.project.sourceBindings[1].id);
+  CHECK(f.repository.verify(f.project)); CHECK(f.project.assets.size() == 1U);
+  const auto published = p::publishSampleCandidate(f.workspace, f.project, {}, f.prepared.root / "candidate"); CHECK(!published);
+  CHECK(published.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(published.error().message.find("notice closure") != std::string::npos);
+  CHECK(!std::filesystem::exists(f.prepared.root / "candidate"));
+}
+
+TEST_CASE("Prepared donor retained notice damage stops recovery and saving without rollback or writes") {
+  for (const auto name : {"donors.json", "intake-plan.json", "license-source.txt", "attribution.txt"}) {
+    for (int mode = 0; mode < 3; ++mode) {
+      BoundFixture f;
+      const auto file = f.workspace / "source-evidence/packets" / f.prepared.packetSha / name;
+      if (mode == 0) CHECK(std::filesystem::remove(file));
+      else if (mode == 1) CHECK(seam::core::durableAtomicWriteText(file, "changed synthetic notice"));
+      else { const auto backup = file.string() + ".backup"; std::filesystem::rename(file, backup); std::filesystem::create_symlink(backup, file); }
+      const auto before = retainedFiles(f.workspace); const auto project = p::encodeProductionProject(f.project);
+      const auto recovered = f.repository.recover(); CHECK(!recovered);
+      CHECK(recovered.error().message.find("Retained source evidence") != std::string::npos);
+      CHECK(!f.repository.save(f.project, {"save", "damaged", "synthetic-producer", "2026-10-15T00:02:00Z"}));
+      CHECK(retainedFiles(f.workspace) == before); CHECK(p::encodeProductionProject(f.project) == project);
+    }
   }
 }

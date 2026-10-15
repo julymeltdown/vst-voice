@@ -42,7 +42,7 @@ core::Result<void> invalid(std::string message) {
 core::Result<void> validateProductionProject(
     const VoicebankProductionProject& project) {
   const bool legacy = project.schemaVersion == 1;
-  if (!legacy && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion) {
+  if (!legacy && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion && project.schemaVersion != kProductionPreparedDonorSchemaVersion) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Production project schema is unsupported");
   }
@@ -158,6 +158,23 @@ core::Result<void> validateProductionProject(
         source.licenseSnapshotPath != "source-evidence/" + source.strategy.licenseSha256 + ".txt" ||
         !sourceOwnedTakes.insert(source.takeId).second)
       return invalid("Captured source binding is not an authorized immutable ingress record for exactly one take");
+    if (source.preparedDonor) {
+      const auto lowerDigest = [](const std::string& value) {
+        return value.size() == 64U && std::all_of(value.begin(), value.end(), [](char c) {
+          return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        });
+      };
+      const auto& donor = *source.preparedDonor;
+      if (project.schemaVersion < kProductionPreparedDonorSchemaVersion || project.language != "en" ||
+          source.strategy.kind != SourceStrategyKind::HumanRecording ||
+          !lowerDigest(donor.packetSha256) || !lowerDigest(donor.intakePlanSha256) ||
+          !lowerDigest(donor.originalLicenseSha256) || !lowerDigest(donor.attributionSha256) ||
+          donor.donorId.empty() || donor.donorId.size() > 128U ||
+          !std::all_of(donor.donorId.begin(), donor.donorId.end(), [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+          }) || source.id != takeSourceBindingId(project.projectId, source))
+        return invalid("Prepared donor requires schema five, English human-recording identity and a complete v2 binding");
+    }
   }
   for (const auto& take : project.takes) {
     if ((legacy && !take.sourceBindingId.empty()) || (!take.sourceBindingId.empty() && !sourceOwnedTakes.contains(take.takeId)))

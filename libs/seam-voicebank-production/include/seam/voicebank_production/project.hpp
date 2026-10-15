@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <compare>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +16,7 @@ namespace seam::voicebank_production {
 inline constexpr std::int64_t kProductionProjectSchemaVersion = 2;
 inline constexpr std::int64_t kProductionAssessmentSchemaVersion = 3;
 inline constexpr std::int64_t kProductionStyleSchemaVersion = 4;
+inline constexpr std::int64_t kProductionPreparedDonorSchemaVersion = 5;
 inline constexpr const char* kProductionProjectFormat =
     "com.project-seam.voicebank-production";
 
@@ -80,6 +82,11 @@ struct SourceStrategyAssessment final {
 // One immutable ingress binding per take, independent of shared audio blobs.
 // The original locator remains attribution; a hash-addressed evidence copy
 // makes the captured policy inspectable after the selected strategy changes.
+struct PreparedDonorBinding final {
+  std::string packetSha256, donorId, intakePlanSha256, originalLicenseSha256, attributionSha256;
+  friend bool operator==(const PreparedDonorBinding&, const PreparedDonorBinding&) = default;
+};
+
 struct TakeSourceBinding final {
   std::string id;
   std::string takeId;
@@ -88,8 +95,13 @@ struct TakeSourceBinding final {
   std::string importerId;
   std::string importedAtUtc;
   std::string licenseSnapshotPath;
+  // Required retained packet identities, separate from the reviewed declaration.
+  std::optional<PreparedDonorBinding> preparedDonor;
   friend bool operator==(const TakeSourceBinding&, const TakeSourceBinding&) = default;
 };
+
+// v1 remains byte-compatible. v2 additionally commits every prepared-donor field.
+[[nodiscard]] std::string takeSourceBindingId(std::string_view projectId, const TakeSourceBinding& binding);
 
 // Append-only reviewer decisions. They never change captured ingress rights.
 struct SourceQualityAssessment final {
@@ -196,7 +208,7 @@ struct VoicebankProductionProject final {
   ProductionLifecycle lifecycle{ProductionLifecycle::Draft};
   std::vector<TakeSourceBinding> sourceBindings;
   std::vector<SourceQualityAssessment> sourceQualityAssessments;
-  // Explicit only in schema 4. Empty legacy ownership is never inferred.
+  // Explicit in schema 4 and later. Empty legacy ownership is never inferred.
   std::string language;
   // The pitch layers this project's inventory declared. Schema 4 admits a unit assignment only on
   // a declared layer, because that is the rule the producer that wrote the project already

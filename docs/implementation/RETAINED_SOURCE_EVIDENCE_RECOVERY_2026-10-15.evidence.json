@@ -89,7 +89,35 @@
       "sha256": "fedbf3239b73b4e59b5867aff436181e5aa8eb49b72e6815e9546f1c40444548"
     }
   },
-  "independentImplementationReview": "PENDING",
+  "independentImplementationReview": {
+    "metadata": {
+      "path": "out/evidence/retained-source-recovery-independent-2026-10-15/review.json",
+      "sizeBytes": 824,
+      "sha256": "2ab7e46a39a70ebbd731fd8e11a39b8dcf6650b9a627196e6960d4c566019f14"
+    },
+    "review": {
+      "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+      "title": "Review in English",
+      "turnId": "01a13de4-16b8-7521-8517-50e4d54ce1a2",
+      "messageId": "msg_bfe557796bd14be795fb67a4ae5aa31e",
+      "completedAtUnixSeconds": 1792040303,
+      "durationMs": 582796,
+      "commit": "7aae8bdf1f17243da2461261eade2f18ef37c88e",
+      "verdict": "APPROVE_RECOVERY_EVIDENCE_P2_CLOSED",
+      "scope": "ENGINEERING_RECOVERY_ONLY",
+      "preExistingFollowup": {
+        "priority": "P2",
+        "title": "Certified raw or derived asset loss still silently falls back",
+        "status": "OPEN"
+      },
+      "sourceOrHumanOrBetaApproval": false,
+      "finalAnswer": {
+        "path": "out/evidence/retained-source-recovery-independent-2026-10-15/review-7aae8bdf.md",
+        "sizeBytes": 6468,
+        "sha256": "b1547e00490ab7d41cf8544c775e961edd3350ac7e3e807b67a1dfbf9089b4d8"
+      }
+    }
+  },
   "sourceRegistration": false,
   "nativeRealRecordingImport": false,
   "sourceRightsApproved": false,

@@ -7,8 +7,10 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank/asset_path.hpp"
+#include "seam/voicebank_production/prepared_phone_donor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 
 namespace seam::voicebank_production {
@@ -177,6 +179,9 @@ core::Result<void> verifySnapshots(const std::filesystem::path& root, const Voic
     if (!digest || digest.value() != assessment.evidenceSha256)
       return core::failure(core::ErrorCode::Conflict,"Retained source assessment evidence changed or is missing",assessment.id);
   }
+  // Parse shared packet evidence once per distinct selection, not once per
+  // take that reuses the same donor bytes under independent ownership.
+  std::map<std::pair<std::string, std::string>, std::array<std::string, 4>> packets;
   for (const auto& binding : project.sourceBindings) {
     if (binding.strategy.licenseSha256.size() != 64U ||
         binding.licenseSnapshotPath != "source-evidence/" + binding.strategy.licenseSha256 + ".txt")
@@ -186,6 +191,26 @@ core::Result<void> verifySnapshots(const std::filesystem::path& root, const Voic
     const auto digest = core::sha256File(resolved.value(), 4ULL * 1024ULL * 1024ULL);
     if (!digest || digest.value() != binding.strategy.licenseSha256)
       return core::failure(core::ErrorCode::Conflict, "Captured source evidence changed or is missing", binding.id);
+    if (binding.preparedDonor) {
+      const auto& donor = *binding.preparedDonor;
+      const auto key = std::pair{donor.packetSha256, donor.donorId};
+      auto found = packets.find(key);
+      if (found == packets.end()) {
+        const auto directory = root / "source-evidence/packets" / donor.packetSha256;
+        // resolveBankAsset checks the whole chain, including parent directories.
+        const auto packetPath = voicebank::resolveBankAsset(root,
+            "source-evidence/packets/" + donor.packetSha256 + "/donors.json");
+        if (!packetPath) return core::Result<void>{packetPath.error()};
+        auto evidence = loadPreparedPhoneDonorEvidence(directory, donor.packetSha256, donor.donorId);
+        if (!evidence) return core::Result<void>{evidence.error()};
+        found = packets.emplace(key, std::array{evidence.value().plan.sha256, evidence.value().license.sha256,
+            evidence.value().attribution.sha256, evidence.value().derivedAudioSha256}).first;
+      }
+      const auto& facts = found->second;
+      if (facts[0] != donor.intakePlanSha256 || facts[1] != donor.originalLicenseSha256 ||
+          facts[2] != donor.attributionSha256 || facts[3] != binding.rawAssetSha256)
+        return core::failure(core::ErrorCode::Conflict, "Retained prepared donor differs from the captured take", binding.id);
+    }
   }
   return core::success();
 }

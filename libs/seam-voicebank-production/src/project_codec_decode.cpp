@@ -73,7 +73,7 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   if (!codec_internal::readString(parsed.value(), "format", format) || format != kProductionProjectFormat ||
       !codec_internal::readInteger(parsed.value(), "schemaVersion", project.schemaVersion))
     return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Production project header is invalid");
-  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion)
+  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion && project.schemaVersion != kProductionPreparedDonorSchemaVersion)
     return core::failure<VoicebankProductionProject>(core::ErrorCode::Unsupported, "Production project schema is unsupported");
   if (!codec_internal::readString(parsed.value(), "projectId", project.projectId) ||
       !codec_internal::readString(parsed.value(), "inventoryId", project.inventoryId) ||
@@ -114,7 +114,8 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
     else if (lifecycle == "EXPERIMENTAL") project.lifecycle = ProductionLifecycle::Experimental;
     else if (lifecycle == "QUALIFIED") project.lifecycle = ProductionLifecycle::Qualified;
     else return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Production draft lifecycle is invalid");
-    const auto bindings = decodeArray<TakeSourceBinding>(parsed.value(), "sourceBindings", codec_internal::decodeSourceBinding);
+    const auto bindings = decodeArray<TakeSourceBinding>(parsed.value(), "sourceBindings",
+        [&](const auto& value) { return codec_internal::decodeSourceBinding(value, project.schemaVersion); });
     if (!bindings) return core::Result<VoicebankProductionProject>{bindings.error()};
     project.sourceBindings = bindings.value();
   }

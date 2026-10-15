@@ -84,9 +84,16 @@ formats::JsonValue encodeTake(const TakeRecord& value, std::int64_t schema) {
 }
 
 formats::JsonValue encodeSourceBinding(const TakeSourceBinding& value) {
-  return Object{{"id", value.id}, {"takeId", value.takeId}, {"rawAssetSha256", value.rawAssetSha256},
+  Object object{{"id", value.id}, {"takeId", value.takeId}, {"rawAssetSha256", value.rawAssetSha256},
       {"strategy", encodeStrategy(value.strategy)}, {"importerId", value.importerId},
       {"importedAtUtc", value.importedAtUtc}, {"licenseSnapshotPath", value.licenseSnapshotPath}};
+  if (value.preparedDonor) {
+    const auto& donor = *value.preparedDonor;
+    object.emplace("preparedDonor", Object{{"packetSha256", donor.packetSha256}, {"donorId", donor.donorId},
+        {"intakePlanSha256", donor.intakePlanSha256}, {"originalLicenseSha256", donor.originalLicenseSha256},
+        {"attributionSha256", donor.attributionSha256}});
+  }
+  return object;
 }
 
 formats::JsonValue encodeAssignment(const UnitAssignment& value, std::int64_t schema) {

@@ -38,6 +38,20 @@ std::string productionUnitIdentitySha256(const ProductionUnitIdentity& identity)
       static_cast<std::int64_t>(identity.pitchLayer)}, false));
 }
 
+std::string takeSourceBindingId(std::string_view projectId, const TakeSourceBinding& binding) {
+  formats::JsonValue::Object identity{{"format", binding.preparedDonor ? "take-source-binding-v2" : "take-source-binding-v1"},
+      {"projectId", std::string{projectId}}, {"takeId", binding.takeId}, {"audioSha256", binding.rawAssetSha256},
+      {"strategyId", binding.strategy.id}, {"licenseSha256", binding.strategy.licenseSha256},
+      {"importerId", binding.importerId}, {"importedAtUtc", binding.importedAtUtc}};
+  if (binding.preparedDonor) {
+    const auto& donor = *binding.preparedDonor;
+    identity.emplace("preparedDonor", formats::JsonValue::Object{{"packetSha256", donor.packetSha256},
+        {"donorId", donor.donorId}, {"intakePlanSha256", donor.intakePlanSha256},
+        {"originalLicenseSha256", donor.originalLicenseSha256}, {"attributionSha256", donor.attributionSha256}});
+  }
+  return "source-" + core::sha256Hex(formats::stringifyJson(std::move(identity), false));
+}
+
 core::Result<void> requireSelectedSourceExecution(const VoicebankProductionProject& project) {
   const auto strategy = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
       [&](const auto& value) { return value.id == project.selectedSourceStrategyId; });
