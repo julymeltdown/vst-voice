@@ -234,6 +234,8 @@ Expected result: fewer contract tests that fail when history is tidied, with no 
 
 **M0-4 Label the tests.**
 
+**Done on 2026-10-18.** Every CTest entry has exactly one kind label: `unit` (148 entries), `journey` (55) or `contract` (38). The tags `gui` (5), `slow` (32) and `process-lifetime` (8) are added where they apply. `cmake/SeamTestLabels.cmake` holds the vocabulary and two helpers. Each of the four CMake files labels its own tests in a block at its end. `seam_ctest_label_coverage` (`tests/test_ctest_labels.py`) fails when an entry has no kind, two kinds or an unknown label. The measured tier times are in [STATUS.md](../STATUS.md#test-tiers). The first contract-tier run found that M0-3 had left `tests/test_macos_source_contract.py` reading the old `apps/` paths; `166a8e48` fixed that.
+
 - The top-level `CMakeLists.txt` has only ten `LABELS` uses today, and the subdirectories have none. Add `unit`, `journey`, `contract`, `gui`, `slow` and `process-lifetime` labels in `CMakeLists.txt` and the three subdirectory files, so the tiers in §7 can be run with `ctest -L`.
 - Record the measured duration of each tier in [STATUS.md](../STATUS.md).
 
@@ -359,7 +361,7 @@ Ordered by when the item is worth doing, not by size. Each item names its gate l
 |---|---|---|---|---|
 | E-01 | Producer commands check that `WORKSPACE/generations` is a directory before they take the writer lock (`59002e91` review of 2026-10-15, optional item 1) | `apps/seam-voicebank-cli/` producer commands, or `ProductionProjectRepository` so that every repository-backed command shares the check; the lock file is opened with `O_CREAT` in `libs/seam-voicebank-production/src/repository.cpp:58` | M1-3 usability: today an unrelated directory gets an empty `.writer.lock` and a refusal that blames newer work, and a missing path reports a busy lock | M1-3 |
 | E-02 | Move test fixtures out of `docs/` and declare CTest fixtures | See M0-1 (done) and M0-3 | Cost: filtered runs and history cleanup | M0 |
-| E-03 | CTest labels and measured tiers | `CMakeLists.txt`, `phase12c/`, `phase13a/`, `phase13b/` | Cost: lets §7 tiers run | M0 |
+| E-03 | CTest labels and measured tiers | Done on 2026-10-18 (M0-4) | Cost: lets §7 tiers run | Done |
 | E-04 | Audit and retire phase-era document-locking verifiers; then retire `docs/remaining-tasks.json` | Done on 2026-10-18 (M0-2) | Cost: contract tests that lock history | Done |
 | E-05 | One gate vocabulary; Phase 13A extra hosts optional | `tools/external_beta/release_status.py`, `docs/phase13a/mandatory-validation-matrix.json`, `tests/phase13a/` | Removes conflicting host lists | After D6 |
 | E-06 | Remaining optional review items from `59002e91` | Studio pointer reconciliation and tests | Item 9 (`F_FULLFSYNC` on durable writes) belongs to M2 durability; items 2–4 and 7 when the code is next touched; items 5–6 when Studio reconciliation UX is revisited; item 8 is done | As scheduled |
@@ -382,8 +384,8 @@ Not on the list on purpose: a rewrite of any library, a new evidence format, a n
 | Tier | What runs | When it is required | Measured or expected time |
 |---|---|---|---|
 | T0 Focused | Build the touched targets and run their tests | Leaf-only changes: one app, one test file, Python tooling | Seconds to 2 minutes |
-| T1 Standard | Full `cmake --build build/release -j6`, then the CTest entries for touched areas (by label once M0-4 lands) | Any change under `libs/` or to shared headers | About 1–7 minutes to build, depending on fan-in |
-| T2 Full | Full serial `ctest --test-dir build/release` | CMake target changes, cross-library refactors, before a milestone review, at least daily during active work | 14 min 44 s (884 s) for 240 entries measured on 2026-10-18 |
+| T1 Standard | Full `cmake --build build/release -j6`, then the CTest entries for touched areas: `-R` selects by name, `-L` a whole tier, and `-LE '^slow$'` runs the 209 entries under 5 s in about 2 minutes | Any change under `libs/` or to shared headers | About 1–7 minutes to build, depending on fan-in |
+| T2 Full | Full serial `ctest --test-dir build/release` | CMake target changes, cross-library refactors, before a milestone review, at least daily during active work | About 12 minutes. On 2026-10-18 it took 745.64 s for 240 entries at `a51735c5`, and the three kind tiers run one after another took 731 s; the first run that day took 884 s |
 | T3 Instrumented | ASan/UBSan (`build/sanitize`) and TSan (`build/thread-sanitize`) on the affected entries | Concurrency, memory ownership, process lifetime, audio callback, durability code | Scoped; minutes |
 | T4 Human and target | Listening, unaided journeys, signed installs, DAWs, clean environments | Milestone exits only | Owner time |
 

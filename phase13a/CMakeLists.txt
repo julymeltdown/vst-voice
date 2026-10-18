@@ -54,3 +54,15 @@ if(SEAM_BUILD_TESTS OR BUILD_TESTING)
       DEPENDS seam_phase13a_linux_developer_package)
   endif()
 endif()
+
+# Test labels; keep this block last. Vocabulary and rules: cmake/SeamTestLabels.cmake.
+seam_label_tests(contract
+  seam_external_beta_contract_tests seam_phase13a_contract_tests
+  seam_phase13a_release_gate_blocked seam_phase13a_source_contract)
+seam_label_tests(journey
+  seam_phase13a_linux_developer_package seam_phase13a_linux_install_smoke)
+seam_label_tests(slow
+  seam_external_beta_contract_tests seam_phase13a_contract_tests)
+seam_label_tests(process-lifetime
+  seam_external_beta_contract_tests)
+seam_label_remaining_tests_as_unit()

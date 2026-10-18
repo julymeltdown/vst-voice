@@ -48,6 +48,8 @@ open "build/release/Project SEAM.app"
 ctest --preset release
 ```
 
+`ctest --preset release -L '^unit$'` runs one tier (`unit`, `journey` or `contract`), and `-LE '^slow$'` skips the entries that take 5 s or more. [STATUS](docs/STATUS.md#test-tiers) lists the measured time of each tier.
+
 The `dev` (Debug), `sanitize` (ASan + UBSan) and `thread-sanitize` presets use the same pattern and build into `build/<preset>`. All presets treat warnings as errors.
 
 Verification hygiene this repository has paid for:

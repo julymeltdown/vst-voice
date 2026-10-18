@@ -41,6 +41,20 @@ In priority order. The [completion plan](plans/2026-10-18-project-completion-pla
 4. **The unaided Usable Alpha journey** on the target Mac, run after 1–3.
 5. **Release engineering against real targets:** Developer ID signing and notarization, REAPER/Bitwig/Logic installs, and a Windows host or an explicit macOS-only Beta decision.
 
+## Test tiers
+
+Every CTest entry has one kind label, `unit`, `journey` or `contract`, and may also carry the tags `gui`, `slow` (5 s or more) and `process-lifetime`. [cmake/SeamTestLabels.cmake](../cmake/SeamTestLabels.cmake) defines the labels, and `seam_ctest_label_coverage` fails when an entry has no kind, two kinds or an unknown label. CTest also runs the fixture setups that a selected entry requires, so a tier can include an entry from outside its label.
+
+Measured on 2026-10-18 in `build/release` on the development Mac (Apple M3 Max, 48 GB). Each command ran once, serially, on `60287dda` with the labels added:
+
+| Command | Entries | Time |
+|---|---|---|
+| `ctest --preset release -L '^unit$'` | 148 | 385 s |
+| `ctest --preset release -L '^journey$'` | 55 | 140 s |
+| `ctest --preset release -L '^contract$'` | 39: the 38 contracts plus the Phase 12C matrix setup | 206 s |
+| `ctest --preset release -LE '^slow$'` | 209 | 128 s |
+| `ctest --preset release` | 241 | About 731 s, the sum of the three kind tiers |
+
 ## How to refresh this page
 
 ```sh

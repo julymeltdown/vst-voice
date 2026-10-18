@@ -85,3 +85,14 @@ if(UNIX AND NOT APPLE AND TARGET ProjectSEAMLive12C)
   target_compile_features(seam_phase12c_clap_host PRIVATE cxx_std_20)
   add_test(NAME seam_phase12c_clap_host COMMAND seam_phase12c_clap_host $<TARGET_FILE:ProjectSEAMLive12C> "${CMAKE_CURRENT_BINARY_DIR}/clap-host.json")
 endif()
+
+# Test labels; keep this block last. Vocabulary and rules: cmake/SeamTestLabels.cmake.
+seam_label_tests(contract
+  seam_phase12c_canonical_contract seam_phase12c_matrix_evidence)
+seam_label_tests(journey
+  seam_phase12c_allocation_probe seam_phase12c_cancellation_storm seam_phase12c_clap_host
+  seam_phase12c_live_demo_smoke seam_phase12c_matrix seam_phase12c_matrix_admission
+  seam_phase12c_soak_smoke)
+seam_label_tests(slow
+  seam_phase12c_soak_smoke)
+seam_label_remaining_tests_as_unit()

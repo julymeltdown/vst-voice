@@ -34,3 +34,10 @@ if(SEAM_BUILD_TESTS OR BUILD_TESTING)
   set_tests_properties(seam_phase13b_evidence_smoke PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
+
+# Test labels; keep this block last. Vocabulary and rules: cmake/SeamTestLabels.cmake.
+seam_label_tests(contract
+  seam_phase13b_contract_tests seam_phase13b_source_contract)
+seam_label_tests(journey
+  seam_phase13b_evidence_smoke)
+seam_label_remaining_tests_as_unit()
