@@ -63,6 +63,8 @@ This is not an argument for lowering the bar. It is an argument for **sequencing
 
 ### 2.3 Process overhead is now larger than capability work
 
+Commit counts run from 2026-10-12 00:00 KST through `6036ae19`, the last commit before this cleanup. "Docs-only" means every changed file is under `docs/` or ends in `.md`.
+
 | Signal | Value |
 |---|---|
 | Commits since 2026-10-12 | 154: 64 docs-only, 90 mixed, **0 code-only** |
