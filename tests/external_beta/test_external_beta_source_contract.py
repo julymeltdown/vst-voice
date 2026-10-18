@@ -71,7 +71,6 @@ class ExternalBetaSourceContractTests(unittest.TestCase):
             "libs/seam-distribution/include/seam/distribution/update_manifest.hpp",
             "libs/seam-distribution/src/update_manifest.cpp",
             "libs/seam-distribution/src/sealed_handoff.cpp",
-            "libs/seam-distribution/include/seam/distribution/signer_provider.hpp",
             "libs/seam-standalone/include/seam/standalone/update_controller.hpp",
             "libs/seam-standalone/src/update_controller.cpp",
             "tests/test_update_controller.cpp",
