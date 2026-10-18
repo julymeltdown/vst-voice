@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
+"""Verify the routing, host-timeline and technical-lane editing source contract.
+
+Source markers prove that the domain routing model, the project codec, the
+routed production renderer, the CLAP host-timeline mapping, the embedded
+editor's editing and interchange commands, the shared SING shell routing and
+the CLAP dynamic-channel and render extensions are still wired. Renamed on
+2026-10-18 from verify_phase12b_contracts.py, dropping the checks that only
+locked Phase 12B documents, the legacy remaining-tasks backlog, the project
+version number and phase-named target names.
+"""
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -184,53 +193,22 @@ def main() -> int:
     require_text(
         root / "CMakeLists.txt",
         [
-            "project(ProjectSEAM VERSION 0.13.1",
-            "seam_phase12b_tests",
-            "seam_phase12b_demo",
-            "seam_phase12b_contract",
             "libs/seam-rendering/src/project_renderer.cpp",
             "libs/seam-clap-editor/src/host_timeline.cpp",
         ],
         errors,
     )
 
-    required_docs = [
-        root / "docs/phase12b/ACCEPTANCE.md",
-        root / "docs/phase12b/IMPLEMENTATION_REPORT.md",
-        root / "docs/phase12b/HOST_TIMELINE_AND_ROUTING.md",
-        root / "docs/phase12b/TECHNICAL_LANE_EDITING.md",
-        root / "docs/phase12b/EVIDENCE.md",
-    ]
-    for path in required_docs:
-        if not path.is_file():
-            errors.append(f"missing Phase 12B document: {path}")
-
-    backlog_path = root / "docs/remaining-tasks.json"
-    try:
-        backlog = json.loads(backlog_path.read_text(encoding="utf-8"))
-        status_by_id = {item["id"]: item["status"] for item in backlog["tasks"]}
-        for task_id in ("SEAM-P12-003", "SEAM-P12-004", "SEAM-P12-005"):
-            if status_by_id.get(task_id) != "DONE":
-                errors.append(f"{task_id} must be DONE after Phase 12B")
-        valid_successor_phases = {"PHASE_12C", "PHASE_13A", "PHASE_13B", "PHASE_14"}
-        if backlog.get("nextPhase") not in valid_successor_phases:
-            errors.append(
-                "remaining-tasks.json nextPhase must be Phase 12C or a later approved phase"
-            )
-    except Exception as exc:  # noqa: BLE001 - audit reports the complete error
-        errors.append(f"invalid remaining task metadata: {exc}")
-
     if errors:
         for error in errors:
-            print(f"[phase12b-contract] ERROR: {error}", file=sys.stderr)
+            print(f"[routing-and-editing-sources] ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("[phase12b-contract] technicalLaneEditing=PASS")
-    print("[phase12b-contract] hostTimelineAuthority=PASS")
-    print("[phase12b-contract] multiTrackRegionRouting=PASS")
-    print("[phase12b-contract] clapDynamicChannels=PASS")
-    print("[phase12b-contract] projectSchema5=PASS")
-    print("[phase12b-contract] noTargetOsOrReleaseOverclaim=PASS")
+    print("[routing-and-editing-sources] technicalLaneEditing=PASS")
+    print("[routing-and-editing-sources] hostTimelineAuthority=PASS")
+    print("[routing-and-editing-sources] multiTrackRegionRouting=PASS")
+    print("[routing-and-editing-sources] clapDynamicChannels=PASS")
+    print("[routing-and-editing-sources] projectCodecRouting=PASS")
     return 0
 
 

@@ -14,17 +14,10 @@ from voicebank_gate import evaluate_voicebank_dossier  # noqa: E402
 
 
 REQUIRED = (
-    "docs/phase13b/ACCEPTANCE.md",
-    "docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION_KO.md",
-    "docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION.md",
-    "docs/phase13b/MANDATORY_FUTURE_VALIDATION_KO.md",
-    "docs/phase13b/MANDATORY_FUTURE_VALIDATION.md",
-    "docs/phase13b/EVIDENCE.md",
     "docs/phase13b/official-voicebank-01-dossier.json",
     "docs/phase13b/character-01-dossier.json",
     "docs/phase13b/mandatory-validation-matrix.json",
     "docs/phase13b/product-release-dossier.json",
-    "docs/phase13b/IMPLEMENTATION_REPORT.md",
     "assets/character-01/production-development/asset-manifest.json",
     "phase13b/CMakeLists.txt",
 )
@@ -75,14 +68,6 @@ def main(argv=None) -> int:
     for target in matrix.get("targets", []):
         if target.get("runtimeResult") == "PASS" and not target.get("evidence"):
             errors.append(f"Phase 13B PASS target lacks evidence: {target.get('id')}")
-
-    remaining = json.loads((root / "docs/remaining-tasks.json").read_text(encoding="utf-8"))
-    tasks = {item.get("id"): item for item in remaining.get("tasks", [])}
-    for task_id in ("SEAM-P13-005", "SEAM-P13-006"):
-        if tasks.get(task_id, {}).get("status") != "EXTERNAL_GATE":
-            errors.append(f"{task_id} must remain EXTERNAL_GATE")
-    if tasks.get("SEAM-P13-007", {}).get("status") != "DONE":
-        errors.append("SEAM-P13-007 engineering tooling must be DONE")
 
     if errors:
         for error in errors:

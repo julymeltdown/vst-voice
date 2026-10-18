@@ -1,7 +1,7 @@
 """Every file a source-boundary verifier requires must actually exist.
 
 A refactor that deletes or splits a file leaves any verifier that names it failing
-on every run, which is how `scripts/verify_phase11_sources.py` spent a month
+on every run, which is how the former `scripts/verify_phase11_sources.py` spent a month
 reporting a missing `editor_runtime.cpp` that a legitimate split had removed. A
 red check that is always red stops carrying information, so this test imports each
 verifier's own required-path list and asserts the paths resolve, rather than
@@ -17,9 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# Verifiers that expose a module-level tuple of repository-relative required paths.
+# Verifiers that expose a module-level collection of repository-relative required paths
+# (a tuple, or a mapping keyed by path).
 VERIFIERS = (
-    "scripts/verify_phase11_sources.py",
+    "scripts/verify_clap_editor_sources.py",
+    "scripts/verify_platform_adapter_sources.py",
 )
 
 

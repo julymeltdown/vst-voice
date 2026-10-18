@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Static contract verification for platform-gated Phase 8 source files.
+"""Static contract verification for the platform-gated adapter sources.
 
-This does not substitute for building and running on Windows/macOS. It prevents
-Linux-only package verification from silently dropping the platform adapters or
-renaming the native composition/audio integration points.
+This does not substitute for building and running on Windows or macOS. It
+prevents a build on one platform from silently dropping another platform's
+window, text-input, accessibility, audio or helper-process adapter, or renaming
+the native composition and audio integration points. Renamed on 2026-10-18 from
+verify_phase8_platform_sources.py.
 """
 
 from __future__ import annotations
@@ -107,11 +109,11 @@ def main() -> int:
 
     if failures:
         for failure in failures:
-            print(f"[phase8-platform-source] ERROR: {failure}", file=sys.stderr)
+            print(f"[platform-adapter-sources] ERROR: {failure}", file=sys.stderr)
         return 1
-    print("[phase8-platform-source] Windows Win32/TSF/WASAPI/helper-process source contract=PASS")
-    print("[phase8-platform-source] macOS AppKit/NSTextInputClient/CoreAudio source contract=PASS")
-    print("[phase8-platform-source] githubActions=DEFERRED; runtime verification remains platform-specific")
+    print("[platform-adapter-sources] Windows Win32/TSF/WASAPI/helper-process source contract=PASS")
+    print("[platform-adapter-sources] macOS AppKit/NSTextInputClient/CoreAudio source contract=PASS")
+    print("[platform-adapter-sources] githubActions=DEFERRED; runtime verification remains platform-specific")
     return 0
 
 

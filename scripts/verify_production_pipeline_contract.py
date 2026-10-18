@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""Verify the production render pipeline sources and the public-domain demo bank.
+
+Source markers prove that the CLAP editor adapter, the render coordinator, the
+phrase pipeline, the voicebank catalog and the installer receipt keep their
+exact-identity contract. The demo bank checks prove that the public-domain
+fixture still says it is neither official nor contracted, that its WAV files
+match their recorded provenance hashes, and that its production bank still
+exercises all four renderers. Renamed on 2026-10-18 from
+verify_phase12a_contracts.py; the demo provenance checks of the former
+verify_phase11_contracts.py were folded in here.
+"""
 from __future__ import annotations
 
 import argparse
@@ -104,7 +115,7 @@ def main() -> int:
             (production / "manifest.json").read_text(encoding="utf-8")
         )
     except Exception as exc:  # noqa: BLE001 - contract audit reports all metadata errors
-        errors.append(f"invalid Phase 12A fixture metadata: {exc}")
+        errors.append(f"invalid demo bank fixture metadata: {exc}")
         fixture_manifest = {}
         provenance = {}
         production_manifest = {}
@@ -115,8 +126,10 @@ def main() -> int:
         errors.append("public-domain fixture must retain contractedSinger=false")
     if provenance.get("officialVoicebank") is not False:
         errors.append("provenance must retain officialVoicebank=false")
+    if provenance.get("contractedSinger") is not False:
+        errors.append("provenance must retain contractedSinger=false")
     if production_manifest.get("id") != "demo.public-domain.human.production":
-        errors.append("production fixture ID is not the pinned Phase 12A ID")
+        errors.append("production fixture ID is not the pinned demo production bank ID")
     if production_manifest.get("version") != "0.12.0":
         errors.append("production fixture version is not 0.12.0")
     renderer_names = {unit.get("renderer") for unit in production_manifest.get("units", [])}
@@ -136,12 +149,13 @@ def main() -> int:
 
     if errors:
         for error in errors:
-            print(f"[phase12a-contract] ERROR: {error}", file=sys.stderr)
+            print(f"[production-pipeline] ERROR: {error}", file=sys.stderr)
         return 1
-    print("[phase12a-contract] productionPipeline=PASS")
-    print("[phase12a-contract] exactVoicebankIdentity=PASS")
-    print("[phase12a-contract] noOfficialVoicebankClaim=PASS")
-    print("[phase12a-contract] allFourRenderers=PASS")
+    print("[production-pipeline] productionPipeline=PASS")
+    print("[production-pipeline] exactVoicebankIdentity=PASS")
+    print("[production-pipeline] noOfficialVoicebankClaim=PASS")
+    print("[production-pipeline] demoProvenanceHashes=PASS")
+    print("[production-pipeline] allFourRenderers=PASS")
     return 0
 
 

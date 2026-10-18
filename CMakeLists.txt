@@ -1543,23 +1543,23 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
         "HOME=${CMAKE_BINARY_DIR}/missing-bank-home;LOCALAPPDATA=${CMAKE_BINARY_DIR}/missing-bank-home;SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/missing-bank-preview-cache")
   endif()
   if(Python3_Interpreter_FOUND)
-    add_test(NAME seam_phase11_source_and_voice_contract
+    add_test(NAME seam_clap_editor_source_contract
       COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase11_contracts.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_clap_editor_sources.py
         --root ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(seam_phase11_source_and_voice_contract PROPERTIES
+    set_tests_properties(seam_clap_editor_source_contract PROPERTIES
       TIMEOUT 30)
-    add_test(NAME seam_phase12a_production_contract
+    add_test(NAME seam_production_pipeline_contract
       COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase12a_contracts.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_production_pipeline_contract.py
         --root ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(seam_phase12a_production_contract PROPERTIES
+    set_tests_properties(seam_production_pipeline_contract PROPERTIES
       TIMEOUT 30)
-    add_test(NAME seam_phase12b_contract
+    add_test(NAME seam_routing_and_editing_source_contract
       COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase12b_contracts.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_routing_and_editing_sources.py
         --root ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(seam_phase12b_contract PROPERTIES TIMEOUT 30)
+    set_tests_properties(seam_routing_and_editing_source_contract PROPERTIES TIMEOUT 30)
   endif()
 endif()
 
@@ -3120,9 +3120,9 @@ if(SEAM_BUILD_TESTS)
       COMMAND seam_phase9_demo --output ${CMAKE_BINARY_DIR}/phase9-smoke)
   endif()
   if(Python3_Interpreter_FOUND)
-    add_test(NAME seam_phase8_platform_source_contract
+    add_test(NAME seam_platform_adapter_source_contract
       COMMAND ${Python3_EXECUTABLE}
-              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase8_platform_sources.py
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_platform_adapter_sources.py
               --root ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME seam_standalone_production_path_contract
       COMMAND ${Python3_EXECUTABLE}

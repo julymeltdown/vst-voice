@@ -6,14 +6,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Phase13BSourceContractTests(unittest.TestCase):
-    def test_mandatory_documents_and_blocked_dossiers_exist(self):
+    def test_blocked_dossiers_exist_and_stay_blocked(self):
         required = [
-            'docs/phase13b/ACCEPTANCE.md',
-            'docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION_KO.md',
-            'docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION.md',
-            'docs/phase13b/MANDATORY_FUTURE_VALIDATION_KO.md',
-            'docs/phase13b/MANDATORY_FUTURE_VALIDATION.md',
-            'docs/phase13b/EVIDENCE.md',
             'docs/phase13b/official-voicebank-01-dossier.json',
             'docs/phase13b/character-01-dossier.json',
             'docs/phase13b/mandatory-validation-matrix.json',
@@ -28,12 +22,6 @@ class Phase13BSourceContractTests(unittest.TestCase):
         self.assertFalse(voice['contractedSinger'])
         self.assertFalse(character['commercialRelease'])
         self.assertEqual('', character['finalPublicName'])
-
-    def test_remaining_tasks_preserve_external_gates(self):
-        data = json.loads((ROOT / 'docs/remaining-tasks.json').read_text(encoding='utf-8'))
-        tasks = {item['id']: item for item in data['tasks']}
-        self.assertEqual('EXTERNAL_GATE', tasks['SEAM-P13-005']['status'])
-        self.assertEqual('EXTERNAL_GATE', tasks['SEAM-P13-006']['status'])
 
     def test_checked_in_evidence_uses_portable_artifact_paths(self):
         for name in (

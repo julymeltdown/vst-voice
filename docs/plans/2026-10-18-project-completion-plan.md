@@ -206,6 +206,20 @@ Already done on 2026-10-18: see Appendix A. Remaining work packages:
 
 **M0-2 Audit the phase-era verifiers.**
 
+**Done on 2026-10-18.** All 13 phase verifiers and the two tests that duplicated parts of them were classified. Every check that locked history was retired; every check that guards current code or contract data was kept.
+
+| Verifier | Kept: guards current code or contract | Retired: locked history | Result |
+|---|---|---|---|
+| `verify_phase8_platform_sources.py` | Platform adapter markers and CMake platform selection | — | `verify_platform_adapter_sources.py`, CTest `seam_platform_adapter_source_contract` |
+| `verify_phase11_contracts.py` and `verify_phase11_sources.py` | CLAP embedded views, plug-in entry, test host and packaging scripts | Presence of `docs/phase11/HOST_CERTIFICATION_MATRIX.md`; the duplicate script, which CTest never ran | `verify_clap_editor_sources.py`, CTest `seam_clap_editor_source_contract`; the demo provenance checks moved to the next row |
+| `verify_phase12a_contracts.py` | Production pipeline markers; demo production bank identity, flags, hashes and renderers | — | `verify_production_pipeline_contract.py`, CTest `seam_production_pipeline_contract` |
+| `verify_phase12b_contracts.py` | Routing, host timeline, technical-lane editing, interchange, SING shell routing, CLAP channels | Five `docs/phase12b/*.md` presence checks; `remaining-tasks.json` task states; the project version and phase-named target names in `CMakeLists.txt` | `verify_routing_and_editing_sources.py`, CTest `seam_routing_and_editing_source_contract` |
+| Five `verify_phase12c_*` scripts | Canonical CLAP identity and live bounds; evidence packet validation | — | Unchanged; their names follow `phase12c/` and change with E-13 |
+| `verify_phase13a_contracts.py`, `verify_phase13a_vst3_packet.py` | Dependency pins, packaging and signing scripts, release-gate matrix, documentation manifest | Korean wording of `MANDATORY_VALIDATION_KO.md` and `MANDATORY_FUTURE_VALIDATION_KO.md`, also locked by two test cases in `tests/phase13a/` | Same names until E-13 |
+| `verify_phase13b_contracts.py` | Blocked Official Voicebank 01 and Character 01 dossiers, product dossier, 13B matrix, asset manifest | Seven `docs/phase13b/*.md` presence checks; `remaining-tasks.json` task states, both repeated in `tests/phase13b/test_source_contract.py` | Same name until E-13 |
+
+`docs/remaining-tasks.json` and `scripts/verify_phase11_sources.py` are retired and listed in the retirement index. The required-path test now covers the CLAP editor and platform adapter verifiers.
+
 - For each of `scripts/verify_phase11_contracts.py`, `verify_phase11_sources.py`, `verify_phase12a_contracts.py`, `verify_phase12b_contracts.py`, `verify_phase12c_*`, `verify_phase13a_contracts.py` and `verify_phase13b_contracts.py`, list every assertion and classify it as *guards current code or contract* or *guards the wording of a historical document*.
 - Retire the second kind along with `docs/remaining-tasks.json` once nothing reads it. Keep the first kind, renamed by what it guards.
 
@@ -344,7 +358,7 @@ Ordered by when the item is worth doing, not by size. Each item names its gate l
 | E-01 | Producer commands check that `WORKSPACE/generations` is a directory before they take the writer lock (`59002e91` review of 2026-10-15, optional item 1) | `apps/seam-voicebank-cli/` producer commands, or `ProductionProjectRepository` so that every repository-backed command shares the check; the lock file is opened with `O_CREAT` in `libs/seam-voicebank-production/src/repository.cpp:58` | M1-3 usability: today an unrelated directory gets an empty `.writer.lock` and a refusal that blames newer work, and a missing path reports a busy lock | M1-3 |
 | E-02 | Move test fixtures out of `docs/` and declare CTest fixtures | See M0-1 (done) and M0-3 | Cost: filtered runs and history cleanup | M0 |
 | E-03 | CTest labels and measured tiers | `CMakeLists.txt`, `phase12c/`, `phase13a/`, `phase13b/` | Cost: lets §7 tiers run | M0 |
-| E-04 | Audit and retire phase-era document-locking verifiers; then retire `docs/remaining-tasks.json` | `scripts/verify_phase1{1,2a,2b,3a,3b}_*.py`, `tests/phase13b/test_source_contract.py` | Cost: contract tests that lock history | M0 |
+| E-04 | Audit and retire phase-era document-locking verifiers; then retire `docs/remaining-tasks.json` | Done on 2026-10-18 (M0-2) | Cost: contract tests that lock history | Done |
 | E-05 | One gate vocabulary; Phase 13A extra hosts optional | `tools/external_beta/release_status.py`, `docs/phase13a/mandatory-validation-matrix.json`, `tests/phase13a/` | Removes conflicting host lists | After D6 |
 | E-06 | Remaining optional review items from `59002e91` | Studio pointer reconciliation and tests | Item 9 (`F_FULLFSYNC` on durable writes) belongs to M2 durability; items 2–4 and 7 when the code is next touched; items 5–6 when Studio reconciliation UX is revisited; item 8 is done | As scheduled |
 | E-07 | Move the WAV codec below the platform layer | `libs/seam-voicebank/include/seam/voicebank/wav.hpp` and `src/wav.cpp` depend only on `seam_core`; move them to a new layer-1 `seam_audio_io` (or into `seam_core`), keep a forwarding header so the 100 including files migrate gradually, drop `seam_voicebank` from `seam_platform`'s links, and link it directly from any consumer that relied on reaching it through the platform library | Cost: layering. `seam_platform` drops from layer 4 to 3, and targets that need only the platform layer stop linking `seam_voicebank` and `seam_phonemizer`. Recompilation does not shrink: a `wav.hpp` change recompiles its includers wherever the header lives | When M1/M2 touches recording, or after M2 |
@@ -430,8 +444,7 @@ Not changed: `.github`, the Windows TODO, the U45 hold, every contract JSON, eve
 | Item | Why it stays | Exit |
 |---|---|---|
 | `seam_phase2_demo` … `seam_phase12b_demo` | Smoke tests consume their outputs as fixtures | M0-3 renames them |
-| `docs/phase1`–`docs/phase13b` | Some files are verifier inputs (the test fixtures moved out in M0-1) | M0-2 |
-| `docs/remaining-tasks.json` | Read by the Phase 12B/13B verifiers | E-04 |
+| `docs/phase1`–`docs/phase13b` | Phase records; code still reads the machine-readable gate data listed in the documentation map, §6 | Records; E-13 moves the gate data with the phase directories |
 | `docs/beta/*` stubs | Required entry points in the External Beta source contract | E-12 |
 | `BETA_READINESS_ISSUES.md` (last substantive update 2026-10-08) | `tools/external_beta/release_status.py` and `tests/external_beta/test_readiness_register_citations.py` read it | Fold its open items into this plan's backlog, then move it with its two consumers |
 | `VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md` | Named as `origin` by the full product contract | Stays as long as that contract revision |

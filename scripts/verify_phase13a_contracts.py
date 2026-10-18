@@ -79,11 +79,6 @@ def main(argv: list[str] | None = None) -> int:
         ("signtool.exe", "WINDOWS_SIGN_CERT_SHA1", "timestamp.digicert.com"),
         errors,
     )
-    require_tokens(
-        root / "docs" / "phase13a" / "MANDATORY_VALIDATION_KO.md",
-        ("필수", "실제 대상 운영체제", "실제 DAW", "NOT_RUN", "Beta", "Release Candidate", "General Availability"),
-        errors,
-    )
     matrix_path = root / "docs" / "phase13a" / "mandatory-validation-matrix.json"
     try:
         matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
@@ -102,11 +97,6 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"mandatory validation matrix is invalid: {exc}")
 
-    require_tokens(
-        root / "docs" / "phase13a" / "MANDATORY_FUTURE_VALIDATION_KO.md",
-        ("반드시", "실제 대상", "NOT_RUN", "7,200초", "Official Voicebank 01"),
-        errors,
-    )
     require_tokens(
         root / "scripts" / "build_windows_installer.ps1",
         ("NSIS 3.12", "makensis.exe", "ProjectSEAM.nsi"),
@@ -165,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
             print("[phase13a-contract] ERROR", error, file=sys.stderr)
         return 1
     print("[phase13a-contract] dependencyPins=PASS")
-    print("[phase13a-contract] mandatoryValidationDocs=PASS")
+    print("[phase13a-contract] mandatoryValidationMatrix=PASS")
     print("[phase13a-contract] packagingSourceChecks=PASS")
     print("[phase13a-contract] githubActions=DEFERRED; pipelineExecution=NOT_CHECKED")
     print("[phase13a-contract] externalRuntimeResults=NOT_RUN")

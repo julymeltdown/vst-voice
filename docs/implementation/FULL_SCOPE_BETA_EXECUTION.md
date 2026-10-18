@@ -9664,3 +9664,9 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 - **Change.** `tests/test_performance_contracts.cpp` and `tests/test_schema8_performance.cpp` read the schema-2 and schema-3 demo projects from `tests/fixtures/projects/schema-2-phase2-demo.seam` and `schema-3-phase3-demo.seam`, byte-identical copies of the Phase 2/3 evidence files with origin commits and SHA-256 in `tests/fixtures/projects/generators/README.md`. The evidence files are unchanged.
 - **Gate or cost.** Cost: no test, tool or script reads `docs/phase2/` or `docs/phase3/` any more.
 - **Verification.** Focused rebuild of both test targets (binaries newer than the sources; their strings contain only the new paths); `seam_performance_contract_tests` and `seam_schema8_performance_tests` pass; tracked-source closure 2/2 after staging.
+
+### M0-2 — phase-era verifier audit — 2026-10-18
+
+- **Change.** Classified all 13 phase verifiers (table in plan M0-2). Retired the history locks: phase 11/12B/13B report presence checks, Korean wording checks in the 13A verifier and two 13A test cases, `remaining-tasks.json` task states in the 12B/13B verifiers and the 13B test, and the version and phase-target names in the 12B check. Merged the duplicate `verify_phase11_sources.py` into `verify_clap_editor_sources.py`; renamed the phase 8, 11, 12A and 12B verifiers and their CTest entries by what they guard; retired `docs/remaining-tasks.json`.
+- **Gate or cost.** Cost: tidying phase records no longer fails contract tests; no product check was dropped.
+- **Verification.** Each changed verifier passes on the tree and exits 1 on an empty root; `tests/phase13a` 190 OK (4 skipped), `tests/phase13b` 40 OK, required-path test 2 OK; renamed CTest entries and closure after reconfigure.

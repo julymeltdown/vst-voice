@@ -24,21 +24,6 @@ class Phase13AContractTests(unittest.TestCase):
             "bd98b31feff57a15989fcfab4cd86dc63382b1ac", commits["AudioUnitSDK"]
         )
 
-    def test_mandatory_doc_explicitly_blocks_beta_rc_and_ga(self):
-        text = (ROOT / "docs/phase13a/MANDATORY_VALIDATION_KO.md").read_text(
-            encoding="utf-8"
-        )
-        for phrase in (
-            "필수",
-            "NOT_RUN",
-            "Beta",
-            "Release Candidate",
-            "General Availability",
-        ):
-            self.assertIn(phrase, text)
-        self.assertIn("실제 대상 운영체제", text)
-        self.assertIn("실제 DAW", text)
-
     def test_release_gate_is_connected_to_phase13a_matrix(self):
         matrix = json.loads(
             (ROOT / "docs/phase13a/mandatory-validation-matrix.json").read_text(
@@ -190,19 +175,6 @@ class Phase13AContractTests(unittest.TestCase):
         self.assertIn("external-beta-documentation.json", inputs)
         self.assertIn("Documentation", inputs)
 
-    def test_separate_future_validation_document_is_mandatory(self):
-        text = (ROOT / "docs/phase13a/MANDATORY_FUTURE_VALIDATION_KO.md").read_text(
-            encoding="utf-8"
-        )
-        for phrase in (
-            "반드시",
-            "실제 대상",
-            "NOT_RUN",
-            "7,200초",
-            "Official Voicebank 01",
-        ):
-            self.assertIn(phrase, text)
-
     def test_windows_installer_uses_pinned_permissive_nsis_path(self):
         script = (ROOT / "packaging/windows/ProjectSEAM.nsi").read_text(
             encoding="utf-8"
@@ -287,14 +259,14 @@ class Phase13AContractTests(unittest.TestCase):
         self.assertNotIn("packagingSourceChecks=PASS", result.stdout)
 
     def test_platform_source_cli_keeps_native_adapters_required_without_ci(self):
-        from scripts.verify_phase8_platform_sources import REQUIRED
+        from scripts.verify_platform_adapter_sources import REQUIRED
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (*REQUIRED, "CMakeLists.txt"):
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, target)
-            command = [sys.executable, str(ROOT / "scripts/verify_phase8_platform_sources.py"),
+            command = [sys.executable, str(ROOT / "scripts/verify_platform_adapter_sources.py"),
                        "--root", str(root)]
             valid = subprocess.run(command, capture_output=True, text=True, timeout=30)
             self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)

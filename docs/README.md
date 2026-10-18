@@ -23,7 +23,6 @@ The repository holds about 1,200 tracked files under `docs/`. Most are dated eng
 | [voicebank/](voicebank/) | Beta voicebank acceptance, Japanese CVVC inventory, Beta bank dossier and session/QC templates |
 | [legal/](legal/) | Voice-provider contract and synthetic-source rights requirements, clearance templates |
 | [phase13a/mandatory-validation-matrix.json](phase13a/mandatory-validation-matrix.json) | Phase 13A release-gate matrix (G1–G5) |
-| [remaining-tasks.json](remaining-tasks.json) | Legacy Phase 12/13 backlog. Stale as a backlog, but `scripts/verify_phase12b_contracts.py`, `scripts/verify_phase13b_contracts.py` and `tests/phase13b/test_source_contract.py` read it, so it stays until those verifiers are retired |
 
 ## 3. Specifications and decisions
 
@@ -50,9 +49,14 @@ A record describes its own date and commit. Do not edit an old record to make it
 
 ## 6. Phase records — historical, partly load-bearing
 
-`phase1/` through `phase13b/` and the phase-numbered notes in [architecture/](architecture/) describe the August–September phases. Treat them as history, except for the `phase12b/`, `phase12c/`, `phase13a/` and `phase13b/` documents that their contract verifiers still read. The schema-2 and schema-3 test projects that used to be read from `phase2/evidence/` and `phase3/evidence/` are now copies under `tests/fixtures/projects/`; the evidence files themselves are unchanged.
+`phase1/` through `phase13b/` and the phase-numbered notes in [architecture/](architecture/) describe the August–September phases. Treat them as history. Code reads only machine-readable gate data from them:
 
-The completion plan schedules auditing those verifiers and retiring the checks that only guard historical wording (M0-2).
+- `phase13a/mandatory-validation-matrix.json`, the release-gate matrix for G1–G5;
+- the `phase13b/` dossiers, matrix, product release dossier and evidence summaries, which hold the Official Voicebank 01 and Character 01 baselines blocked;
+- `phase12c/mandatory-validation-matrix.json`, read by the Phase 13B evidence generator;
+- `phase12c/LIVE_ARTICULATION.md`, a required file of the External Beta source contract.
+
+No verifier checks the wording or presence of a phase report any more, and the schema-2 and schema-3 test projects are copies under `tests/fixtures/projects/` (completion plan M0-1 and M0-2).
 
 ## 7. Retired documents
 

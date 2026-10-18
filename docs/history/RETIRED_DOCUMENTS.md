@@ -1,10 +1,10 @@
 # Retired documents and tools
 
-Files removed from the tree during the 2026-10-18 cleanup. Git history keeps every one of them. To read one, run `git show <commit>:<path>` with the commit named in its group. Links to these paths from dated records are expected to dangle. Earlier unavailable attachments are listed separately in the [historical evidence availability index](../reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md).
+Files removed from the tree during the 2026-10-18 cleanup and the M0 repository reset that followed it. Git history keeps every one of them. To read one, run `git show <commit>:<path>` with the commit named in its group. Links to these paths from dated records are expected to dangle. Earlier unavailable attachments are listed separately in the [historical evidence availability index](../reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md).
 
 When a document stops being true, delete it and add it here instead of leaving it in place with a historical banner.
 
-**105 files in 10 groups.**
+**107 files in 11 groups.**
 
 ## Dead code and inert build option
 
@@ -180,3 +180,12 @@ Last present in `41dc63fd0b7f`. Tool output force-added under the ignored .omo/ 
 |---|---|---:|
 | `.omo/evidence/native-editor-design-completion.md` | `71bf99ee6378` | 4,374 |
 | `.omo/evidence/project-seam-af5-gate-review.md` | `5dccafc632b8` | 5,600 |
+
+## Phase-era verifier history locks (M0-2)
+
+Last present in `228daaa1ae69`. The backlog had been stale since Phase 13B; two verifiers and one test read it only to lock historical task states. The verifier duplicated the Phase 11 contract check and never ran in CTest; only its path list was imported. Replacement: [STATUS.md](../STATUS.md) and the [completion plan](../plans/2026-10-18-project-completion-plan.md) for status and work; `scripts/verify_clap_editor_sources.py` for the CLAP editor sources.
+
+| Path | Blob | Bytes |
+|---|---|---:|
+| `docs/remaining-tasks.json` | `3f0dfd344f56` | 3,483 |
+| `scripts/verify_phase11_sources.py` | `7c22e4b747e2` | 4,352 |
