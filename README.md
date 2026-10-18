@@ -1,787 +1,104 @@
 # Project SEAM
 
-Project SEAM is a C++20 native singing-voice editor with sample and procedural rendering and an admitted neural execution path.
-> **Current engineering route:** [Current engineering entrypoints](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md) identifies the macOS SING editor, supported build route, production APIs, compatibility surfaces and admission holds. [Usable Alpha acceptance](docs/product/USABLE_ALPHA_ACCEPTANCE.md) remains the canonical product-usability contract. Implemented playback, lifecycle, installation and export paths do not establish the unaided user journey, resource rights or human acceptance. Full Beta remains held by the original platform, host, qualification and evidence requirements.
- Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
+Project SEAM is a native C++20 singing-voice editor for Apple Silicon Macs. It sings scores through three source families — recorded sample banks, authored procedural singer recipes, and an admitted neural execution path — and treats phoneme boundaries, source-unit choices, pitch-shift artifacts and sample seams as editable musical material rather than defects to hide.
 
-Historical phase summary (implementation scope, not current acceptance evidence):
+**Status on 2026-10-18: a working engineering prototype, not yet a usable or releasable product.** The SING editor, the sample and procedural renderers, project save/reopen/recovery, signed voicebank packaging and installation, and transactional export are implemented and exercised by automated tests. No product gate has passed: [Usable Alpha](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is 0/20 (all `NOT_RUN`), External Beta is `BLOCKED`, and no voicebank has been released. The binding blockers are a rights-cleared production voicebank, the owner's own listening and workflow judgment, and the unaided user journey. [Current status](docs/STATUS.md) gives the evidence; the [completion plan](docs/plans/2026-10-18-project-completion-plan.md) gives the order of work.
 
-- Phase 1 editor/domain foundation;
-- Phase 2 phoneme, voicebank, and Raw synthesis vertical slice;
-- Phase 3 editable PSOLA and background phrase render loop;
-- Phase 4 multi-renderer synthesis, Unit/Sample inspection, callback-ready playback, and bounded cache;
-- Phase 4.1 correctness, durability, security, and concurrency stabilization;
-- Phase 5 native standalone/runtime vertical slice;
-- completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**;
-- completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**;
-- completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**;
-- integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
-- completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**;
-- completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**;
-- implemented **Phase 11 CLAP GUI Feature Alpha** with DAW-embedded Piano Roll, technical Phoneme/Unit/Pitch lanes, direct Note/Lyric/Seam editing, asynchronous preview, and live human-sample note input;
-- completed **Phase 12A production preview integration** with exact Voicebank ID/version/content-hash resolution, trust-aware installed receipts, relink/select APIs, shared four-renderer Phrase rendering, and PCM parity tests.
+## Start here
 
-Development uses the **`master` branch only**.
+| You want to | Read |
+|---|---|
+| Know what is true today, with the checks behind it | [docs/STATUS.md](docs/STATUS.md) |
+| Decide what to build or decide next | [Completion plan](docs/plans/2026-10-18-project-completion-plan.md) |
+| Find the code that owns a behavior or API | [Current engineering entrypoints](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md) |
+| See how the libraries depend on each other | [Architecture overview](docs/architecture/OVERVIEW.md) |
+| Know what "done" means for a user | [Usable Alpha contract](docs/product/USABLE_ALPHA_ACCEPTANCE.md), [full Beta contract](docs/product/full-product-beta-contract.json) |
+| Work on the editor's look | [DESIGN.md](DESIGN.md) |
+| Find any other document, or a retired one | [Documentation map](docs/README.md) |
+| Work in this repository as an agent | [AGENTS.md](AGENTS.md) |
 
 ## Platform scope: macOS arm64 is the active target
 
-**Windows support is a TODO.** It is deferred, not abandoned and not failed.
-The developer currently has **macOS only**. Windows work must not hold up macOS
-singer development; resume Windows-specific implementation and verification when
-a suitable Windows environment is available.
+**Windows support is a TODO.** It is deferred, not abandoned and not failed. The developer currently has macOS only, so Windows work must not hold up macOS singer development; resume Windows-specific implementation and verification when a suitable Windows environment is available.
 
-**Immediate development priority:** complete and validate the macOS singer workflow
-(voice creation, song editing, rendering and export). Track macOS acceptance
-separately from the full cross-platform Beta GO gate below; deferred Windows TODOs
-must not stop this work or be reported as completed validation.
-
-The only development and verification host is a macOS arm64 machine (Apple M3 Max), so no Windows
-installed-product evidence can be produced here. Rather than keep spending CI cycles to discover
-Windows-only defects that cannot be confirmed or repaired locally, Windows is parked in a known,
-documented state and development continues on macOS.
-
-What this means in practice:
-
-- **macOS arm64 is the supported development and release target right now.** Build, test, and release
-  work targets macOS.
-- **Windows x64 stays a declared contract platform.** `docs/product/full-product-beta-contract.json`
-  still requires two platforms and nine host tuples including Windows, so **Beta GO is not reachable
-  while Windows is deferred.** This is a schedule decision, not a scope reduction. No requirement is
-  being deleted or relaxed to make the gate easier.
-- **GitHub orchestration is deferred.** Workflow observations below are a retained pre-removal snapshot, not current jobs or new execution evidence. Current local source checks report `SOURCE_READY`; target runtime, signing and clean-OS evidence remain separate obligations.
+- **macOS arm64 (Apple M3 Max) is the only development, verification and release target right now.**
+- **Windows x64 stays a declared contract platform.** [The full Beta contract](docs/product/full-product-beta-contract.json) requires two platforms and nine host tuples, four of them on Windows, so **Beta GO is not reachable while Windows is deferred.** This is a schedule fact, not a scope reduction; no requirement has been deleted or relaxed.
+- **GitHub orchestration is deferred.** Local source checks report `SOURCE_READY`; target runtime, signing and clean-OS evidence remain separate obligations.
 
 ### Windows TODO
 
 | # | Item | State |
 |---|---|---|
-| 1 | Historical `windows-installer-smoke` certificate-trust hang | Open Windows follow-up. Before workflow removal, Import-Certificate, .NET `X509Store`, and `certutil -addstore` without `-f` were reported hanging at the signing-identity step. Those observations are historical, not a current configured job. Reproduce on an actual Windows host before selecting a repair; `certutil -addstore -f` remains unverified. |
+| 1 | Historical `windows-installer-smoke` certificate-trust hang | Open. Before workflow removal, Import-Certificate, .NET `X509Store` and `certutil -addstore` without `-f` were reported hanging at the signing-identity step. Reproduce on an actual Windows host before selecting a repair; `certutil -addstore -f` remains unverified. |
 | 2 | Windows clean-install / same-version reinstall / uninstall lifecycle | Never executed. Blocked by item 1. |
 | 3 | Windows REAPER and Bitwig host tuples (CLAP and VST3) | Never executed. Needs a Windows host, not just CI. |
 | 4 | Windows x64 native pitch and acoustic acceptance | Not measured. All current measurements are macOS. |
-| 5 | Windows (and Linux) editor surface | Not implemented. The only editor is the SING shell, which draws with the macOS CoreGraphics/CoreText vector backend. The classic raster editor painter was removed, so a build without that backend keeps compiling (source contracts, Win32/X11 windows and accessibility bridges) but its standalone window and CLAP view show only a notice (`paintEditorUnavailable`) that the editor needs the macOS renderer; pointer input does nothing and keys do not edit the score. Resuming needs a vector backend for the platform. |
+| 5 | Windows (and Linux) editor surface | Not implemented. The only editor is the SING shell, drawn with the macOS CoreGraphics/CoreText vector backend. A build without that backend still compiles its source contracts, Win32/X11 windows and accessibility bridges, but its standalone window and CLAP view show only an unavailable-editor notice (`paintEditorUnavailable`); pointer input does nothing and keys do not edit the score. Resuming needs a vector backend for the platform. |
 
-Historical repair record, not current installed-product acceptance: `windows-2025 VST3 build` compiles the static
-OpenSSL from source with native Perl, links with `NOMINMAX`, and passes both the dependency closure and
-the payload-shape gates.
+**Prerequisite to resuming Windows:** a Windows host (physical or cloud) able to run the installer lifecycle and a DAW, with an interactive session for the certificate-trust step.
 
-**Prerequisite to resuming Windows:** a Windows host (physical or cloud) able to run the installer
-lifecycle and a DAW, plus interactive-session capability for the certificate-trust step. Until then,
-Windows items cannot be closed by engineering in this repository.
+## Build, run and test
 
-
-> **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. Current work routes through [the engineering index](docs/implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md), [full-scope execution ledger](docs/implementation/FULL_SCOPE_BETA_EXECUTION.md) and canonical acceptance contracts. [`STATUS_KO.md`](docs/STATUS_KO.md), [`REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md) are historical phase reports.
-
-## Build and open the macOS editor
-
-Prerequisites: CMake 3.25+, Ninja, a C++20-capable Apple toolchain/macOS SDK, and discoverable OpenSSL 3 Crypto. The `release` preset enables native desktop and test targets. Optional production neural-worker builds also require ONNX Runtime and native ONNX schema inputs; see [the runtime guide](tools/neural_runtime/README.md).
-
-From the repository root:
+Prerequisites: CMake 3.25+, Ninja, a C++20 Apple toolchain with the macOS SDK, and a discoverable OpenSSL 3 Crypto. The optional production neural worker also needs ONNX Runtime and native ONNX schema inputs; see [the runtime guide](tools/neural_runtime/README.md).
 
 ```sh
 cmake --preset release
-cmake --build --preset release --target seam_editor_native -j6
+cmake --build --preset release -j6
 open "build/release/Project SEAM.app"
+ctest --preset release
 ```
 
-The bundle path and commands are checked against `CMakePresets.json` and the macOS target in `CMakeLists.txt`. This documentation unit does not claim a new GUI launch or unaided acceptance session. When shared library source changes, rebuild the full dependent tree before trusting focused CTest results: `cmake --build --preset release -j6`.
+The `dev` (Debug), `sanitize` (ASan + UBSan) and `thread-sanitize` presets use the same pattern and build into `build/<preset>`. All presets treat warnings as errors.
 
-## EMO / SCENE design shell (in progress)
+Verification hygiene this repository has paid for:
 
-The standalone app and the CLAP editor now open in the redesigned **SING** workspace, with two
-selectable looks: **EMO** (ink, bone white, blood red) and **SCENE** (neon pink, cyan, lime,
-glitter). The protagonist appears as the singer portrait, whose ring follows real render progress,
-and as a faded stage figure behind the grid. The spec is
-[`docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md`](docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md)
-and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/design/ui-fidelity-contract-v1.json).
+- After any change under `libs/`, run a full `cmake --build build/release -j6` before trusting CTest. A focused `--target` build leaves other binaries linked against the old library, and the stale binary fails in a way that points at the newest change.
+- Check artifact timestamps before treating a failure as real.
+- Sanitizer runs use `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1:strict_string_checks=1` and `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
+- A passing module test, a `*_CONTRACT=PASS` line or a source-ready gate is engineering evidence only. It never establishes human listening, DAW, VoiceOver, signing, Windows or reviewer acceptance.
 
-- Code: `libs/seam-native-ui/{include,src}/…/design` (tokens, layout, shell) and `…/paint`
-  (CoreGraphics/CoreText vector canvas). The shell is the only editor surface in the standalone
-  app and the CLAP plug-in; there is no classic editor to switch to. Tests paint through the shell
-  too (`tests/shell_frame_test_support.hpp`).
-- Switch looks with the EMO | SCENE control in the header. The choice is stored in the
-  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene`
-  overrides it.
-- Note editing, lyrics, vibrato and the ruler still run through the existing controller, so undo
-  history is unchanged. Voice browser, audio settings, reviews, the time map, text fields, the
-  microscope, phoneme review, recovery, diagnostics and export progress are presented by the shell
-  as sheets, inline fields and status segments; the phoneme, unit and seam lanes live under the
-  lane's Phonemes tab.
-- One geometry per frame: `SingShell::prepareFrame` picks the surface and sets the viewport and
-  the controller's hosted input geometry before scene state is derived. Escape, resizing and
-  hiding the plug-in cancel gestures without committing. Expression curves
-  are drawn and edited in the shell lane with the same value mapping.
-- Accessibility: while the shell is on screen, the standalone window and the CLAP view publish
-  the shell's own tree (`SingShell::accessibilityTree`) in shell geometry. Workspace tabs, the
-  EMO | SCENE radio pair, lane tabs, knobs (sliders with Increment/Decrement), render progress and
-  status have real roles, and assistive actions run the same commands as the pointer. Notes, the
-  timeline and the transport are the controller's nodes moved to their shell rectangles. This is
-  covered by source tests; **checking with Accessibility Inspector and VoiceOver is NOT_RUN**.
-  Notes stay virtualized and are clipped to the visible grid; Tab walks the shell's own tree and a
-  focused knob owns the plain keys (arrows adjust it, Delete never reaches the notes).
-- Knob edits happen "at the playhead": with the playhead outside the selected region, the knobs
-  show the region's edge value but refuse to edit, leaving the document and undo history alone.
-- Workspaces: **SING** and a first **EXPORT** workspace. EXPORT shows what Export Set will write
-  (the same settings the menu command uses), its progress, a failure reason and the last receipt,
-  and runs the real Export Set command; it covers the score, so no hidden note can be edited from
-  there. In the CLAP plug-in, EXPORT explains that the DAW renders and exports. **VOICE** opens the
-  existing voice browser (not yet re-homed). **TUNE** is an active initial workspace for expression
-  curves, selected-note vibrato, and pitch automation when the host provides pitch-edit callbacks.
-  **MIX** is an active initial workspace for track level/pan/mute/solo, routing, audio settings,
-  metering, and arrangement regions. Both are partial workflows, not yet complete or Beta-qualified
-  product surfaces.
-- `tests/test_sing_shell_journey.cpp` drives the standalone app headlessly through the shell:
-  pick a voice, draw a note and type its lyric, Save As, reopen in a fresh app (voice identity and
-  phrase kept), export from EXPORT, and decode a non-silent master. This is command/persistence/
-  export evidence with the development fixture bank, not Finder, window, FL Studio or vocal-quality
-  evidence.
-- Not done yet: complete and product-qualify TUNE and MIX; a re-homed voice browser; live-host
-  qualification of the measured output meter; lyric-field re-anchoring while scrolling (the
-  field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host
-  captures. Character art in `assets/ui-design` is **development-only**; see its
-  `PROVENANCE.md`.
+## What you get after a build
 
+| Product | CMake target | Role |
+|---|---|---|
+| `Project SEAM.app` | `seam_editor_native` | The standalone SING editor (EMO and SCENE looks): notes, lyrics, phoneme/unit/seam lanes, pitch and expression curves, transport, save/reopen/autosave recovery, voicebank selection and relink, master and stem export. |
+| `SEAM Voicebank Studio.app` | `seam_voicebank_studio_native` | Producer workspace: recording and import, take review, prepared-donor intake, candidate packaging. |
+| `ProjectSEAM.clap`, `ProjectSEAMEditor.clap` | `seam_clap_plugin`, `seam_clap_editor_plugin` | CLAP render player and DAW-embedded editor. VST3/AUv2 projections come from the Phase 13A pipeline. |
+| `seam_voicebank_cli`, `seam_bank_tool` | same | Bank validation, packaging, signing, installation, score import/export (USTX, SMF) and engineering operations. |
+| `seam_singer_pilot` | same | Positional diagnostic writer. Read [its source](apps/seam-singer-pilot/main.cpp) before running it; its musical output is unqualified. |
+| `seam_neural_worker` | same | Optional out-of-process neural worker (protocol 3). Only arithmetic fixtures run today; no learned singer is qualified. |
+| `seam_phaseN_demo` | same | Kept only because smoke tests consume their outputs as fixtures (for example the synthetic voicebank and the CLAP state WAV). They are not product surfaces. |
 
+## Repository layout
 
+| Path | Contents |
+|---|---|
+| `libs/` | 25 product libraries: domain model, formats, phonemizer, voicebank, synthesis, rendering, authoring runtime, native UI, platform adapters, CLAP, distribution, neural synthesis and producer workflow. See the [architecture overview](docs/architecture/OVERVIEW.md). |
+| `apps/` | Executable entry points listed above. |
+| `phase12c/`, `phase13a/`, `phase13b/` | Live-voice runtime and validation harnesses, VST3/AUv2/installer/signing gates, and content/IP release gates. The names are historical; the code is current. |
+| `tests/` | Native doctest suites, Python contract tests and fixtures. |
+| `tools/`, `scripts/` | Python tooling: release gates, evidence collectors, training experiments, source intake, observation kits, packaging and signing scripts. |
+| `assets/` | Development fixtures, fonts, UI design assets and Character 01 development art. Nothing here is a released voicebank. |
+| `packaging/` | Installer, bundle and trust metadata. |
+| `docs/` | Contracts, formats, ADRs, design, legal requirements and dated engineering records. Start at the [documentation map](docs/README.md). |
 
+## Release engineering gates
 
-## Usable Alpha U3 implementation
+Release gates are implemented and fail closed. Until real target evidence exists they are expected to report blocked:
 
-- The standalone application can verify and transactionally install a signed `.seambank` through an authoring service.
-- Voicebank candidates are presented with exact ID, version, synthesis content hash, language, styles, unit inventory, signer/trust status, and Character availability.
-- Trusted installed banks are selectable; untrusted banks remain visible but disabled; development fixtures require an explicit development policy.
-- Track binding, exact relink, and intentional replacement are separate operations. Relink never rewrites the requested identity, and replacement participates in Undo/Redo.
-- Coverage diagnostics distinguish missing, disabled, wrong-style, and unsupported-pitch units before rendering.
-- Production rendering reports failed phrases while allowing unaffected tracks and regions to continue; no other voicebank is silently substituted.
-- Native USTX 0.9 and bounded Standard MIDI interchange paths retain score timing, lyrics, pitch/vibrato where representable, and expose explicit conversion losses; imports remain unsaved until review acceptance.
-- **External interoperability is verified against a tool that is not SEAM**, in both directions. OpenUtau's own deserializer (pinned commit `8c0dc40`) reads SEAM's USTX export with notes, tones, positions and UTF-8 lyrics intact, and DryWetMidi — the library OpenUtau uses for MIDI — reads SEAM's SMF export with all 80 lyric meta events present. Reading an OpenUtau-authored USTX back through OpenUtau reproduces both notes and their pitch contours. A MIDI round trip (export → import → export) reproduces the file byte for byte.
-- The bank tool exposes this path directly: `export-score PROJECT.seam OUT.ustx|.mid` and `import-score IN.ustx|.mid PROJECT.seam [NAME]`. The oracle is optional and not part of CI; see `tools/openutau_oracle/README.md` for how to re-run it.
-- Real DAW exchange (REAPER, Bitwig) and any listening judgement remain unverified. Being readable is not the same as sounding right.
-- Interval harmony proposals are prepared without mutating the source and accepted through one stale-checked, undoable command.
-
-
-## Phase 12B implementation
-
-- Direct Phoneme boundary, Unit variant/renderer and Pitch point editing is stored in canonical project state and participates in Undo/Redo.
-- The embedded Sample Microscope can inspect the selected installed Unit without mutating signed Voicebank content.
-- `ProductionProjectRenderer` renders every audible track and region, then applies Phase 6 bus/matrix routing to 1–8 output channels.
-- Project JSON schema 5 persists `hostStartOffsetTick`; host seconds are preferred, beats+tempo are the fallback, and loop/seek/offline render mode are explicit.
-- The CLAP editor exposes mono through eight-channel audio-port configurations with host rescan notifications.
-
-## Phase 12A implementation
-
-- `VoicebankCatalog` discovers standard installed roots, explicit relink roots, bundle/sidecar resources and development fixtures.
-- Each track persists exact Voicebank ID, version and synthesis content SHA-256.
-- Signed installation receipts distinguish trusted installed banks from untrusted or development candidates.
-- Missing/version/hash/trust failures publish silence and explicit diagnostics; no other bank is silently substituted.
-- `ProductionRegionRenderer` is shared by direct engine rendering and CLAP async preview, with sample-identical parity tests and Phrase cache reuse.
-- The public-domain production bank remains a nonofficial technical fixture.
-
-See [`docs/phase12a/`](docs/phase12a/) for acceptance, architecture and known limitations.
-
-## Phase 11 implementation
-
-### Embedded CLAP authoring surface
-
-- `ProjectSEAMEditor.clap` exposes CLAP GUI, note-input, state, audio-port and timer-support extensions.
-- The child view embeds the existing Project SEAM controller and renders Piano Roll, Lyrics, Phoneme, Unit, Seam, Pitch and optional Character 01 surfaces. Note, lyric and seam amount are directly editable; complete direct editing for phoneme timing, unit selection/renderer and pitch points remains.
-- Edits submit immutable Project copies and an exact resolved Voicebank candidate to a cancellable worker. Phase 12A calls the shared production PhraseRenderPipeline and content-addressed Phrase cache; completed PCM is published through a bounded reader-counted triple buffer. The audio thread performs no project parsing, Voicebank resolution, file access or render work.
-- A 16-voice live sampler handles sample-accurate CLAP note-on/off events using the public-domain human technical fixture.
-
-### Rights and release boundary
-
-- `assets/demo-human-voicebank-public-domain` records the upstream public-domain statement, original and derived hashes, retrieval date and processing. It explicitly declares `official=false` and `contractedSinger=false`.
-- Official Voicebank 01 remains blocked by the real performer-contract and directed-recording acceptance gates under `docs/legal` and `docs/voicebank`.
-- macOS bundle, signing/notarization, PKG, Windows packaging/signing, official CLAP validation and VST3/AU wrapper pipelines are source-integrated. They are not labelled signed, notarized or DAW-certified until target jobs produce that evidence.
-
-See [`docs/phase11/IMPLEMENTATION_REPORT.md`](docs/phase11/IMPLEMENTATION_REPORT.md), [`docs/phase11/ACCEPTANCE.md`](docs/phase11/ACCEPTANCE.md), and [`docs/phase11/HOST_CERTIFICATION_MATRIX.md`](docs/phase11/HOST_CERTIFICATION_MATRIX.md).
-
-
-## Phase 10 implementation
-
-### Real loadable CLAP module
-
-- `ProjectSEAM.clap` exports `clap_entry` and a stable one-plugin factory.
-- The plug-in has no audio input and one main output carrying one through eight channels.
-- A bounded `SEAMCLP1` state stores a pre-rendered Project SEAM multichannel result and Master Gain.
-- Host seconds transport, beat/tempo fallback, pause silence, and free-running operation are implemented.
-- Master Gain (`-60..+6 dB`) is sample-accurately automatable and persisted in state.
-- Audio processing performs no project parsing, voicebank access, filesystem I/O, resampling, allocation, or character work.
-- `seam_clap_state_tool` packs an existing one-to-eight-channel WAV export into `SEAMCLP1`, inspects it, and extracts it back to WAV.
-
-### Dynamic ABI verification
-
-`seam_clap_host` loads the built module through the operating-system dynamic loader, scans its descriptor and extensions, feeds deliberately partial state streams, activates four-channel output, verifies sample-offset automation and stopped-transport silence, saves state, and performs complete teardown.
-
-### Accurate limitation
-
-Phase 10 is a headless **render player**, not the complete Piano Roll editor inside a DAW. Authoring and sample-concatenative synthesis remain in the standalone editor. CLAP GUI embedding, asynchronous host-side rendering, live note-event synthesis, VST3, AU, and broad third-party-host certification are later phases. Character 01 remains optional product identity and does not enter plug-in PCM or state.
-
-See [`docs/phase10/IMPLEMENTATION_REPORT.md`](docs/phase10/IMPLEMENTATION_REPORT.md), [`docs/phase10/ACCEPTANCE.md`](docs/phase10/ACCEPTANCE.md), [`docs/architecture/CLAP_PLUGIN_RUNTIME.md`](docs/architecture/CLAP_PLUGIN_RUNTIME.md), and [`docs/formats/CLAP_STATE_V1.md`](docs/formats/CLAP_STATE_V1.md).
-
-
-## Phase 9 implementation
-
-### Native Korean, Japanese, and Chinese display
-
-- New first-party `seam_text` module with strict UTF-8 scalar validation.
-- Trusted system TTF/TTC discovery with locale-aware CJK face selection and
-  fallback.
-- Antialiased glyph rasterization, same-face kerning, text metrics, wrapping,
-  ellipsis, and combining-mark placement.
-- Bounded whole-text cache: 512 entries and 32 MiB.
-- `RasterCanvas` uses the Unicode engine on X11, Win32, and AppKit while keeping
-  the deterministic ASCII bitmap renderer as a non-fatal fallback.
-- Native Japanese lyric labels now render as glyphs instead of UTF-8 byte
-  placeholders.
-
-### Font trust and licensing boundary
-
-- Project SEAM redistributes no font files.
-- Projects, voicebanks, character packages, and `.seambank` archives cannot
-  provide fonts or font paths.
-- Only known operating-system locations or explicit trusted absolute files are
-  parsed.
-- The pinned `stb_truetype` single header is the only new distributed source
-  dependency; its exact revision, SHA-256, MIT notice, and SPDX entry are
-  recorded.
-
-### Accurate limitation
-
-Phase 9 targets CJK and Latin product UI. It does not claim full Arabic, Indic,
-Southeast Asian, or arbitrary OpenType shaping. The audited iPlug2 + Skia
-production adapter remains a separate later phase.
-
-See [`docs/phase9/IMPLEMENTATION_REPORT.md`](docs/phase9/IMPLEMENTATION_REPORT.md),
-[`docs/phase9/ACCEPTANCE.md`](docs/phase9/ACCEPTANCE.md), and
-[`docs/architecture/UNICODE_TEXT_RENDERING.md`](docs/architecture/UNICODE_TEXT_RENDERING.md).
-
-
-## Phase 8 implementation
-
-### Windows native adapters
-
-- Real Win32 native window using the existing first-party software-raster editor scene.
-- Per-monitor DPI, resize, repaint, pointer, wheel, keyboard, close, and screenshot paths.
-- Unicode lyric editing through a native `EDIT` overlay participating in TSF, with explicit `ITfThreadMgr` activation.
-- Shared-mode event-driven WASAPI output for one through eight float channels.
-- Shared-mode event-driven WASAPI mono capture for Voicebank Studio recording.
-
-The text adapter is accurately described as a **native `EDIT` overlay under TSF text services**. It is not claimed to be a custom `ITextStoreACP` implementation.
-
-### macOS native adapters
-
-- Real AppKit `NSWindow` and custom `NSView` using the same first-party software-raster editor scene.
-- Backing-scale-aware CoreGraphics presentation, pointer, wheel, keyboard, resize, close, and screenshot paths.
-- `NSTextInputClient` marked-text, selection, commit, cancel, deletion, cursor movement, and candidate-window positioning.
-- CoreAudio DefaultOutput AudioUnit output for one through eight non-interleaved float channels when accepted by the selected device.
-- CoreAudio HALOutput mono capture for Voicebank Studio recording.
-
-### Platform verification boundary
-
-- Linux X11/XIM/PulseAudio remains runtime-verified in the current environment.
-- Windows and macOS implementations are selected by CMake and covered by a local static source-contract test. GitHub Actions automation was removed in `6632f584`; see the [local verification scope](docs/implementation/W03_VERIFICATION_POLICY_2026-10-09.md#local-verification-after-ci-retirement-2026-10-10).
-- This Linux package does not claim physical Windows/macOS speaker, microphone, DPI, focus, lifecycle, or IME runtime certification. Those tests remain platform release gates.
-
-### Character 01 across native platforms
-
-Character 01 continues to use the shared product-presentation layer. Windows and macOS do not duplicate character policy. Full/Minimal/Off display state, voicebank cards, welcome surfaces, and status portraits remain optional UI surfaces; Character 01 never enters synthesis, multichannel routing, recording, cache identity, `.seambank` trust decisions, or exported PCM.
-
-See [`docs/phase8/IMPLEMENTATION_REPORT.md`](docs/phase8/IMPLEMENTATION_REPORT.md), [`docs/phase8/PLATFORM_MATRIX.md`](docs/phase8/PLATFORM_MATRIX.md), and [`docs/architecture/NATIVE_PLATFORM_ADAPTERS.md`](docs/architecture/NATIVE_PLATFORM_ADAPTERS.md).
-
-
-## Phase 7 implementation
-
-### Signed data-only voicebank packages
-
-- `.seambank` v1 stores a canonical entry table, contiguous payloads, an embedded Ed25519 public key, and an Ed25519 signature.
-- The signature binds the header, table, payload, and embedded public key through a SHA-256 package digest.
-- Every asset has an independent SHA-256 checksum.
-- Packages reject path traversal, hidden paths, symbolic links, scripts, executables, duplicate entries, overlapping extents, and configured resource-limit violations.
-- `manifest.json` and all audio assets referenced by the voicebank manifest are verified.
-
-### Explicit trust and transactional installation
-
-- A cryptographically valid package is not automatically trusted. Installation requires an independently supplied trusted public key.
-- Installation extracts into a staging directory, validates the installed manifest, writes a receipt, rechecks the package digest, and atomically publishes `<root>/<voicebank-id>/<version>`.
-- Existing versions are preserved unless `--replace` is explicitly supplied.
-- Private signing keys are never included in a package or repository.
-
-### Distribution tools
-
-```text
-seam_bank_tool keygen
-seam_bank_tool pack
-seam_bank_tool verify
-seam_bank_tool list
-seam_bank_tool install
-seam_phase7_demo
+```sh
+python3 -B scripts/verify_usable_alpha_contract.py --root .
+python3 -B -m tools.external_beta.voicebank_gate --dossier docs/voicebank/beta-voicebank-01-dossier.json --root .
+python3 scripts/verify_phase13a_contracts.py --root .
+python3 tools/phase13a/release_gate.py check --matrix docs/phase13a/mandatory-validation-matrix.json --gate G4
 ```
 
-See [`docs/formats/SEAMBANK_V1.md`](docs/formats/SEAMBANK_V1.md), [`docs/phase7/SIGNING_AND_INSTALLATION.md`](docs/phase7/SIGNING_AND_INSTALLATION.md), and [`docs/phase7/ACCEPTANCE.md`](docs/phase7/ACCEPTANCE.md).
-
-
-## Phase 6 implementation
-
-### Persisted project routing graph
-
-- Project JSON schema 4 persists buses, sends, track-output matrices, a master bus, and device-output routes.
-- Schemas 1–3 migrate to the former stereo behavior.
-- Matrices are explicit row-major destination-channel × source-channel maps.
-- Routing validation rejects missing buses, duplicate IDs, dimension mismatches, invalid master buses, and cycles.
-- Topological ordering is deterministic, so identical routing state produces identical processing order.
-
-### Multichannel render and playback
-
-- `RoutedPlaybackTimeline` mixes mono or interleaved 1–8 channel clips into preallocated bus workspaces.
-- Bus gain, mute, solo, and downstream sends are applied before device mapping.
-- `SpscInterleavedAudioRingBuffer` preserves complete multichannel frames rather than independent samples.
-- `MultichannelPlaybackFeederService` retains the Phase 4.1 control-queue and consumer-owned reset-epoch contract.
-- `MultichannelRingBufferAudioProcessor` deinterleaves callback PCM into 1–8 device channel views without allocation, locks, file I/O, or routing-graph traversal in the callback.
-- Linux PulseAudio and the deterministic threaded device adapter accept 1–8 output channels.
-
-### Phase 6 evidence
-
-`seam_phase6_demo` constructs a real four-channel graph: vocal stereo is routed to device channels 1–2 and backing stereo to channels 3–4. It exports the schema-4 project and a four-channel WAV, then passes the same content through the feeder, interleaved ring, and callback processor.
-
-See [`docs/phase6/IMPLEMENTATION_REPORT.md`](docs/phase6/IMPLEMENTATION_REPORT.md), [`docs/phase6/ACCEPTANCE.md`](docs/phase6/ACCEPTANCE.md), and [`docs/formats/PROJECT_JSON_V4.md`](docs/formats/PROJECT_JSON_V4.md).
-
-
-## Phase 5.1 implementation
-
-### Character 01 is now a defined product surface
-
-- Character 01 is the avatar of the first official voicebank and SEAM's sample-splice product identity; it is not a singer persona.
-- Canonical low-poly art lives under `assets/character-01/source/`; bounded pre-rendered runtime portraits live under `assets/character-01/runtime/`.
-- Voicebank Manifest schema 3 can bind an optional `characterId` and `characterVersion`.
-- Native editor presentation modes are `Full`, `Minimal`, and `Off`.
-- Full mode occupies a dedicated right-side dock and never covers Piano Roll, Phoneme, Unit, or Automation lanes.
-- Character package presence never changes synthesis, exported audio, or PCM cache identity.
-- See `docs/phase5_1/CHARACTER_INTEGRATION.md` for the exact surface matrix and architecture boundary.
-
-### Native technical editor surfaces
-
-- Native Phoneme Lane populated from the Japanese phonemizer.
-- Native Unit Lane populated from persistent Unit selection overrides and renderer choice.
-- Native Pitch Automation lane.
-- Technical lanes are excluded from piano-roll note-drag hit testing.
-
-### Graphical Voicebank Studio and recording transport
-
-- `seam_voicebank_studio_native` is a real X11 application.
-- Unit browser, waveform, spectrogram, acoustic-marker editing, Pitch-Mark editing, and manifest save are wired to existing validated domain paths.
-- `IAudioInputDevice` adds an input-side platform contract.
-- Linux can capture through runtime-loaded PulseAudio Simple; CI/headless mode uses an explicit non-physical threaded input fallback.
-- `RecordingSession` uses preallocated bounded storage and exports mono PCM16 takes.
-
-### New executable
-
-```text
-seam_voicebank_studio_native   graphical bank inspector/editor + recording transport
-```
-
-## Phase 5 implementation
-
-### Native standalone editor
-
-- First-party retained `NativeEditorController` over the existing Project, Session, and PianoRoll models.
-- Deterministic BGRA software-raster `PixelSurface` and `RasterCanvas`.
-- Real X11 window with resize, pointer, wheel, keyboard, repaint, and timed-close handling.
-- XIM/XIC-backed Unicode lyric input with commit/cancel and undoable `SetLyricCommand`.
-- Logical 1×/2× DPI coordinate contract.
-- Native X11 smoke test under Xvfb with a real window screenshot.
-
-### Native playback runtime
-
-- Dedicated `PlaybackFeederService` thread is the only PCM producer.
-- UI transport methods enqueue timeline, loop, play, and seek commands.
-- Existing SPSC ring remains callback-consumer-owned.
-- Runtime-loaded PulseAudio Simple physical adapter for Linux.
-- Explicit callback-clock fallback that owns a real thread but reports `physical=false`.
-- Native app pre-buffers before starting the callback.
-
-### New executables
-
-```text
-seam_editor_native      interactive X11 standalone vertical slice
-seam_phase5_demo        deterministic UI/controller/audio evidence
-seam_phase5_benchmark   software paint and callback regression benchmark
-```
-
-## Phase 4.1 implementation
-
-### Render identity v3
-
-- Generated application version, render ABI, component revisions, and PCM cache format revision.
-- SHA-256 content identity.
-- Phrase-scoped canonical project state.
-- Immutable phoneme and deterministic Unit plans owned by the snapshot.
-- Selected Unit metadata only; unrelated Unit edits do not invalidate the Phrase.
-- SHA-256 of each selected WAV's actual bytes.
-- Decoded selected Unit audio is frozen from those same bytes, so an in-flight render cannot diverge after a file replacement.
-- Effective Raw, PSOLA, Spectral, Stretch, Pitch Curve, fallback, and Seam settings.
-- Cache identity and production rendering consume the same immutable plans.
-
-### Durable persistence and bounded input
-
-- Shared durable atomic writer for Project JSON and Voicebank Manifest persistence.
-- Same-directory temporary file, durable flush, atomic replace, parent-directory sync where supported, and `.bak` generation for canonical files.
-- Deterministic write-stage fault injection.
-- Exact signed 64-bit JSON representation.
-- Correct surrogate-pair handling and lone-surrogate rejection.
-- JSON input byte, depth, node, string, and collection limits.
-- Project and Manifest file-size limits.
-- Canonical voicebank asset containment with symbolic-link rejection.
-- PCM cache v3 validates declared payload against actual file size before allocating samples.
-
-### DSP boundary corrections
-
-- SpectralClassic and Stretch preserve the original recording through `stableStart`.
-- Only stable-vowel material is transformed; actual `vowelOnsetOffset` remains intact.
-- Phase-alignment offset remains consistent after the overlap.
-- Equal-power Seam mode uses a true equal-power gain law.
-- Regression tests cover the source transition and overlap-exit derivative.
-
-### Playback and scheduler concurrency
-
-- Fixed-capacity SPSC playback control queue.
-- Only the feeder mutates timeline, loop, playhead, and playing state.
-- Atomically published observations and statistics.
-- Consumer-owned audio-ring reset with monotonic request/acknowledgment epochs.
-- Producer no longer advances the consumer's read index.
-- Final scheduler revision gate after cache publication and before completion publication.
-- Deterministic concurrency regression tests and a ThreadSanitizer preset.
-
-### Transaction-safe editing
-
-- Composite command apply/revert uses a whole-Project transaction snapshot.
-- EditorSession execute, validation, undo, and redo failures restore the exact previous Project.
-- Failed undo/redo history is invalidated safely instead of retaining inconsistent command state.
-
-## Existing Phase 4 functionality
-
-### Four concrete Unit renderers
-
-- `RawLoopRenderer` for direct sample character and loop print.
-- `ClassicPsolaRenderer` for pitch-mark-controlled voiced sustain.
-- `SpectralClassicRenderer` for stable-vowel STFT pitch transformation with explicit formant and phase controls.
-- `StretchUnitRenderer` for deterministic Unit-scoped granular stretch.
-- Requested renderer, actual renderer, fallback state, and diagnostic remain inspectable.
-- Raw fallback occurs only after backend rejection and an explicit fallback policy.
-- All four renderers can coexist in one Phrase.
-
-### Inspection models
-
-- Unit Lane model with selected Unit, alternatives, destination geometry, target MIDI, forced state, actual renderer, fallback, and Seam data.
-- Sample Microscope model with waveform columns, spectrogram, acoustic markers, Pitch Marks, frame/pixel mapping, and hit tests.
-- Validated acoustic-marker and Pitch-Mark movement.
-- Edited voicebank manifest persistence in the end-to-end demo.
-
-### Callback-ready playback foundation
-
-- Absolute-frame `PlaybackTimeline` for vocal and backing clips.
-- Per-clip gain and edge fades.
-- Preallocated `PlaybackFeeder` with seek, loop, and watermark fill.
-- SPSC audio-ring handoff.
-- Allocation-free `RingBufferAudioProcessor` with deterministic zero-fill and underflow counters.
-- Stereo PCM16 evidence writer.
-
-## Verification
-
-Phase 10 retains every prior domain, synthesis, routing, distribution, recording, Unicode, native editor, and Voicebank Studio test while adding CLAP state, WAV conversion, dynamic module loading, host transport, and automation coverage.
-
-```text
-Named tests                            128 PASS / 0 FAIL
-Linux Debug CTest                       20/20 PASS
-Linux Release CTest                     20/20 PASS
-ASan + UBSan named tests               128 PASS / 0 FAIL
-ASan + UBSan Phase 10 CTest              6/6 PASS
-Dynamic ProjectSEAM.clap load           PASS
-WAV pack / inspect / extract            PASS
-clap_entry export                       PASS
-Phase 8 platform source contract        PASS
-Master-only policy                      PASS
-Dependency-license audit                PASS
-Git object integrity                    PASS
-```
-
-The aggregate Linux Debug/Release suites include the existing X11 editor and Voicebank Studio smokes. Phase 10 sanitizer evidence directly covers the entire named suite plus the demo, WAV/state bridge, and dynamic CLAP host path. Windows/macOS runtime evidence must still be collected on those operating systems.
-
-All configured builds use warnings as errors.
-
-## Honest current boundary
-
-Phase 9 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, recording devices, and trusted-system-font CJK/Latin rasterization. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated but are **not** represented as locally hardware-certified. GitHub Actions automation is deferred.
-
-The repository still does **not** claim:
-
-- physical Windows runtime acceptance for TSF, WASAPI speaker/microphone, DPI, focus, and window lifecycle;
-- physical macOS runtime acceptance for `NSTextInputClient`, CoreAudio speaker/microphone, backing scale, and lifecycle;
-- audited iPlug2 + Skia production integration;
-- full complex-script shaping beyond the implemented CJK/Latin product-UI scope;
-- a contract-recorded and release-cleared human voicebank;
-- CLAP, VST3, or AU plugin delivery.
-
-These are separate platform/content/plugin release gates, not fake placeholders. Character 01 remains an optional product surface and voicebank binding; it does not participate in routing, synthesis, recording, cache identity, package trust, or exported PCM.
-
-## Build
-
-```bash
-cmake --preset dev
-cmake --build --preset dev
-ctest --preset dev --output-on-failure
-```
-
-Release and memory/undefined-behavior sanitizer builds:
-
-```bash
-cmake --preset release
-cmake --build --preset release
-ctest --preset release --output-on-failure
-
-cmake --preset sanitize
-cmake --build --preset sanitize
-ctest --preset sanitize --output-on-failure
-```
-
-ThreadSanitizer:
-
-```bash
-cmake --preset thread-sanitize
-cmake --build --preset thread-sanitize
-ctest --preset thread-sanitize --output-on-failure
-```
-
-
-## Run the Phase 10 CLAP vertical slice
-
-Build and generate the diagnostic render/state:
-
-```bash
-./build/dev/seam_phase10_demo --output out/phase10
-```
-
-Pack an existing multichannel WAV, inspect the state, and extract it again:
-
-```bash
-./build/dev/seam_clap_state_tool pack \
-  out/phase10/phase10-diagnostic-4ch.wav \
-  out/phase10/render.seamclapstate \
-  --title "Project SEAM render" --gain-db 0
-./build/dev/seam_clap_state_tool inspect out/phase10/render.seamclapstate
-./build/dev/seam_clap_state_tool extract \
-  out/phase10/render.seamclapstate out/phase10/recovered.wav
-```
-
-Load the actual module through the first-party smoke host:
-
-```bash
-./build/dev/seam_clap_host \
-  --plugin ./build/dev/ProjectSEAM.clap \
-  --state out/phase10/render.seamclapstate \
-  --summary out/phase10/clap-host-summary.json
-```
-
-Generate reproducible Phase 10 evidence:
-
-```bash
-python3 scripts/generate_phase10_evidence.py --root . --skip-build
-```
-
-## Run the Phase 8 capability evidence
-
-```bash
-./build/dev/seam_phase8_demo --output out/phase8
-python3 scripts/verify_phase8_platform_sources.py --root .
-```
-
-The JSON output reports the platform selected by the current build. It does not replace physical-device and IME runtime acceptance.
-
-## Run the Phase 6 multichannel vertical slice
-
-```bash
-./build/dev/seam_phase6_demo --output out/phase6
-```
-
-Key output:
-
-```text
-out/phase6/phase6-routing-project.json
-out/phase6/phase6-four-channel-routing.wav
-out/phase6/phase6-summary.json
-```
-
-## Run the Phase 5 native runtime
-
-Headless deterministic vertical slice:
-
-```bash
-./build/dev/seam_phase5_demo --output out/phase5
-```
-
-Historical Phase 5 X11 route (platform-specific; the current editor requires a non-macOS vector backend before interactive use):
-
-```bash
-./build/dev/seam_editor_native
-```
-
-Historical Linux headless smoke command (local tooling, not configured GitHub orchestration):
-
-```bash
-xvfb-run -a ./build/dev/seam_editor_native \
-  --force-threaded-audio \
-  --auto-close-ms 500 \
-  --screenshot out/phase5-native-window.ppm
-```
-
-## Run the Phase 4 vertical slice
-
-```bash
-./build/dev/seam_phase4_demo --output out/phase4
-```
-
-Key output:
-
-```text
-out/phase4/phase4-demo.seam.json
-out/phase4/phase4-editor.svg
-out/phase4/phase4-microscope.svg
-out/phase4/phase4-mixed-render.wav
-out/phase4/phase4-raw-reference.wav
-out/phase4/phase4-playback-mix.wav
-out/phase4/phase4-callback-preview.wav
-out/phase4/phase4-waveform.svg
-out/phase4/phase4-spectrogram.pgm
-out/phase4/phase4-edited-voicebank-manifest.json
-out/phase4/phase4-summary.json
-```
-
-## Reproducible evidence
-
-Phase 8 cross-platform source and Linux regression evidence:
-
-```bash
-python3 scripts/generate_phase8_evidence.py --root .
-```
-
-Phase 5 native-runtime evidence:
-
-```bash
-python3 scripts/generate_phase5_evidence.py --root .
-```
-
-Phase 4.1 stabilization evidence:
-
-```bash
-python3 scripts/generate_phase4_1_evidence.py --root .
-```
-
-Or from the development build:
-
-```bash
-cmake --build --preset dev --target seam_phase4_1_evidence
-```
-
-Phase 4 audiovisual evidence remains reproducible with:
-
-```bash
-python3 scripts/generate_phase4_evidence.py --root .
-```
-
-## Benchmarks
-
-```bash
-./build/release/seam_phase1_benchmark
-./build/release/seam_phase2_benchmark
-./build/release/seam_phase3_benchmark
-./build/release/seam_phase4_benchmark
-./build/release/seam_phase5_benchmark
-./build/release/seam_phase10_benchmark
-```
-
-Benchmark values are machine- and build-specific regression evidence, not universal performance guarantees. SpectralClassic remains a correctness-first quality renderer and is not presented as a guaranteed real-time preview path.
+The first prints `USABLE_ALPHA_CONTRACT=PASS` when the contract record is valid; that line does not mean any requirement passed. VST3 validators, `auval`, Windows Authenticode, Apple notarization, clean-OS installer tests and commercial DAWs are mandatory and remain `NOT_RUN`.
 
 ## Repository policy
 
-Only `master` is permitted. Hooks are configured with:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-## Documentation
-
-- [`PHASE10_IMPLEMENTATION_REPORT.md`](PHASE10_IMPLEMENTATION_REPORT.md)
-- [`PHASE10_IMPLEMENTATION_REPORT_KO.md`](PHASE10_IMPLEMENTATION_REPORT_KO.md)
-- [`docs/phase10/ACCEPTANCE.md`](docs/phase10/ACCEPTANCE.md)
-- [`docs/architecture/CLAP_PLUGIN_RUNTIME.md`](docs/architecture/CLAP_PLUGIN_RUNTIME.md)
-- [`docs/formats/CLAP_STATE_V1.md`](docs/formats/CLAP_STATE_V1.md)
-- [`PHASE8_IMPLEMENTATION_REPORT.md`](PHASE8_IMPLEMENTATION_REPORT.md)
-- [`docs/phase8/ACCEPTANCE.md`](docs/phase8/ACCEPTANCE.md)
-- [`docs/phase8/PLATFORM_MATRIX.md`](docs/phase8/PLATFORM_MATRIX.md)
-- [`docs/phase8/BUILD_AND_RUNTIME.md`](docs/phase8/BUILD_AND_RUNTIME.md)
-- [`docs/architecture/NATIVE_PLATFORM_ADAPTERS.md`](docs/architecture/NATIVE_PLATFORM_ADAPTERS.md)
-- [`PHASE7_IMPLEMENTATION_REPORT.md`](PHASE7_IMPLEMENTATION_REPORT.md)
-- [`docs/phase7/SIGNING_AND_INSTALLATION.md`](docs/phase7/SIGNING_AND_INSTALLATION.md)
-- [`docs/phase7/ACCEPTANCE.md`](docs/phase7/ACCEPTANCE.md)
-- [`docs/formats/SEAMBANK_V1.md`](docs/formats/SEAMBANK_V1.md)
-- [`docs/phase6/IMPLEMENTATION_REPORT.md`](docs/phase6/IMPLEMENTATION_REPORT.md)
-- [`docs/phase6/ACCEPTANCE.md`](docs/phase6/ACCEPTANCE.md)
-- [`docs/formats/PROJECT_JSON_V4.md`](docs/formats/PROJECT_JSON_V4.md)
-- [`PHASE5_IMPLEMENTATION_REPORT.md`](PHASE5_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/PHASE5_NATIVE_RUNTIME.md`](docs/architecture/PHASE5_NATIVE_RUNTIME.md)
-- [`docs/phase5/ACCEPTANCE.md`](docs/phase5/ACCEPTANCE.md)
-- [`docs/phase5/EVIDENCE.md`](docs/phase5/EVIDENCE.md)
-- [`PHASE4_1_IMPLEMENTATION_REPORT.md`](PHASE4_1_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/PHASE4_1_STABILIZATION.md`](docs/architecture/PHASE4_1_STABILIZATION.md)
-- [`docs/phase4_1/ACCEPTANCE.md`](docs/phase4_1/ACCEPTANCE.md)
-- [`docs/phase4_1/EVIDENCE.md`](docs/phase4_1/EVIDENCE.md)
-- [`PHASE4_IMPLEMENTATION_REPORT.md`](PHASE4_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/PHASE4_SPECTRAL_PLAYBACK.md`](docs/architecture/PHASE4_SPECTRAL_PLAYBACK.md)
-- [`docs/licensing/DEPENDENCY_POLICY.md`](docs/licensing/DEPENDENCY_POLICY.md)
+Only `master` is permitted. Enable the hooks with `git config core.hooksPath .githooks`. Commit and push cadence, verification hygiene and evidence-honesty rules are in [AGENTS.md](AGENTS.md). Do not modify `.github`; CI work is deferred.
 
 ## Ownership and licensing
 
-Project source and first-party concept assets are currently proprietary and all rights are reserved. Distributed third-party source and assets are limited to the audited permissive/public-domain entries in `third_party/manifest.yml`; behavioral references are not vendored.
-
-See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`third_party/manifest.yml`](third_party/manifest.yml).
-
-## Phase 13A — VST3/AUv2 distribution and mandatory validation gates
-
-Phase 13A keeps CLAP canonical and projects it to VST3 and AUv2 through exact pinned, permissively licensed SDK checkouts. It adds fail-closed validator, signing, notarization, installer, and commercial-host evidence pipelines.
-
-```bash
-python3 -m unittest discover -s tests/phase13a -v
-python3 scripts/verify_phase13a_contracts.py --root .
-python3 tools/phase13a/release_gate.py check \
-  --matrix docs/phase13a/mandatory-validation-matrix.json --gate G4
-```
-
-The release-gate command is expected to report `passed=false` until actual target evidence exists. VST3 validators, `auval`, Windows Authenticode, Apple notarization, clean-OS installer tests, and commercial DAWs are mandatory and remain `NOT_RUN`; source or CI configuration never substitutes for execution.
-
-Local unsigned developer-package evidence:
-
-```bash
-python3 scripts/generate_phase13a_evidence.py \
-  --build-root build/phase13a-evidence \
-  --output out/phase13a
-```
-
-See:
-
-- `docs/phase13a/IMPLEMENTATION_REPORT_KO.md`
-- `docs/phase13a/MANDATORY_VALIDATION_KO.md`
-- `docs/phase13a/mandatory-validation-matrix.json`
-- `docs/phase13a/HOST_CERTIFICATION_MATRIX_KO.md`
-- `docs/phase13a/MANDATORY_FUTURE_VALIDATION_KO.md`
-
-
-## Phase 13B — Content/IP release engineering
-
-- validates every PASS evidence file by safe path, regular-file status, size and SHA-256;
-- keeps the public-domain human fixture non-official and uncontracted;
-- generates deterministic Character 01 key art, portrait, thumbnail, silhouette and palette as development assets;
-- creates a deterministic development-only content ZIP;
-- refuses an official content bundle unless Voicebank, Character, licences and all mandatory external matrices are PASS;
-- records real performer contract/recording, character name/trademark/IP and legal approvals as external gates rather than invented completion.
-
-See `docs/phase13b/`.
+Project source and first-party concept assets are proprietary and all rights are reserved. Distributed third-party source and assets are limited to the audited permissive and public-domain entries in `third_party/manifest.yml`; behavioral references are not vendored. See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [third_party/manifest.yml](third_party/manifest.yml).

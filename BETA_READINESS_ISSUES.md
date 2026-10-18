@@ -53,7 +53,8 @@ The register distinguishes implementation from release proof. A source contract,
 > still reproduce. Also note the subject: the 168336-byte export this evidence describes is the
 > 32-channel `mini-nsf-32-smoke-v1` fixture, not the 512-channel `mini-nsf-512-mrf-v1` architecture
 > that the current r3 run is training, so none of these numbers characterize the capacity SEAM is
-> actually building. See SEAM_COMPLETION_REVIEW_2026-09-20.md sections 3.3 and 3.4.
+> actually building. See SEAM_COMPLETION_REVIEW_2026-09-20.md sections 3.3 and 3.4 (retired from the
+> tree on 2026-10-18; recover it through docs/history/RETIRED_DOCUMENTS.md).
 
 - The logistic entry in [docs/implementation/INTEGRATED_SINGER_EXECUTION.md](docs/implementation/INTEGRATED_SINGER_EXECUTION.md)
   states "the vocoder is correct; the acoustic model is not". That claim is withdrawn there, with the

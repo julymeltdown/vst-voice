@@ -166,11 +166,9 @@ class PublicReleaseSourceContractTests(unittest.TestCase):
             "EvidenceRoot",
         ):
             self.assertIn(token, public_runbook)
-        for relative in (
-            "docs/STATUS.md",
-            "docs/RELEASE_READINESS.md",
-            "docs/RELEASE_READINESS_KO.md",
-        ):
+        # docs/STATUS.md is the single status page; the dated RELEASE_READINESS pages it
+        # replaced were retired on 2026-10-18 (docs/history/RETIRED_DOCUMENTS.md).
+        for relative in ("docs/STATUS.md",):
             text = (ROOT / relative).read_text(encoding="utf-8")
             self.assertIn("PUBLIC_ACTIVE", text, relative)
             self.assertIn("BLOCKED", text, relative)

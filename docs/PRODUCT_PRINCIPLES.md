@@ -2,13 +2,13 @@
 
 ## Audio
 
-1. The source of every sung sound is a licensed recorded sample.
+1. Every sung sound comes from an identified, rights-bound resource: a licensed recorded sample bank, a signed procedural singer recipe ([ADR 0022](adr/0022-procedural-singer-package-family.md)), or an admitted neural model. A recipe or model is never presented as recorded material.
 2. A phoneme boundary is a first-class editable object.
 3. Sample-to-sample timbre differences are not automatically normalized away.
 4. Digital impulses, clipping, DC jumps, buffer underruns, and corrupted timing are defects.
 5. Audible concatenation, source-pitch residue, and loop repetition may be intentional expression.
 6. Automatic decisions remain inspectable and replaceable by the user.
-7. The same project, engine version, voicebank hash, and render settings must produce deterministic output.
+7. The same project, engine version, resource identity, and render settings must produce deterministic output.
 
 ## Editor
 

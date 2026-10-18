@@ -122,7 +122,8 @@ remains `UNREVIEWED` and `releaseEligible` remains false in every report.
 The orchestration tests use explicitly named fake recognizers to exercise hash
 checks, control breaches, absent references, and text comparison. They establish
 tool behavior only. Real retained-packet runs are recorded separately in the root
-`SEAM_AUTOMATED_VERIFICATION_AND_ACCELERATION_2026-09-19.md` report.
+`SEAM_AUTOMATED_VERIFICATION_AND_ACCELERATION_2026-09-19.md` report, retired from the tree
+on 2026-10-18 and recoverable through `docs/history/RETIRED_DOCUMENTS.md`.
 
 ## Fixed LF contamination panel (developer-only)
 
