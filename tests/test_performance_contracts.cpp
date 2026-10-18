@@ -69,7 +69,7 @@ TEST_CASE("canonical dynamics lane rejects invalid presentation values") {
 TEST_CASE("project note keys are range checked before narrowing to a MIDI byte") {
   const seam::formats::ProjectJsonCodec codec;
   const auto loaded = codec.load(std::filesystem::path{SEAM_PERFORMANCE_SOURCE_ROOT} /
-                                "docs/phase3/evidence/phase3-demo.seam.json");
+                                "tests/fixtures/projects/schema-3-phase3-demo.seam");
   CHECK(loaded);
   const auto encoded = codec.encode(loaded.value());
   CHECK(encoded);
@@ -171,8 +171,8 @@ TEST_CASE("proposed performance acceptance rejects every stale captured revision
 TEST_CASE("historical schema two and three vocal files retain their actual score data") {
   const seam::formats::ProjectJsonCodec codec;
   const auto root = std::filesystem::path{SEAM_PERFORMANCE_SOURCE_ROOT};
-  for (const auto path : {"docs/phase2/evidence/phase2-demo.seam.json",
-                          "docs/phase3/evidence/phase3-demo.seam.json"}) {
+  for (const auto path : {"tests/fixtures/projects/schema-2-phase2-demo.seam",
+                          "tests/fixtures/projects/schema-3-phase3-demo.seam"}) {
     const auto loaded = codec.load(root / path);
     CHECK(loaded);
     CHECK(loaded.value().noteCount() == 4U);

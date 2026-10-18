@@ -9,6 +9,8 @@ These are newly generated test projects emitted by genuine historical SEAM codec
 | `schema-5-historical-writer.seam` | `c6392bf6c7022c41eaf08784dbb880b4434e1110` | `277c870c34bde5602bea4f29c7cb23f126b944bba08c7372560fd109af4ee012` |
 | `schema-6-historical-writer.seam` | `9973921e89d1fada01ba8bb4f8052b73ade63f66` | `ed56f3ea5895fcdc6eef963401c68f0bae57dc622e6d81e3e867d508dcea3083` |
 | `schema-7-historical-writer.seam` | `741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d` | `21038478e076003c29962ce54bafa463cfe8a33274c44602fb2875dcc3c4ffd7` |
+| `schema-2-phase2-demo.seam` | `786e12d28076d43b18009e55d215cfbbb06be562` | `cd80120487a52458d42f85a36e20dd6a1b4d776663922939a5df659903de8a22` |
+| `schema-3-phase3-demo.seam` | `d1afe623087f7b39b75b78eeac8f286274a486c8` | `0ecfa2044faf479dc16e8ada4018720fb12c0b1342d04898b2fef3b56253e3b2` |
 
 Generated on 2026-09-06 with AppleClang 21, C++20, Release. Historical sources were exported into isolated temporary directories with `git archive`; no historical codec/domain source was modified. CMake configured with tests/benchmarks disabled and, for schema 4, native desktop disabled. Warnings-as-errors remained enabled.
 
@@ -27,4 +29,6 @@ The historical schema-1 demo also built and round-tripped a 10,000-note project 
 
 Schemas 5 and 6 use `reemit.cpp`: their existing hand-authored `schema-5-audio-track.seam` and `schema-6-media-identity.seam` fixtures are input seeds, not asserted historical-writer outputs. The matching historical codec loads the seed, writes the new `*-historical-writer.seam` fixture with its original encoder, then loads its own output and verifies full domain equality. Invoke the driver as `./reemit /absolute/path/to/seed.seam /absolute/path/to/output.seam`. Both original codecs/domain/core libraries compiled unchanged with strict warnings. Their old CMake configurations require native desktop enabled when the default embedded editor is enabled; only `seam_formats` and its domain/core dependencies were built. An initial desktop-disabled configure rejection was resolved by enabling that existing option, not by modifying sources or gates.
 
-Schema 7 uses the same `reemit.cpp` procedure and the original diagnostic melody corpus as its seed. The corpus itself is not rewritten. Its historical codec/domain/core libraries built unchanged at the commit above; the emitted output round-trips exactly through that codec. Existing Phase 2/3 demo outputs supply the remaining schema-2/3 migration evidence. None of these seed or emitted fixtures represents measured singing quality.
+Schema 7 uses the same `reemit.cpp` procedure and the original diagnostic melody corpus as its seed. The corpus itself is not rewritten. Its historical codec/domain/core libraries built unchanged at the commit above; the emitted output round-trips exactly through that codec. None of these seed or emitted fixtures represents measured singing quality.
+
+The schema-2 and schema-3 fixtures are the Phase 2 and Phase 3 demo projects, written by those demos and committed as verification evidence in the commits listed above. They were copied byte for byte from `docs/phase2/evidence/phase2-demo.seam.json` and `docs/phase3/evidence/phase3-demo.seam.json` on 2026-10-18 so that tests no longer read historical evidence; the evidence copies stay unchanged. Each has four notes, the first at tick 1920 on MIDI key 64.

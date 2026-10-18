@@ -50,12 +50,9 @@ A record describes its own date and commit. Do not edit an old record to make it
 
 ## 6. Phase records — historical, partly load-bearing
 
-`phase1/` through `phase13b/` and the phase-numbered notes in [architecture/](architecture/) describe the August–September phases. Treat them as history, except for files that tests or verifiers still read:
+`phase1/` through `phase13b/` and the phase-numbered notes in [architecture/](architecture/) describe the August–September phases. Treat them as history, except for the `phase12b/`, `phase12c/`, `phase13a/` and `phase13b/` documents that their contract verifiers still read. The schema-2 and schema-3 test projects that used to be read from `phase2/evidence/` and `phase3/evidence/` are now copies under `tests/fixtures/projects/`; the evidence files themselves are unchanged.
 
-- `phase2/evidence/phase2-demo.seam.json` and `phase3/evidence/phase3-demo.seam.json` are performance-test fixtures;
-- `phase12b/`, `phase12c/`, `phase13a/` and `phase13b/` documents are read by their contract verifiers.
-
-The completion plan schedules moving those fixtures into `tests/fixtures/` and retiring the rest.
+The completion plan schedules auditing those verifiers and retiring the checks that only guard historical wording (M0-2).
 
 ## 7. Retired documents
 

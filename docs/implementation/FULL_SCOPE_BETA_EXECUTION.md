@@ -9658,3 +9658,9 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 - **Change.** Renumbered the later ADR 0020 to [0023](../adr/0023-usable-alpha-rendering-architecture.md) (plan E-14) and fixed file 0010's heading, which said 0009. Added dated status notes where code or practice has moved past the decision: 0023 (the SING shell paints only through the CoreGraphics/CoreText canvas since `9d05f869`), 0018 (iPlug2/Skia never adopted; option removed in `fd0893da`), 0021 (the shell bundles OFL fonts), 0003 (SVG proof painter retired) and 0005 (`codex/*` branches per AGENTS.md; 45 local branches; hooks not installed).
 - **Gate or cost.** No gate moved. Finding: a default `seam_license_audit` run fails with the branch check as its only error and passes with `--allow-non-master`; reconciliation is plan E-15 under owner decision D7.
 - **Verification.** Diff and link checks; tracked-source closure after staging the rename. No test, tool or script reads the ADR files; no verifier changed.
+
+### M0-1 — test fixtures out of `docs/` — 2026-10-18
+
+- **Change.** `tests/test_performance_contracts.cpp` and `tests/test_schema8_performance.cpp` read the schema-2 and schema-3 demo projects from `tests/fixtures/projects/schema-2-phase2-demo.seam` and `schema-3-phase3-demo.seam`, byte-identical copies of the Phase 2/3 evidence files with origin commits and SHA-256 in `tests/fixtures/projects/generators/README.md`. The evidence files are unchanged.
+- **Gate or cost.** Cost: no test, tool or script reads `docs/phase2/` or `docs/phase3/` any more.
+- **Verification.** Focused rebuild of both test targets (binaries newer than the sources; their strings contain only the new paths); `seam_performance_contract_tests` and `seam_schema8_performance_tests` pass; tracked-source closure 2/2 after staging.

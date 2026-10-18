@@ -231,8 +231,8 @@ TEST_CASE("real legacy project fixtures migrate neutrally and reencode without m
   const seam::formats::ProjectJsonCodec codec;
   for (const auto& [path, version] : std::array{
       std::pair{"tests/fixtures/projects/schema-1-historical-writer.seam", 1},
-      std::pair{"docs/phase2/evidence/phase2-demo.seam.json", 2},
-      std::pair{"docs/phase3/evidence/phase3-demo.seam.json", 3},
+      std::pair{"tests/fixtures/projects/schema-2-phase2-demo.seam", 2},
+      std::pair{"tests/fixtures/projects/schema-3-phase3-demo.seam", 3},
       std::pair{"tests/fixtures/projects/schema-4-historical-writer.seam", 4},
       std::pair{"tests/fixtures/projects/schema-5-historical-writer.seam", 5},
       std::pair{"tests/fixtures/projects/schema-6-historical-writer.seam", 6},

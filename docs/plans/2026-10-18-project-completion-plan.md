@@ -85,7 +85,7 @@ Usable Alpha (UA), the Beta bank gate, External Beta (EB), the full product cont
 1. `seam_platform` links `seam_voicebank` only to reach `seam/voicebank/wav.hpp` from `recording_session`. That lifts the platform library from layer 3 to layer 4 and makes every platform consumer link `seam_voicebank` and `seam_phonemizer`. `seam_formats` and `seam_domain` stay below the platform layer either way: `crash_capture.cpp` uses the JSON codec and the audio devices include `seam/domain/routing.hpp`.
 2. `seam_native_ui` (about 55k lines) links the authoring runtime, the producer packaging stack and character packages at once.
 3. 141 test executables each statically link large parts of the tree, so link time dominates many rebuilds. The libraries with the highest fan-in are `seam_core` (27), `seam_domain` (17), `seam_formats` (15) and `seam_voicebank` (13).
-4. Current code lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, `seam_phaseN_demo`), and two C++ test files read project fixtures from `docs/phase2/evidence` and `docs/phase3/evidence`.
+4. Current code lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, `seam_phaseN_demo`). Until M0-1, two C++ test files also read project fixtures from `docs/phase2/evidence` and `docs/phase3/evidence`.
 
 These raise change cost. None of them blocks a gate.
 
@@ -196,6 +196,8 @@ Durations below are **estimates** for one developer working with coding agents. 
 Already done on 2026-10-18: see Appendix A. Remaining work packages:
 
 **M0-1 Move test fixtures out of `docs/`.**
+
+**Done on 2026-10-18.** The tests now read `tests/fixtures/projects/schema-2-phase2-demo.seam` and `schema-3-phase3-demo.seam`, byte-identical copies whose origin commits and SHA-256 are listed in `tests/fixtures/projects/generators/README.md`. No test, tool or script reads `docs/phase2/` or `docs/phase3/` any more.
 
 - `tests/test_performance_contracts.cpp` (lines 72 and 174–175) and `tests/test_schema8_performance.cpp` (lines 234–235) read `docs/phase2/evidence/phase2-demo.seam.json` and `docs/phase3/evidence/phase3-demo.seam.json`. Copy both files into `tests/fixtures/projects/`, point the tests there, and leave the historical evidence untouched.
 - Verify with the affected CTest entries.
@@ -340,7 +342,7 @@ Ordered by when the item is worth doing, not by size. Each item names its gate l
 | ID | Item | Code | Gate or cost | When |
 |---|---|---|---|---|
 | E-01 | Producer commands check that `WORKSPACE/generations` is a directory before they take the writer lock (`59002e91` review of 2026-10-15, optional item 1) | `apps/seam-voicebank-cli/` producer commands, or `ProductionProjectRepository` so that every repository-backed command shares the check; the lock file is opened with `O_CREAT` in `libs/seam-voicebank-production/src/repository.cpp:58` | M1-3 usability: today an unrelated directory gets an empty `.writer.lock` and a refusal that blames newer work, and a missing path reports a busy lock | M1-3 |
-| E-02 | Move test fixtures out of `docs/` and declare CTest fixtures | See M0-1, M0-3 | Cost: filtered runs and history cleanup | M0 |
+| E-02 | Move test fixtures out of `docs/` and declare CTest fixtures | See M0-1 (done) and M0-3 | Cost: filtered runs and history cleanup | M0 |
 | E-03 | CTest labels and measured tiers | `CMakeLists.txt`, `phase12c/`, `phase13a/`, `phase13b/` | Cost: lets §7 tiers run | M0 |
 | E-04 | Audit and retire phase-era document-locking verifiers; then retire `docs/remaining-tasks.json` | `scripts/verify_phase1{1,2a,2b,3a,3b}_*.py`, `tests/phase13b/test_source_contract.py` | Cost: contract tests that lock history | M0 |
 | E-05 | One gate vocabulary; Phase 13A extra hosts optional | `tools/external_beta/release_status.py`, `docs/phase13a/mandatory-validation-matrix.json`, `tests/phase13a/` | Removes conflicting host lists | After D6 |
@@ -428,7 +430,7 @@ Not changed: `.github`, the Windows TODO, the U45 hold, every contract JSON, eve
 | Item | Why it stays | Exit |
 |---|---|---|
 | `seam_phase2_demo` … `seam_phase12b_demo` | Smoke tests consume their outputs as fixtures | M0-3 renames them |
-| `docs/phase1`–`docs/phase13b` | Some files are test fixtures or verifier inputs | M0-1, M0-2 |
+| `docs/phase1`–`docs/phase13b` | Some files are verifier inputs (the test fixtures moved out in M0-1) | M0-2 |
 | `docs/remaining-tasks.json` | Read by the Phase 12B/13B verifiers | E-04 |
 | `docs/beta/*` stubs | Required entry points in the External Beta source contract | E-12 |
 | `BETA_READINESS_ISSUES.md` (last substantive update 2026-10-08) | `tools/external_beta/release_status.py` and `tests/external_beta/test_readiness_register_citations.py` read it | Fold its open items into this plan's backlog, then move it with its two consumers |
