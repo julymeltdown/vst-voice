@@ -9,6 +9,7 @@ The repository holds about 1,200 tracked files under `docs/`. Most are dated eng
 | [README](../README.md) | What the project is, build/run/test, Windows TODO, repository layout |
 | [STATUS](STATUS.md) | Gate states and the checks behind them |
 | [Completion plan](plans/2026-10-18-project-completion-plan.md) | What to do next, in what order, and when to stop |
+| [Functional readiness](plans/FUNCTIONAL_READINESS.md) | What still stops the product from functioning for a user, ranked next actions, and the seven-hourly direction log |
 | [Current engineering entrypoints](implementation/CURRENT_ENGINEERING_ENTRYPOINTS.md) | Which code owns each production API; legacy and compatibility surfaces |
 | [Architecture overview](architecture/OVERVIEW.md) | Library layers, dependencies, data flow, structural costs |
 | [DESIGN.md](../DESIGN.md) and [UI fidelity contract](design/ui-fidelity-contract-v1.json) | Main editor design authority |
