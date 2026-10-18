@@ -385,7 +385,7 @@ Not on the list on purpose: a rewrite of any library, a new evidence format, a n
 |---|---|---|---|
 | T0 Focused | Build the touched targets and run their tests | Leaf-only changes: one app, one test file, Python tooling | Seconds to 2 minutes |
 | T1 Standard | Full `cmake --build build/release -j6`, then the CTest entries for touched areas: `-R` selects by name, `-L` a whole tier, and `-LE '^slow$'` runs the 209 entries under 5 s in about 2 minutes | Any change under `libs/` or to shared headers | About 1–7 minutes to build, depending on fan-in |
-| T2 Full | Full serial `ctest --test-dir build/release` | CMake target changes, cross-library refactors, before a milestone review, at least daily during active work | About 12 minutes. On 2026-10-18 it took 745.64 s for 240 entries at `a51735c5`, and the three kind tiers run one after another took 731 s; the first run that day took 884 s |
+| T2 Full | Full serial `ctest --test-dir build/release` | CMake target changes, cross-library refactors, before a milestone review, at least daily during active work | About 12 minutes: 726.7 s for 241 entries at `0bbf3997` on 2026-10-19, and 745.64 s for 240 entries at `a51735c5` on 2026-10-18; the first run on 2026-10-18 took 884 s |
 | T3 Instrumented | ASan/UBSan (`build/sanitize`) and TSan (`build/thread-sanitize`) on the affected entries | Concurrency, memory ownership, process lifetime, audio callback, durability code | Scoped; minutes |
 | T4 Human and target | Listening, unaided journeys, signed installs, DAWs, clean environments | Milestone exits only | Owner time |
 

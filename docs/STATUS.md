@@ -53,7 +53,7 @@ Measured on 2026-10-18 in `build/release` on the development Mac (Apple M3 Max, 
 | `ctest --preset release -L '^journey$'` | 55 | 140 s |
 | `ctest --preset release -L '^contract$'` | 39: the 38 contracts plus the Phase 12C matrix setup | 206 s |
 | `ctest --preset release -LE '^slow$'` | 209 | 128 s |
-| `ctest --preset release` | 241 | About 731 s, the sum of the three kind tiers |
+| `ctest --preset release` | 241 | 727 s, run on 2026-10-19 at `0bbf3997` (the three kind tiers above add up to 731 s) |
 
 ## How to refresh this page
 

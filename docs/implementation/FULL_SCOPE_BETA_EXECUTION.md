@@ -9701,3 +9701,7 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 - **Change.** None to code. Measured two focused loops on `build/release` (M3 Max, `-j6`), taking each build's outputs from `.ninja_log` by modification time, because Ninja compacts the log and its order no longer marks builds. Touching `repository.hpp` took 50.7 s: 87 compiles (267 s CPU) and 106 links (14.8 s CPU, 5%), with about 0.1 s of linking after the last compile. Nine of the compiles were `voicebank_studio_*.cpp` files (32.5 s CPU) and none was an editor file. Touching `repository.cpp` took 5.1 s, 3.4 s of it linking after one compile.
 - **Gate or cost.** Cost: linking stays far below the plan's 30% threshold, so the test executables are not consolidated. Plan E-08 is done and E-09 carries the Studio measurement.
 - **Verification.** Two timed `cmake --build build/release -j6` runs, each after a `touch` of an up-to-date tree; contents were unchanged, so `git status` stayed clean.
+
+### Full suite after E-10, E-01 and E-08 — 2026-10-19
+
+- **Verification.** Full Release build, then full serial CTest at `0bbf3997`: 241/241 in 726.7 s. STATUS and plan §7 record the time.
