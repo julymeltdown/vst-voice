@@ -30,7 +30,7 @@ The repository holds about 1,200 tracked files under `docs/`. Most are dated eng
 | Location | Contents |
 |---|---|
 | [formats/](formats/) | File-format specifications. Several versions coexist on purpose because readers stay compatible; the highest version of each family is current |
-| [adr/](adr/) | Architecture decisions, append-only. Two files share the number 0020; both are valid decisions |
+| [adr/](adr/) | Architecture decisions, append-only. A decision that code or practice has moved past keeps its file and gains a dated status note naming what replaced it (0003, 0005, 0018, 0021 and 0023 carry one) |
 | [design/](design/) | UI fidelity contract, design system, fidelity reviews, captures and benchmarks |
 | [authoring/](authoring/), [brand/](brand/), [licensing/](licensing/), [references/](references/) | Authoring behavior notes, Character 01 brand drafts, dependency and reference policy, reference ledger |
 

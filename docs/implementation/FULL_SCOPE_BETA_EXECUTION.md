@@ -9652,3 +9652,9 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 
 - **Change.** Re-checked the plan's code references at `9baf8d23`. Corrected the `seam_platform` layering claim in plan §2.5 and E-07 and in the [architecture overview](../architecture/OVERVIEW.md): the `seam_voicebank` link lifts the platform library from layer 3 to 4 and adds `seam_voicebank` and `seam_phonemizer` beneath it, while `seam_formats` and `seam_domain` are direct needs either way. E-01 now names the lock site (`repository.cpp:58`) and the review's suggested check; the overview states which UI files a producer header change recompiles.
 - **Verification.** `git diff --check`; current-guidance links resolve; no test reads the changed files. Fixture lines, `LABELS` count, legacy campaign call sites, ADR 0020 collision, `wav.hpp` includers and the D5 files matched the plan unchanged.
+
+### ADR status refresh — 2026-10-18
+
+- **Change.** Renumbered the later ADR 0020 to [0023](../adr/0023-usable-alpha-rendering-architecture.md) (plan E-14) and fixed file 0010's heading, which said 0009. Added dated status notes where code or practice has moved past the decision: 0023 (the SING shell paints only through the CoreGraphics/CoreText canvas since `9d05f869`), 0018 (iPlug2/Skia never adopted; option removed in `fd0893da`), 0021 (the shell bundles OFL fonts), 0003 (SVG proof painter retired) and 0005 (`codex/*` branches per AGENTS.md; 45 local branches; hooks not installed).
+- **Gate or cost.** No gate moved. Finding: a default `seam_license_audit` run fails with the branch check as its only error and passes with `--allow-non-master`; reconciliation is plan E-15 under owner decision D7.
+- **Verification.** Diff and link checks; tracked-source closure after staging the rename. No test, tool or script reads the ADR files; no verifier changed.

@@ -1,7 +1,9 @@
-# ADR 0020: Keep the first-party software-raster shell for Usable Alpha
+# ADR 0023: Keep the first-party software-raster shell for Usable Alpha
 
-**Status:** Accepted
-**Date:** 2026-08-22
+**Status:** Superseded for the main editor (see the status note)
+**Date:** 2026-08-22. Renumbered from a duplicate 0020 on 2026-10-18.
+
+> **Status note, 2026-10-18.** The SING shell is now the only editor surface in the standalone app and the CLAP plug-in, and it draws only through the macOS CoreGraphics/CoreText vector canvas (`libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm`, introduced in `9d05f869` on 2026-09-25). The raster editor painter `EditorScenePainter` and its toggle were removed in `dd39f71d`, `b8841295` and `65efed34`. That change is recorded in the [native editor design system](../design/NATIVE_EDITOR_DESIGN_SYSTEM.md) (§1 and §13), not in the new ADR that the last consequence below asks for. `RasterCanvas` and `PixelSurface` still serve Voicebank Studio and the raster utilities, and for those surfaces this decision still describes the code.
 
 ## Context
 

@@ -3,6 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-08-16
 
+> **Status note, 2026-10-18.** The iPlug2/Skia shell this ADR anticipated was never adopted; its inert build option was removed on 2026-10-18 (`fd0893da`). The editor is now the SING shell on the macOS CoreGraphics/CoreText canvas (see [ADR 0023](0023-usable-alpha-rendering-architecture.md)). The first-party controller, `PixelSurface`/`RasterCanvas` and the AppKit, Win32 and X11 window adapters described here still exist.
+
 ## Context
 
 Phase 4.1 made the domain, renderer, cache, and playback contracts safe enough for a native runtime. The intended long-term shell remains iPlug2 with Skia, but those source trees are not vendored and their exact transitive build closure has not yet passed the repository's permissive-license gate. Blocking all native integration until that audit would leave window, event, IME, DPI, and callback contracts untested.

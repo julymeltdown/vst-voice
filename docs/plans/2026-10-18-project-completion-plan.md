@@ -159,6 +159,8 @@ Without this amendment External Beta cannot start until a Windows host exists. T
 
 **Recommendation:** adopt the rules in §3. One independent review per milestone exit and for the high-risk areas; no per-unit dated report; ledger entries of at most six lines; evidence JSON only for gate rows. This replaces the per-commit review-and-record cycle used since September (§2.3). AGENTS.md does not require that cycle, so no repository rule has to be overridden, but it is the owner's working practice and the owner should confirm the change.
 
+D7 also settles the branch policy. [ADR 0005](../adr/0005-master-only.md) forbids every branch except `master`, while AGENTS.md sends isolated work to `codex/*` worktree branches; the main checkout has 45 other local branches. The hooks that would enforce ADR 0005 are not installed, so nothing blocks those branches. But `scripts/verify_master_branch.py` fails on them, and a default `seam_license_audit` run fails with that branch check as its only error, so a real license finding would be reported behind a policy error. **Recommendation:** amend ADR 0005 so that `master` is the only integration and release branch and short-lived `codex/*` branches are allowed, then implement E-15.
+
 ### D8 — Accounts, licenses and machines (blocks parts of M2)
 
 The owner supplies:
@@ -348,7 +350,8 @@ Ordered by when the item is worth doing, not by size. Each item names its gate l
 | E-11 | Decide on the protocol-1 neural launcher | `runNeuralWorker` serves legacy probes; protocol-1 packages must stay parseable | Decision with the M3 neural plan | M3 |
 | E-12 | Consolidate user-document channels | `docs/beta/` pointer stubs, `docs/manual/`, `docs/public/`, `docs/support/`, `docs/product/external-beta-documentation.json`, `public-release-acceptance.json` | One source per document with per-channel manifests | After D4 |
 | E-13 | Rename historical directories and targets | `phase12c/`, `phase13a/`, `phase13b/`, `tools/phase13a`, `tools/phase13b` | Cost: naming confusion only | Last, after E-04, because verifiers hard-code these paths |
-| E-14 | ADR number collision | Two `docs/adr/0020-*` files; renumber the later one to 0023 and update links | Hygiene | Any time |
+| E-14 | ADR number collision | Done on 2026-10-18: the later 0020 is now `0023-usable-alpha-rendering-architecture.md`, and file 0010's heading, which said 0009, now says 0010 | Hygiene | Done |
+| E-15 | Reconcile the branch policy with practice | `docs/adr/0005-master-only.md`; `scripts/verify_master_branch.py` (rejects any local branch except `master`); `.githooks/pre-commit` and `pre-push`; `tools/license-auditor/audit.py`, which adds the branch check to its errors unless `--allow-non-master` is passed. Keep the branch check as its own target and drop it from the license audit, or allow `codex/*` in it | A license audit that passes in the integrating checkout; hooks that can be installed without blocking AGENTS.md's worktree flow | After D7 |
 
 Not on the list on purpose: a rewrite of any library, a new evidence format, a new review layer, additional gate tooling. §3 rule 2 applies.
 
@@ -375,7 +378,7 @@ Keep the hygiene rules in [AGENTS.md](../../AGENTS.md): a full dependent rebuild
 - **Reports:** no dated per-unit report. Write one report per milestone exit, plus a decision record when an owner decision changes a contract.
 - **Evidence:** hash-bound files only for gate rows (UA, bank gate, EB) and milestone reviews. Local engineering logs stay under ignored `out/`.
 - **Review:** one independent review per milestone exit, plus targeted review of signing, trust, rights, installation, recovery and audio-callback changes. A verdict goes into that milestone's review file; it does not get its own commit.
-- **Retirement:** when a document stops being true, delete it and add one row to [RETIRED_DOCUMENTS.md](../history/RETIRED_DOCUMENTS.md). Do not leave it in place with a "historical" banner.
+- **Retirement:** when a document stops being true, delete it and add one row to [RETIRED_DOCUMENTS.md](../history/RETIRED_DOCUMENTS.md). Do not leave it in place with a "historical" banner. ADRs are the exception because they are append-only decision records: a decision that no longer holds keeps its file and gains a dated status note naming what replaced it.
 
 ---
 
@@ -408,7 +411,9 @@ Each unit was verified before commit and pushed to `origin/master`. Local `HEAD`
 | `fd0893da` | Removed four never-included public headers (`seam/core/hash.hpp`, `seam/distribution/signer_provider.hpp`, `seam/live_voice/expression.hpp`, `seam/platform/desktop_backend.hpp`), the inert `SEAM_ENABLE_IPLUG2_SKIA` option and its architecture note | Reconfigure; full Release build, 1,101 planned steps, no errors; source-closure and neural-direction CTest 3/3 |
 | `c52517f9`, `41dc63fd` | Retired nine `scripts/generate_phaseN_evidence.py` generators and their `seam_phaseN_evidence` targets (they overwrote tracked historical evidence), the Phase 1 demo, six benchmarks used only by those generators, and `SvgEditorRenderer`, which only the Phase 1 demo used | Reconfigure; Release build; full serial CTest 239/240; the one failure was the signer-provider presence check, fixed in `c52517f9` and passing on rerun |
 | `bdb04d82` | Retired 82 files: an unrelated project's guide committed by mistake, 21 root phase reports, 23 root dated plans, reviews and logs, 6 stale status/backlog/readiness pages, 17 superseded plans and agent planning files, 8 dated product reports, and 4 superseded architecture/UX notes and placeholders; untracked 2 agent artifacts (local copies kept). Rewrote README, STATUS and the architecture overview from the target graph; added the documentation map, the retirement index and this plan; updated product principles 1 and 7 to the three resource families | Documentation, link and contract checks listed in the commit |
-| The commit after `bdb04d82` | Root ledger entry for the cleanup and this table | Link and diff checks |
+| `9baf8d23` | Root ledger entry for the cleanup and this table | Link and diff checks |
+| `5c51a302` | Corrected this plan's `seam_platform` layering claim (§2.5, E-07) and E-01's lock site, and the same layering claim in the architecture overview | Diff and link checks |
+| The ADR commit after `5c51a302` | Renumbered the later ADR 0020 to 0023, fixed file 0010's heading, and added dated status notes to ADRs 0003, 0005, 0018, 0021 and 0023 where the code or the working practice has moved past the decision | Link check; tracked-source closure after staging the rename |
 
 One slip is recorded here rather than hidden: `c52517f9` was meant to carry only the test fix, but the already-staged deletions of the generator unit went with it while that unit's `CMakeLists.txt` edit stayed unstaged. `c52517f9` alone therefore does not configure. `41dc63fd` followed immediately and restored the verified tree; history was not rewritten. Bisecting across this range should skip `c52517f9`.
 
@@ -443,7 +448,7 @@ D3 Beta bank route (contract singer / own voice / other): ___________
 D4 Rights approver + external reviewer:       ______________________
 D5 Producer ID / Alpha reviewer ID / Beta reviewer ID: ______ / ______ / ______
 D6 macOS-only External Beta 1 amendment:      yes / no
-D7 Milestone review protocol (§3):            yes / edit: __________
+D7 Review protocol (§3) and branch policy (E-15): yes / edit: __________
 D8 Apple Developer, DAW licenses, clean Mac, root-key device: ______
 D9 Observation session date (or results):     ______________________
 ```

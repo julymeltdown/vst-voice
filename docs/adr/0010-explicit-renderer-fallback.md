@@ -1,4 +1,4 @@
-# ADR 0009: Renderer fallback must be explicit
+# ADR 0010: Renderer fallback must be explicit
 
 ## Status
 

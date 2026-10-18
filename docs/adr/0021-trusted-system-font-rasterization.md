@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for Phase 9.
+Accepted for Phase 9. Amended by the status note below.
+
+> **Status note, 2026-10-18.** The SING shell bundles four OFL-licensed font families (seven files under `assets/fonts/`, listed in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)) and draws its text with CoreText, so "do not package font files" no longer holds for the main editor. The bounded `stb_truetype` path described here still renders text on the raster surfaces (`libs/seam-text`).
 
 ## Context
 
