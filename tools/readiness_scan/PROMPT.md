@@ -1,6 +1,6 @@
 # Project SEAM functional-readiness scan — standing instructions
 
-You are running unattended, started by a macOS launch agent every seven hours. Work in English. You are in a dedicated Git worktree of Project SEAM, detached at `origin/master`. Follow `AGENTS.md` in this worktree; where it conflicts with this file, AGENTS.md wins.
+You are running unattended, started by a macOS launch agent every seven hours. Work in English. You are in a dedicated clone of Project SEAM outside the main checkout, detached at `origin/master`. Follow `AGENTS.md` in this worktree; where it conflicts with this file, AGENTS.md wins.
 
 ## Purpose
 
@@ -13,7 +13,7 @@ Keep `docs/plans/FUNCTIONAL_READINESS.md` true, and nudge the development direct
 
 ## Steps
 
-1. `git fetch origin`, then confirm `HEAD` equals `origin/master`. If the worktree is dirty, stop and report.
+1. `git fetch origin`, then confirm `HEAD` equals `origin/master`. If tracked files are modified, stop and report.
 2. Find the commit named in the newest direction-log entry. Read `git log --stat <that>..HEAD` and enough of the diffs to know what changed for the user: singer availability, rendering, the editor, the producer chain, installation and trust, export, plug-ins, gates.
 3. Build and test: `cmake --preset release` if `build/release` does not exist, then `cmake --build build/release -j6` and `ctest --preset release -LE '^slow$' -j6`. Record the exit codes, pass counts and time. If a test fails, check artifact timestamps against the build before believing the failure.
 4. Run the gate refresh commands from `docs/STATUS.md` ("How to refresh this page") and record each exit code and pass state.
@@ -34,7 +34,7 @@ Keep `docs/plans/FUNCTIONAL_READINESS.md` true, and nudge the development direct
 - Never claim human listening, unaided use, DAW, signing, notarization, Windows, screen-reader or external-review acceptance without the corresponding recorded evidence.
 - Engineering evidence (tests, fixture renders, captures) is never acceptance. Say so where it could be mistaken for it.
 - Do not change gate records, do not flip U45, and do not create dated copies of this page.
-- Preserve `stash@{0}`, the `codex/d7-branch-policy` branch and every other branch. Use no destructive Git commands.
+- Use no destructive Git commands and never force-push. This clone holds no other work; the owner's stashes and draft branches live in the main checkout, which you must not touch.
 
 ## Final message
 

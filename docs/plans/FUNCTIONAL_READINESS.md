@@ -122,7 +122,7 @@ Do not start M2 release engineering (signing scripts, host matrix, soak runs) be
 
 ## 9. How this page is maintained
 
-A macOS launch agent (`~/Library/LaunchAgents/com.projectseam.readiness-scan.plist`) runs [tools/readiness_scan/run_scan.sh](../../tools/readiness_scan/run_scan.sh) every seven hours. The script works in a dedicated worktree at `~/.codex/worktrees/readiness-scan`, so it never touches the main checkout. It runs `codex exec` with the contract in [tools/readiness_scan/PROMPT.md](../../tools/readiness_scan/PROMPT.md). Each scan:
+A macOS launch agent (`~/Library/LaunchAgents/com.projectseam.readiness-scan.plist`) runs every seven hours. It starts an installed copy of [tools/readiness_scan/bootstrap.sh](../../tools/readiness_scan/bootstrap.sh) at `~/.codex/readiness-scan/bootstrap.sh`. The bootstrap works in a separate clone at `~/.codex/worktrees/readiness-scan`, kept outside `~/Downloads` because macOS privacy protection blocks launch agents from reading that folder, so the main checkout is never touched. It fast-forwards the clone to `origin/master` and hands over to [tools/readiness_scan/run_scan.sh](../../tools/readiness_scan/run_scan.sh), which runs `codex exec` with the contract in [tools/readiness_scan/PROMPT.md](../../tools/readiness_scan/PROMPT.md) under a two-hour limit. Each scan:
 
 1. fast-forwards to `origin/master`;
 2. reads the commits since the last log entry;
@@ -130,7 +130,7 @@ A macOS launch agent (`~/Library/LaunchAgents/com.projectseam.readiness-scan.pli
 4. updates sections 1–8 only where evidence changed and appends one direction-log entry with at most one ranking change;
 5. commits this page alone and pushes it, then verifies the remote hash. If anything fails it writes a log and stops without pushing.
 
-Logs go to `~/Library/Logs/ProjectSEAM/readiness-scan/`. To stop the schedule: `launchctl bootout gui/$(id -u)/com.projectseam.readiness-scan`.
+Logs and each run's short summary go to `~/Library/Logs/ProjectSEAM/readiness-scan/`, and the summary's first line appears as a macOS notification. To recreate the clone, run `git clone <main checkout> ~/.codex/worktrees/readiness-scan` and then `git -C ~/.codex/worktrees/readiness-scan remote set-url origin https://github.com/julymeltdown/vst-voice.git`. To stop the schedule: `launchctl bootout gui/$(id -u)/com.projectseam.readiness-scan`.
 
 ## 10. Direction log
 
