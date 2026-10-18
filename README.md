@@ -67,7 +67,7 @@ Verification hygiene this repository has paid for:
 | `seam_voicebank_cli`, `seam_bank_tool` | same | Bank validation, packaging, signing, installation, score import/export (USTX, SMF) and engineering operations. |
 | `seam_singer_pilot` | same | Positional diagnostic writer. Read [its source](apps/seam-singer-pilot/main.cpp) before running it; its musical output is unqualified. |
 | `seam_neural_worker` | same | Optional out-of-process neural worker (protocol 3). Only arithmetic fixtures run today; no learned singer is qualified. |
-| `seam_phaseN_demo` | same | Kept only because smoke tests consume their outputs as fixtures (for example the synthetic voicebank and the CLAP state WAV). They are not product surfaces. |
+| `seam_fixture_*`, `seam_smoke_*` | same | Test inputs and smoke journeys, not product surfaces. `seam_fixture_synthetic_bank` and `seam_fixture_clap_state_wav` write the synthetic voicebank and CLAP state WAV that later tests read; the nine `seam_smoke_*` programs each run one pipeline end to end (PSOLA render, editing and render cache, native editor capture, four-channel routing, signed bank install, platform capabilities, CJK text raster, production preview, multi-track routing). |
 
 ## Repository layout
 

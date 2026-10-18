@@ -65,7 +65,8 @@ Fan-in is highest for `seam_core` (27 libraries), `seam_domain` (17), `seam_form
 | Products | `seam_editor_native` (`Project SEAM.app`), `seam_voicebank_studio_native` (`SEAM Voicebank Studio.app`), `seam_clap_plugin`, `seam_clap_editor_plugin` |
 | Command-line tools | `seam_voicebank_cli`, `seam_bank_tool`, `seam_clap_state_tool`, `seam_installer_verifier`, `seam_singer_pilot`, `seam_singing_quality_render`, `seam_neural_worker` (optional) |
 | Test hosts and harnesses | `seam_clap_host`, `seam_clap_editor_host`, `seam_phase12c_*` (matrix, soak, cancellation storm, live demo; the X11 GUI lifecycle runner and live CLAP host build only on Linux) |
-| Fixture producers | `seam_phase2_demo` … `seam_phase12b_demo`: their CTest smoke runs write the synthetic voicebank, CLAP state WAV and similar inputs that later tests consume |
+| Fixture producers | `seam_fixture_synthetic_bank` and `seam_fixture_clap_state_wav`; their CTest setup entries are `FIXTURES_SETUP` for the tests that read the synthetic voicebank and the CLAP state WAV |
+| Smoke journeys | Nine `seam_smoke_*` programs, each running one pipeline end to end under CTest |
 | Benchmark | `seam_phase5_benchmark`, checked by `tests/design/test_phase5_benchmark_contract.py` |
 
 ## Data flow for one edit
@@ -96,4 +97,4 @@ These are recorded here because they shape build time and change cost. The [comp
 1. `seam_platform` links `seam_voicebank` only to reach `seam/voicebank/wav.hpp` from `recording_session`. That lifts the platform library from layer 3 to layer 4 and makes every platform consumer link `seam_voicebank` and `seam_phonemizer`. `seam_formats` and `seam_domain` stay below the platform layer either way: `crash_capture.cpp` uses the JSON codec and the audio devices include `seam/domain/routing.hpp`.
 2. `seam_native_ui` (about 55k lines, the largest library) links the authoring runtime, the producer packaging stack and character packages at once, so a UI change relinks most products, and a producer header change recompiles the Studio parts of the UI library: seven of its files include producer or candidate headers directly, `voicebank_studio.hpp` among them.
 3. There are 141 separate test executables, each statically linking large parts of the tree, so link time dominates many focused rebuilds.
-4. Active code still lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, `seam_phaseN_demo`).
+4. Active code still lives under historical directory names (`phase12c/`, `phase13a/`, `phase13b/`) and the phase-named test executables built from them.

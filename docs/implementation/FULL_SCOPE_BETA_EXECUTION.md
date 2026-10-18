@@ -9670,3 +9670,9 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 - **Change.** Classified all 13 phase verifiers (table in plan M0-2). Retired the history locks: phase 11/12B/13B report presence checks, Korean wording checks in the 13A verifier and two 13A test cases, `remaining-tasks.json` task states in the 12B/13B verifiers and the 13B test, and the version and phase-target names in the 12B check. Merged the duplicate `verify_phase11_sources.py` into `verify_clap_editor_sources.py`; renamed the phase 8, 11, 12A and 12B verifiers and their CTest entries by what they guard; retired `docs/remaining-tasks.json`.
 - **Gate or cost.** Cost: tidying phase records no longer fails contract tests; no product check was dropped.
 - **Verification.** Each changed verifier passes on the tree and exits 1 on an empty root; `tests/phase13a` 190 OK (4 skipped), `tests/phase13b` 40 OK, required-path test 2 OK; renamed CTest entries and closure after reconfigure.
+
+### M0-3 — fixture producers and CTest fixtures — 2026-10-18
+
+- **Change.** Renamed the eleven `seam_phaseN_demo` programs, their `apps/` directories, CTest entries and output directories: `seam_fixture_synthetic_bank` and `seam_fixture_clap_state_wav` (setups) and nine `seam_smoke_*` journeys. Replaced every macOS test-ordering `DEPENDS` with `FIXTURES_SETUP`/`FIXTURES_REQUIRED` (synthetic bank, CLAP state WAV and pack chain, Phase 12C matrix record).
+- **Gate or cost.** Cost: `ctest -R <consumer>` now runs its producer first, so filtered runs no longer fail in a fresh tree or reuse stale output. Full serial CTest at `a51735c5` before this unit: 240/240, 745.64 s.
+- **Verification.** Full Release build (158 steps, exit 0); with the new output directories absent, `-R` runs of CLI validate, CLAP state inspect and 12C matrix evidence each ran their setups first and passed; renamed and rewired entries, CMake-reading source contracts and closure pass.

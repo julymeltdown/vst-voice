@@ -359,7 +359,7 @@ int main(int argc, char** argv) {
   for (int index = 1; index < argc; ++index) {
     const std::string_view argument{argv[index]};
     if (argument == "--help" || argument == "-h") {
-      std::cout << "Usage: seam_phase2_demo [--output DIRECTORY] [DIRECTORY]\n";
+      std::cout << "Usage: seam_fixture_synthetic_bank [--output DIRECTORY] [DIRECTORY]\n";
       return 0;
     }
     if (argument == "--output" || argument == "-o") {

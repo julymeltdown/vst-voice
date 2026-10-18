@@ -17,6 +17,8 @@ if(TARGET seam_clap_editor_plugin)
       --plugin "${SEAM_PHASE12C_PLUGIN_EVIDENCE}"
       --bank "${PROJECT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank"
       --development-fixture)
+  # Writes the matrix record that seam_phase12c_matrix_evidence validates.
+  set_tests_properties(seam_phase12c_matrix PROPERTIES FIXTURES_SETUP seam_phase12c_matrix_record)
 endif()
 add_executable(seam_phase12c_allocation_probe src/allocation_probe.cpp src/live_fixture.cpp)
 target_link_libraries(seam_phase12c_allocation_probe PRIVATE seam_live_voice)
@@ -49,7 +51,8 @@ if(Python3_Interpreter_FOUND)
         --root "${PROJECT_SOURCE_DIR}" --plugin "${SEAM_PHASE12C_PLUGIN_EVIDENCE}"
         --bank "${PROJECT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank"
         --matrix "${CMAKE_CURRENT_BINARY_DIR}/matrix.json")
-    set_tests_properties(seam_phase12c_matrix_evidence PROPERTIES DEPENDS seam_phase12c_matrix)
+    set_tests_properties(seam_phase12c_matrix_evidence PROPERTIES
+      FIXTURES_REQUIRED seam_phase12c_matrix_record)
     add_test(NAME seam_phase12c_matrix_admission
       COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tests/test_phase12c_matrix_host.py"
         --runner "$<TARGET_FILE:seam_phase12c_matrix>" --plugin "${SEAM_PHASE12C_PLUGIN_EVIDENCE}"

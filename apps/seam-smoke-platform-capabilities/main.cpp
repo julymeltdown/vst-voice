@@ -20,7 +20,7 @@ std::optional<std::filesystem::path> outputPath(int argc, char** argv) {
 int main(int argc, char** argv) {
   const auto output = outputPath(argc, argv);
   if (!output.has_value()) {
-    std::cerr << "Usage: seam_phase8_demo --output DIRECTORY\n";
+    std::cerr << "Usage: seam_smoke_platform_capabilities --output DIRECTORY\n";
     return 2;
   }
   std::error_code error;

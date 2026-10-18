@@ -85,7 +85,7 @@ Usable Alpha (UA), the Beta bank gate, External Beta (EB), the full product cont
 1. `seam_platform` links `seam_voicebank` only to reach `seam/voicebank/wav.hpp` from `recording_session`. That lifts the platform library from layer 3 to layer 4 and makes every platform consumer link `seam_voicebank` and `seam_phonemizer`. `seam_formats` and `seam_domain` stay below the platform layer either way: `crash_capture.cpp` uses the JSON codec and the audio devices include `seam/domain/routing.hpp`.
 2. `seam_native_ui` (about 55k lines) links the authoring runtime, the producer packaging stack and character packages at once.
 3. 141 test executables each statically link large parts of the tree, so link time dominates many rebuilds. The libraries with the highest fan-in are `seam_core` (27), `seam_domain` (17), `seam_formats` (15) and `seam_voicebank` (13).
-4. Current code lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, `seam_phaseN_demo`). Until M0-1, two C++ test files also read project fixtures from `docs/phase2/evidence` and `docs/phase3/evidence`.
+4. Current code lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, and the `seam_phaseN_demo` programs until M0-3). Until M0-1, two C++ test files also read project fixtures from `docs/phase2/evidence` and `docs/phase3/evidence`.
 
 These raise change cost. None of them blocks a gate.
 
@@ -226,6 +226,8 @@ Already done on 2026-10-18: see Appendix A. Remaining work packages:
 Expected result: fewer contract tests that fail when history is tidied, with no loss of product guarding.
 
 **M0-3 Rename fixture producers and declare fixtures.**
+
+**Done on 2026-10-18.** Two of the eleven demos were fixture producers and became `seam_fixture_synthetic_bank` (phase 2) and `seam_fixture_clap_state_wav` (phase 10); their CTest entries `seam_fixture_*_setup` are `FIXTURES_SETUP`. The other nine had no consumer and became `seam_smoke_*` journeys named by what they run: `psola_render` (3), `editing_render_cache` (4), `native_editor_capture` (5), `four_channel_routing` (6), `signed_bank_install` (7), `platform_capabilities` (8), `cjk_text_raster` (9), `production_preview` (12A) and `multitrack_routing` (12B). Their `apps/` directories and build output directories follow the new names; output file names inside them are unchanged. Every test-ordering `DEPENDS` became a fixture: the synthetic bank (`seam_voicebank_cli_validate`, the Studio platform and X11 smokes), the CLAP state chain (WAV, then pack, then inspect, extract and plugin host) and the Phase 12C matrix record. The one exception is the Linux-only `seam_phase13a_linux_install_smoke`, which cannot be configured on macOS and waits for E-05.
 
 - Rename `seam_phase2_demo` … `seam_phase12b_demo` to `seam_fixture_*` by what they produce, for example `seam_fixture_synthetic_bank` for phase 2 and `seam_fixture_clap_state_wav` for phase 10.
 - Replace CTest `DEPENDS` ordering with `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so that `ctest -R <consumer>` runs its producer automatically. Today `ctest -R seam_voicebank_cli_validate` on its own either fails in a fresh build directory or silently reuses an earlier run's output.
@@ -443,7 +445,7 @@ Not changed: `.github`, the Windows TODO, the U45 hold, every contract JSON, eve
 
 | Item | Why it stays | Exit |
 |---|---|---|
-| `seam_phase2_demo` … `seam_phase12b_demo` | Smoke tests consume their outputs as fixtures | M0-3 renames them |
+| Phase-named test executables (`seam_phase11_tests`, `seam_phase12a_tests`, `seam_phase12b_tests`, `seam_phase12c_*`) | They test current code under phase names | E-13 |
 | `docs/phase1`–`docs/phase13b` | Phase records; code still reads the machine-readable gate data listed in the documentation map, §6 | Records; E-13 moves the gate data with the phase directories |
 | `docs/beta/*` stubs | Required entry points in the External Beta source contract | E-12 |
 | `BETA_READINESS_ISSUES.md` (last substantive update 2026-10-08) | `tools/external_beta/release_status.py` and `tests/external_beta/test_readiness_register_citations.py` read it | Fold its open items into this plan's backlog, then move it with its two consumers |

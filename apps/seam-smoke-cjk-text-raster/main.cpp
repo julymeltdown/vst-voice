@@ -48,7 +48,7 @@ seam::formats::JsonValue fontJson(const seam::text::FontInfo& font) {
 }
 
 void usage() {
-  std::cout << "Usage: seam_phase9_demo --output DIRECTORY [--font ABSOLUTE_PATH]\n";
+  std::cout << "Usage: seam_smoke_cjk_text_raster --output DIRECTORY [--font ABSOLUTE_PATH]\n";
 }
 
 }  // namespace

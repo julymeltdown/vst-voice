@@ -933,24 +933,24 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
 endif()
 
-add_executable(seam_phase2_demo apps/seam-phase2-demo/main.cpp)
-target_link_libraries(seam_phase2_demo PRIVATE
+add_executable(seam_fixture_synthetic_bank apps/seam-fixture-synthetic-bank/main.cpp)
+target_link_libraries(seam_fixture_synthetic_bank PRIVATE
   seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
   seam_application seam_domain seam_core)
-seam_apply_compiler_options(seam_phase2_demo)
+seam_apply_compiler_options(seam_fixture_synthetic_bank)
 
 
-add_executable(seam_phase3_demo apps/seam-phase3-demo/main.cpp)
-target_link_libraries(seam_phase3_demo PRIVATE
+add_executable(seam_smoke_psola_render apps/seam-smoke-psola-render/main.cpp)
+target_link_libraries(seam_smoke_psola_render PRIVATE
   seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer
   seam_formats seam_application seam_domain seam_core)
-seam_apply_compiler_options(seam_phase3_demo)
+seam_apply_compiler_options(seam_smoke_psola_render)
 
-add_executable(seam_phase4_demo apps/seam-phase4-demo/main.cpp)
-target_link_libraries(seam_phase4_demo PRIVATE
+add_executable(seam_smoke_editing_render_cache apps/seam-smoke-editing-render-cache/main.cpp)
+target_link_libraries(seam_smoke_editing_render_cache PRIVATE
   seam_editor_inspection seam_playback_platform seam_platform seam_rendering seam_synthesis seam_voicebank
   seam_editor_ui seam_phonemizer seam_formats seam_application seam_domain seam_core)
-seam_apply_compiler_options(seam_phase4_demo)
+seam_apply_compiler_options(seam_smoke_editing_render_cache)
 
 if(SEAM_BUILD_NATIVE_DESKTOP)
   add_library(seam_standalone_authoring STATIC
@@ -985,11 +985,11 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
   seam_apply_compiler_options(seam_standalone_authoring)
 
-  add_executable(seam_phase5_demo apps/seam-phase5-demo/main.cpp)
-  target_link_libraries(seam_phase5_demo PRIVATE
+  add_executable(seam_smoke_native_editor_capture apps/seam-smoke-native-editor-capture/main.cpp)
+  target_link_libraries(seam_smoke_native_editor_capture PRIVATE
     seam_native_ui seam_playback_platform seam_platform seam_rendering
     seam_voicebank seam_editor_ui seam_application seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase5_demo)
+  seam_apply_compiler_options(seam_smoke_native_editor_capture)
 
   add_executable(seam_editor_native apps/seam-editor-native/main.cpp)
   target_link_libraries(seam_editor_native PRIVATE
@@ -1116,11 +1116,11 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
 endif()
 
 
-add_executable(seam_phase6_demo apps/seam-phase6-demo/main.cpp)
-target_link_libraries(seam_phase6_demo PRIVATE
+add_executable(seam_smoke_four_channel_routing apps/seam-smoke-four-channel-routing/main.cpp)
+target_link_libraries(seam_smoke_four_channel_routing PRIVATE
   seam_playback_platform seam_platform seam_rendering seam_formats
   seam_voicebank seam_domain seam_core)
-seam_apply_compiler_options(seam_phase6_demo)
+seam_apply_compiler_options(seam_smoke_four_channel_routing)
 
 add_executable(seam_bank_tool apps/seam-bank-tool/main.cpp)
 target_link_libraries(seam_bank_tool PRIVATE seam_distribution seam_voicebank seam_core)
@@ -1137,19 +1137,19 @@ if(WIN32)
 endif()
 seam_apply_compiler_options(seam_installer_verifier)
 
-add_executable(seam_phase7_demo apps/seam-phase7-demo/main.cpp)
-target_link_libraries(seam_phase7_demo PRIVATE seam_distribution seam_voicebank seam_formats seam_core)
-seam_apply_compiler_options(seam_phase7_demo)
+add_executable(seam_smoke_signed_bank_install apps/seam-smoke-signed-bank-install/main.cpp)
+target_link_libraries(seam_smoke_signed_bank_install PRIVATE seam_distribution seam_voicebank seam_formats seam_core)
+seam_apply_compiler_options(seam_smoke_signed_bank_install)
 
-add_executable(seam_phase8_demo apps/seam-phase8-demo/main.cpp)
-target_link_libraries(seam_phase8_demo PRIVATE seam_platform seam_core)
-seam_apply_compiler_options(seam_phase8_demo)
+add_executable(seam_smoke_platform_capabilities apps/seam-smoke-platform-capabilities/main.cpp)
+target_link_libraries(seam_smoke_platform_capabilities PRIVATE seam_platform seam_core)
+seam_apply_compiler_options(seam_smoke_platform_capabilities)
 
 if(SEAM_BUILD_NATIVE_DESKTOP)
-  add_executable(seam_phase9_demo apps/seam-phase9-demo/main.cpp)
-  target_link_libraries(seam_phase9_demo PRIVATE
+  add_executable(seam_smoke_cjk_text_raster apps/seam-smoke-cjk-text-raster/main.cpp)
+  target_link_libraries(seam_smoke_cjk_text_raster PRIVATE
     seam_native_ui seam_text seam_formats seam_core)
-  seam_apply_compiler_options(seam_phase9_demo)
+  seam_apply_compiler_options(seam_smoke_cjk_text_raster)
 endif()
 
 if(SEAM_BUILD_CLAP_PLUGIN)
@@ -1341,9 +1341,9 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   seam_apply_compiler_options(seam_clap_editor_host)
 endif()
 
-add_executable(seam_phase10_demo apps/seam-phase10-demo/main.cpp)
-target_link_libraries(seam_phase10_demo PRIVATE seam_clap seam_voicebank seam_core)
-seam_apply_compiler_options(seam_phase10_demo)
+add_executable(seam_fixture_clap_state_wav apps/seam-fixture-clap-state-wav/main.cpp)
+target_link_libraries(seam_fixture_clap_state_wav PRIVATE seam_clap seam_voicebank seam_core)
+seam_apply_compiler_options(seam_fixture_clap_state_wav)
 
 add_executable(seam_clap_state_tool apps/seam-clap-state-tool/main.cpp)
 target_link_libraries(seam_clap_state_tool PRIVATE seam_clap seam_voicebank seam_core)
@@ -1366,20 +1366,20 @@ seam_apply_compiler_options(seam_singer_pilot)
 
 
 if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
-  add_executable(seam_phase12a_demo apps/seam-phase12a-demo/main.cpp)
-  target_compile_definitions(seam_phase12a_demo PRIVATE
+  add_executable(seam_smoke_production_preview apps/seam-smoke-production-preview/main.cpp)
+  target_compile_definitions(seam_smoke_production_preview PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
-  target_link_libraries(seam_phase12a_demo PRIVATE
+  target_link_libraries(seam_smoke_production_preview PRIVATE
     seam_clap_editor seam_rendering seam_voicebank seam_formats seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase12a_demo)
+  seam_apply_compiler_options(seam_smoke_production_preview)
 
-  add_executable(seam_phase12b_demo apps/seam-phase12b-demo/main.cpp)
-  target_compile_definitions(seam_phase12b_demo PRIVATE
+  add_executable(seam_smoke_multitrack_routing apps/seam-smoke-multitrack-routing/main.cpp)
+  target_compile_definitions(seam_smoke_multitrack_routing PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
-  target_link_libraries(seam_phase12b_demo PRIVATE
+  target_link_libraries(seam_smoke_multitrack_routing PRIVATE
     seam_clap_editor seam_rendering seam_voicebank seam_formats
     seam_application seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase12b_demo)
+  seam_apply_compiler_options(seam_smoke_multitrack_routing)
 endif()
 
 
@@ -1416,14 +1416,14 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_phase12a_tests)
   add_test(NAME seam_phase12a_tests COMMAND seam_phase12a_tests)
-  add_test(NAME seam_phase12a_demo_smoke
-    COMMAND seam_phase12a_demo --output ${CMAKE_BINARY_DIR}/phase12a-smoke)
+  add_test(NAME seam_smoke_production_preview
+    COMMAND seam_smoke_production_preview --output ${CMAKE_BINARY_DIR}/smoke-production-preview)
   set_tests_properties(seam_phase11_tests seam_phase12a_tests
-    seam_phase12a_demo_smoke
+    seam_smoke_production_preview
     PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
-  set_tests_properties(seam_phase12a_demo_smoke PROPERTIES TIMEOUT 60)
+  set_tests_properties(seam_smoke_production_preview PROPERTIES TIMEOUT 60)
 
   add_executable(seam_phase12b_tests tests/test_phase12b.cpp)
   target_include_directories(seam_phase12b_tests PRIVATE tests)
@@ -1435,9 +1435,9 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     seam_phonemizer seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_phase12b_tests)
   add_test(NAME seam_phase12b_tests COMMAND seam_phase12b_tests)
-  add_test(NAME seam_phase12b_demo_smoke
-    COMMAND seam_phase12b_demo --output ${CMAKE_BINARY_DIR}/phase12b-smoke)
-  set_tests_properties(seam_phase12b_tests seam_phase12b_demo_smoke
+  add_test(NAME seam_smoke_multitrack_routing
+    COMMAND seam_smoke_multitrack_routing --output ${CMAKE_BINARY_DIR}/smoke-multitrack-routing)
+  set_tests_properties(seam_phase12b_tests seam_smoke_multitrack_routing
     PROPERTIES
       TIMEOUT 120
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -3103,21 +3103,26 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_candidate_audition_probe COMMAND seam_candidate_audition_probe
       ${CMAKE_BINARY_DIR}/candidate-audition-allocation-probe.json)
   endif()
-  add_test(NAME seam_phase2_demo_smoke
-    COMMAND seam_phase2_demo --output ${CMAKE_BINARY_DIR}/phase2-smoke)
-  add_test(NAME seam_phase3_demo_smoke
-    COMMAND seam_phase3_demo --output ${CMAKE_BINARY_DIR}/phase3-smoke)
-  add_test(NAME seam_phase4_demo_smoke
-    COMMAND seam_phase4_demo --output ${CMAKE_BINARY_DIR}/phase4-smoke)
-  add_test(NAME seam_phase6_demo_smoke
-    COMMAND seam_phase6_demo --output ${CMAKE_BINARY_DIR}/phase6-smoke)
-  add_test(NAME seam_phase7_demo_smoke
-    COMMAND seam_phase7_demo --output ${CMAKE_BINARY_DIR}/phase7-smoke)
-  add_test(NAME seam_phase8_demo_smoke
-    COMMAND seam_phase8_demo --output ${CMAKE_BINARY_DIR}/phase8-smoke)
+  add_test(NAME seam_fixture_synthetic_bank_setup
+    COMMAND seam_fixture_synthetic_bank --output ${CMAKE_BINARY_DIR}/fixture-synthetic-bank)
+  # Fixture producers write inputs that later tests read. A consumer declares
+  # FIXTURES_REQUIRED, so `ctest -R <consumer>` runs the producer first, even in a fresh
+  # build tree, and skips the consumer when the producer fails.
+  set_tests_properties(seam_fixture_synthetic_bank_setup PROPERTIES
+    FIXTURES_SETUP seam_synthetic_bank)
+  add_test(NAME seam_smoke_psola_render
+    COMMAND seam_smoke_psola_render --output ${CMAKE_BINARY_DIR}/smoke-psola-render)
+  add_test(NAME seam_smoke_editing_render_cache
+    COMMAND seam_smoke_editing_render_cache --output ${CMAKE_BINARY_DIR}/smoke-editing-render-cache)
+  add_test(NAME seam_smoke_four_channel_routing
+    COMMAND seam_smoke_four_channel_routing --output ${CMAKE_BINARY_DIR}/smoke-four-channel-routing)
+  add_test(NAME seam_smoke_signed_bank_install
+    COMMAND seam_smoke_signed_bank_install --output ${CMAKE_BINARY_DIR}/smoke-signed-bank-install)
+  add_test(NAME seam_smoke_platform_capabilities
+    COMMAND seam_smoke_platform_capabilities --output ${CMAKE_BINARY_DIR}/smoke-platform-capabilities)
   if(SEAM_BUILD_NATIVE_DESKTOP)
-    add_test(NAME seam_phase9_demo_smoke
-      COMMAND seam_phase9_demo --output ${CMAKE_BINARY_DIR}/phase9-smoke)
+    add_test(NAME seam_smoke_cjk_text_raster
+      COMMAND seam_smoke_cjk_text_raster --output ${CMAKE_BINARY_DIR}/smoke-cjk-text-raster)
   endif()
   if(Python3_Interpreter_FOUND)
     add_test(NAME seam_platform_adapter_source_contract
@@ -3164,35 +3169,37 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_phase12c_soak_workflow_contract PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
   endif()
-  add_test(NAME seam_phase10_demo_smoke
-    COMMAND seam_phase10_demo --output ${CMAKE_BINARY_DIR}/phase10-smoke)
+  add_test(NAME seam_fixture_clap_state_wav_setup
+    COMMAND seam_fixture_clap_state_wav --output ${CMAKE_BINARY_DIR}/fixture-clap-state-wav)
+  set_tests_properties(seam_fixture_clap_state_wav_setup PROPERTIES
+    FIXTURES_SETUP seam_clap_state_wav)
   add_test(NAME seam_clap_state_pack_smoke
     COMMAND seam_clap_state_tool pack
-            ${CMAKE_BINARY_DIR}/phase10-smoke/phase10-diagnostic-4ch.wav
-            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
+            ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/phase10-diagnostic-4ch.wav
+            ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/from-wav.seamclapstate
             --title "Project SEAM packed render"
             --gain-db 0.0)
   set_tests_properties(seam_clap_state_pack_smoke PROPERTIES
-    DEPENDS seam_phase10_demo_smoke TIMEOUT 30)
+    FIXTURES_REQUIRED seam_clap_state_wav FIXTURES_SETUP seam_clap_state_pack TIMEOUT 30)
   add_test(NAME seam_clap_state_inspect_smoke
     COMMAND seam_clap_state_tool inspect
-            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate)
+            ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/from-wav.seamclapstate)
   set_tests_properties(seam_clap_state_inspect_smoke PROPERTIES
-    DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
+    FIXTURES_REQUIRED seam_clap_state_pack TIMEOUT 30)
   add_test(NAME seam_clap_state_extract_smoke
     COMMAND seam_clap_state_tool extract
-            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
-            ${CMAKE_BINARY_DIR}/phase10-smoke/from-state.wav)
+            ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/from-wav.seamclapstate
+            ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/from-state.wav)
   set_tests_properties(seam_clap_state_extract_smoke PROPERTIES
-    DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
+    FIXTURES_REQUIRED seam_clap_state_pack TIMEOUT 30)
   if(SEAM_BUILD_CLAP_PLUGIN)
     add_test(NAME seam_clap_plugin_host_smoke
       COMMAND seam_clap_host
               --plugin $<TARGET_FILE:seam_clap_plugin>
-              --state ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
-              --summary ${CMAKE_BINARY_DIR}/phase10-smoke/clap-host-summary.json)
+              --state ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/from-wav.seamclapstate
+              --summary ${CMAKE_BINARY_DIR}/fixture-clap-state-wav/clap-host-summary.json)
     set_tests_properties(seam_clap_plugin_host_smoke PROPERTIES
-      DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
+      FIXTURES_REQUIRED seam_clap_state_pack TIMEOUT 30)
   endif()
   add_test(NAME seam_bank_tool_help COMMAND seam_bank_tool --help)
   # The real publication chain: a designed recipe becomes a signed singer, verifies, and installs.
@@ -3221,15 +3228,15 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate
-            ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json)
+            ${CMAKE_BINARY_DIR}/fixture-synthetic-bank/synthetic-voicebank/manifest.json)
   set_tests_properties(seam_voicebank_cli_validate PROPERTIES
-    DEPENDS seam_phase2_demo_smoke)
+    FIXTURES_REQUIRED seam_synthetic_bank)
   add_test(NAME seam_voicebank_cli_inspect_wav
     COMMAND seam_voicebank_cli inspect-wav
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav)
   if(SEAM_BUILD_NATIVE_DESKTOP)
-    add_test(NAME seam_phase5_demo_smoke
-      COMMAND seam_phase5_demo --output ${CMAKE_BINARY_DIR}/phase5-smoke)
+    add_test(NAME seam_smoke_native_editor_capture
+      COMMAND seam_smoke_native_editor_capture --output ${CMAKE_BINARY_DIR}/smoke-native-editor-capture)
     if(SEAM_RUN_NATIVE_GUI_TESTS AND (WIN32 OR APPLE))
       add_test(NAME seam_native_editor_platform_smoke
         COMMAND $<TARGET_FILE:seam_editor_native>
@@ -3239,14 +3246,14 @@ if(SEAM_BUILD_TESTS)
                 --screenshot ${CMAKE_BINARY_DIR}/phase8-native-window.ppm)
       add_test(NAME seam_voicebank_studio_platform_smoke
         COMMAND $<TARGET_FILE:seam_voicebank_studio_native>
-                --manifest ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json
+                --manifest ${CMAKE_BINARY_DIR}/fixture-synthetic-bank/synthetic-voicebank/manifest.json
                 --force-synthetic-input
                 --auto-close-ms 500
                 --screenshot ${CMAKE_BINARY_DIR}/phase8-voicebank-studio.ppm)
       set_tests_properties(seam_native_editor_platform_smoke PROPERTIES
         TIMEOUT 30)
       set_tests_properties(seam_voicebank_studio_platform_smoke PROPERTIES
-        DEPENDS seam_phase2_demo_smoke TIMEOUT 30)
+        FIXTURES_REQUIRED seam_synthetic_bank TIMEOUT 30)
     endif()
     if(UNIX AND NOT APPLE AND X11_FOUND)
       find_program(SEAM_XVFB_RUN_EXECUTABLE xvfb-run)
@@ -3261,12 +3268,12 @@ if(SEAM_BUILD_TESTS)
         add_test(NAME seam_voicebank_studio_x11_smoke
           COMMAND ${SEAM_XVFB_RUN_EXECUTABLE} -a
                   $<TARGET_FILE:seam_voicebank_studio_native>
-                  --manifest ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json
+                  --manifest ${CMAKE_BINARY_DIR}/fixture-synthetic-bank/synthetic-voicebank/manifest.json
                   --force-synthetic-input
                   --auto-close-ms 250
                   --screenshot ${CMAKE_BINARY_DIR}/phase5-voicebank-studio.ppm)
         set_tests_properties(seam_voicebank_studio_x11_smoke PROPERTIES
-          DEPENDS seam_phase2_demo_smoke)
+          FIXTURES_REQUIRED seam_synthetic_bank)
       endif()
     endif()
   endif()
