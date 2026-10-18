@@ -157,11 +157,20 @@ The code enforces separation: whoever imported, processed, annotated or inspecte
 
 Without this amendment External Beta cannot start until a Windows host exists. The amendment needs a contract revision with an explicit change log; it must not edit history or reinterpret existing rows.
 
+What a yes changes, measured on 2026-10-19. This is engineering work beyond the contract edit, so it is not prepared ahead of the decision:
+
+- `docs/product/external-beta-acceptance.json` gets `contractVersion` 3.0.0 and a change log. `targetPlatforms` and `closure.requiredPlatforms` become macOS only, EB-006 names `HOST-001`, `-002`, `-005`, `-006` and `-009`, and EB-009 moves to the Beta GO set. The `targetPlatforms` of `external-beta-host-matrix.json` and `external-beta-install-matrix.json` follow.
+- Six tools hard-code both platforms and have to take them from the contract: `tools/external_beta/candidate_root.py`, `cohort_gate.py`, `freeze_candidate.py`, `host_evidence.py` (which also fixes the nine tuples as `HOST-001`–`HOST-009`), `predecessor_release.py` and `standalone_evidence.py`. `release_gate.py` fixes EB-001–EB-009 as the required set.
+- 28 test and fixture files under `tests/external_beta/` and `tests/production/` mention these platforms or rows; the Windows public-release tests (PW) among them stay as they are.
+- Estimate: one to two working days, plus the contract review that rule 4 requires.
+
 ### D7 — Working protocol (affects every milestone)
 
 **Recommendation:** adopt the rules in §3. One independent review per milestone exit and for the high-risk areas; no per-unit dated report; ledger entries of at most six lines; evidence JSON only for gate rows. This replaces the per-commit review-and-record cycle used since September (§2.3). AGENTS.md does not require that cycle, so no repository rule has to be overridden, but it is the owner's working practice and the owner should confirm the change.
 
 D7 also settles the branch policy. [ADR 0005](../adr/0005-master-only.md) forbids every branch except `master`, while AGENTS.md sends isolated work to `codex/*` worktree branches; the main checkout has 45 other local branches. The hooks that would enforce ADR 0005 are not installed, so nothing blocks those branches. But `scripts/verify_master_branch.py` fails on them, and a default `seam_license_audit` run fails with that branch check as its only error, so a real license finding would be reported behind a policy error. **Recommendation:** amend ADR 0005 so that `master` is the only integration and release branch and short-lived `codex/*` branches are allowed, then implement E-15.
+
+Prepared on 2026-10-19: the E-15 change for this recommendation is commit `7d10b021` on the local branch `codex/d7-branch-policy` in the integrating checkout, unmerged. It amends ADR 0005, lets `scripts/verify_master_branch.py` accept `master` and `codex/*` (with `--require-master` for integration and release), and drops the branch check from the license audit, which then passes. A yes merges it. Afterwards the only local branch outside the policy is `optimize/native-paint-p95`, which you can delete or rename to `codex/…`.
 
 ### D8 — Accounts, licenses and machines (blocks parts of M2)
 
@@ -242,7 +251,7 @@ Expected result: fewer contract tests that fail when history is tidied, with no 
 **M0-5 One gate vocabulary (after D6).**
 
 - Make `tools/external_beta/release_status.py` the single status source.
-- Reclassify Phase 13A matrix rows that are outside the full contract's nine tuples (Ableton Live, Cubase, FL Studio, GarageBand, Linux) as optional. This edits `docs/phase13a/mandatory-validation-matrix.json` and the matching `tests/phase13a/` expectations.
+- Reclassify the Phase 13A matrix rows that are outside the full contract's nine tuples as optional by emptying their `mandatoryFor`: the Cubase, Ableton Live, Studio One, FL Studio and GarageBand rows, and the four Linux rows (CLAP validator, 7,200-second soak, VST3 build and VST3 validator). The REAPER and Bitwig Studio rows stay, with Linux dropped from their `platform`. This edits `docs/phase13a/mandatory-validation-matrix.json` and the matching `tests/phase13a/` expectations; `tools/phase13a/release_gate.py` already treats a row as required only for the gates in its `mandatoryFor`.
 - Treat G1–G5 as an implementation checklist that feeds EB-004/EB-006, not as a separate release status.
 
 **M0-6 Ledger format (after D7).**

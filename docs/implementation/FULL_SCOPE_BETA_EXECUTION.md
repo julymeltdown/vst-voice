@@ -9705,3 +9705,9 @@ Recovery review terminal/APPROVE engineering, zero required findings. The same s
 ### Full suite after E-10, E-01 and E-08 — 2026-10-19
 
 - **Verification.** Full Release build, then full serial CTest at `0bbf3997`: 241/241 in 726.7 s. STATUS and plan §7 record the time.
+
+### D6 and D7 decision packets made concrete — 2026-10-19
+
+- **Change.** Plan §4 D6 now lists what a yes changes, measured in the code: contract 3.0.0 with a change log, six External Beta tools that hard-code both platforms, the release gate's fixed EB set, 28 test and fixture files, and an estimate of one to two days. M0-5 now names the nine Phase 13A rows that become optional, among them Studio One, which the plan had missed. D7 records the prepared E-15 change, local commit `7d10b021` on `codex/d7-branch-policy`, which stays unmerged until the owner decides.
+- **Gate or cost.** None moves; plan rule 3 asks for concrete decision packets before the owner decides.
+- **Verification.** The E-15 draft was checked in a scratch repository (master only, `codex/*`, `--require-master`, another branch, detached HEAD) and on the main checkout, where only `optimize/native-paint-p95` remains outside the policy and the license audit passes. Plan diff and link checks.
