@@ -1150,6 +1150,27 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
     CHECK(competingWriter.acquire(root / "multi-style-inventory/.writer.lock"));
     CHECK(!multiRepository.reconcileCurrentPointer(committedGeneration, core::sha256Hex(committedBeforeReceipt)));
   }
+  // A newer number held only by the journal is newer work as well; the pointer is left as it is.
+  const auto newerDigits = std::to_string(committedGeneration + 1U);
+  const auto journalOnly = root / "multi-style-inventory/journal" /
+      (std::string(20U - newerDigits.size(), '0') + newerDigits + ".json");
+  CHECK(core::durableAtomicWriteTextNew(journalOnly, "{}"));
+  const auto newerInJournal = multiRepository.reconcileCurrentPointer(committedGeneration, core::sha256Hex(committedBeforeReceipt));
+  CHECK(!newerInJournal);
+  if (!newerInJournal) CHECK(newerInJournal.error().message.find("newer or incomplete work") != std::string::npos);
+  CHECK(core::readTextFileLimited(root / "multi-style-inventory/project.json", 1024U).value() == "interrupted-pointer-fixture");
+  CHECK(std::filesystem::remove(journalOnly));
+  // A path that is not a producer workspace is refused before the writer lock creates its file.
+  const auto refusedAsNotProducer = [&](const std::filesystem::path& path) {
+    const auto refused = production::ProductionProjectRepository{path}.reconcileCurrentPointer(
+        committedGeneration, core::sha256Hex(committedBeforeReceipt));
+    return !refused && refused.error().code == core::ErrorCode::NotFound;
+  };
+  CHECK(refusedAsNotProducer(root / "missing-producer"));
+  CHECK(!std::filesystem::exists(root / "missing-producer"));
+  CHECK(std::filesystem::create_directory(root / "unrelated-directory"));
+  CHECK(refusedAsNotProducer(root / "unrelated-directory"));
+  CHECK(std::filesystem::is_empty(root / "unrelated-directory"));
   std::filesystem::rename(root / "multi-neutral-job/output", root / "multi-neutral-job/held-output");
   std::filesystem::rename(root / "multi-soft-job/output", root / "multi-soft-job/held-output");
   const auto multiCollected = authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs,

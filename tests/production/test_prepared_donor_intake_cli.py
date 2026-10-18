@@ -154,6 +154,17 @@ class PreparedDonorIntakeCliTests(unittest.TestCase):
         self.native(*args, success=False, match="newer or incomplete work")
         self.assertEqual(newer, files(self.workspace)); self.readers()
 
+    def test_pointer_reconciliation_refuses_a_path_that_is_not_a_producer_workspace(self):
+        missing = self.root / "missing-producer"
+        self.native("reconcile-producer-pointer", missing, "1", "f" * 64, success=False,
+                    match="Not a producer workspace")
+        self.assertFalse(missing.exists())
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        self.native("reconcile-producer-pointer", unrelated, "1", "f" * 64, success=False,
+                    match="Not a producer workspace")
+        self.assertEqual({}, files(unrelated))
+
     def test_capture_displays_exact_notices_phones_and_assignment_without_import(self):
         _, request = self.capture(style="soft", pitch=72)
         self.assertEqual(("UNAPPROVED", "NOT_QUALIFIED", False, False),

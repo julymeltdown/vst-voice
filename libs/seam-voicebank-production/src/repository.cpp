@@ -176,6 +176,18 @@ core::Result<void> prepareWorkspace(
   return core::success();
 }
 
+// A producer workspace has a real generations directory. Commands that open an existing
+// workspace check it before taking the writer lock, because opening the lock creates its file:
+// a missing or unrelated path is then refused with a precise message and left as it was.
+core::Result<void> requireProducerWorkspace(const std::filesystem::path& root) {
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(root / "generations", error);
+  if (error || std::filesystem::is_symlink(status) || !std::filesystem::is_directory(status))
+    return core::failure(core::ErrorCode::NotFound,
+                         "Not a producer workspace: it has no generations directory", root.string());
+  return core::success();
+}
+
 }
 
 ProductionProjectRepository::ProductionProjectRepository(
@@ -319,6 +331,8 @@ core::Result<void> ProductionProjectRepository::reconcileCurrentPointer(
   if (stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Pointer reconciliation cancelled");
   if (expectedGeneration == 0U || expectedProjectSha256.size() != 64U)
     return core::failure(core::ErrorCode::InvalidArgument, "Pointer reconciliation requires exact generation and hash");
+  const auto workspace = requireProducerWorkspace(root_);
+  if (!workspace) return workspace;
   WorkspaceWriter writer;
   const auto locked = writer.acquire(root_ / ".writer.lock");
   if (!locked) return locked;
