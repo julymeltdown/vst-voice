@@ -114,7 +114,6 @@ option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
 option(SEAM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(SEAM_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(SEAM_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
-option(SEAM_ENABLE_IPLUG2_SKIA "Enable the optional iPlug2 + Skia shell adapter" OFF)
 option(SEAM_BUILD_NATIVE_DESKTOP "Build the first-party native desktop editor" ON)
 option(SEAM_BUILD_CLAP_PLUGIN "Build the Project SEAM CLAP render-player plug-in" ON)
 option(SEAM_BUILD_CLAP_EDITOR_PLUGIN "Build the Project SEAM embedded-editor CLAP plug-in" ON)
@@ -1570,13 +1569,6 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   endif()
 endif()
 
-
-if(SEAM_ENABLE_IPLUG2_SKIA)
-  message(FATAL_ERROR
-    "The iPlug2 + Skia adapter is intentionally dependency-gated until its exact source closure is approved. "
-    "Set IPLUG2_ROOT and SKIA_ROOT only after the exact source revisions pass "
-    "the repository license audit. See docs/architecture/IPLUG2_SKIA_ADAPTER.md.")
-endif()
 
 if(SEAM_BUILD_TESTS)
   enable_testing()
