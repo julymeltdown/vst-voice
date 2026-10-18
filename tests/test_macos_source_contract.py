@@ -307,8 +307,13 @@ class MacOSSourceContractTests(unittest.TestCase):
             self.assertIn("state_ = State::Idle;", body)
 
     def test_demo_projects_persist_computed_voicebank_content_identity(self) -> None:
-        for phase in ("2", "3", "4"):
-            source = (ROOT / f"apps/seam-phase{phase}-demo/main.cpp").read_text()
+        # The programs that were seam-phase2/3/4-demo before the 2026-10-18 rename.
+        for directory, phase in (
+            ("seam-fixture-synthetic-bank", "2"),
+            ("seam-smoke-psola-render", "3"),
+            ("seam-smoke-editing-render-cache", "4"),
+        ):
+            source = (ROOT / f"apps/{directory}/main.cpp").read_text()
             self.assertIn("computeVoicebankContentHash", source)
             self.assertNotIn(f"phase{phase}-synthetic-content", source)
 
