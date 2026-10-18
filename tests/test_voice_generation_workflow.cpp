@@ -6,6 +6,7 @@
 // qualified resource or a human listening judgment exists.
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "seam/authoring/generation_batch_collection.hpp"
 #include "seam/authoring/generation_campaign.hpp"
 #include "seam/authoring/generation_job.hpp"
 #include "seam/authoring/inventory_preflight.hpp"
@@ -469,6 +470,45 @@ TEST_CASE("the byte budget counts only what the request itself retains") {
   CHECK(fixture.producerBytes() == afterFirst);
   CHECK(!std::filesystem::exists(campaign.directory / "batch-1"));
   CHECK(fixture.record(campaign).terminal->outcome == production::GenerationRequestOutcome::BudgetExhausted);
+}
+
+TEST_CASE("a campaign collected before requests were recorded keeps advancing without a record") {
+  // Campaigns advanced before generation requests existed have receipts but no request, and their
+  // producer has left the initial state, so they cannot be submitted any more. Batch 0 is collected
+  // here through the batch primitives, as that older advancement did.
+  Fixture fixture{60, 64};
+  const auto campaign = fixture.plan("campaign-unrecorded", {Fixture::take(60), Fixture::take(64)}, recipe(), 1U);
+  const auto initial = fixture.producer();
+  const auto definition = core::readTextFileLimited(campaign.path, 32U * 1024U * 1024U);
+  CHECK(definition);
+  const auto admitted = authoring::VerifiedGenerationCampaign::admit(definition.value(), campaign.sha);
+  CHECK(admitted);
+  const auto batch = authoring::prepareGenerationCampaignBatch(admitted.value(), 0U, initial, campaign.directory / "batch-0");
+  CHECK(batch);
+  CHECK(authoring::runGenerationBatch(batch.value().jobs));
+  CHECK(authoring::collectGenerationBatchWithReceipt(fixture.repository, initial, batch.value().jobs,
+      campaign.directory / "batch-0" / "collection.json",
+      {"import-generated-batch", batch.value().batchSha256, "producer", "2026-09-28T03:40:00Z"}));
+  CHECK(fixture.producer().takes.size() == 1U);
+
+  const auto finished = fixture.advance(campaign, "2026-09-28T03:41:00Z");
+  CHECK(finished);
+  CHECK(finished.value().outcome == Outcome::Completed);
+  CHECK(finished.value().completedBatches == 2U);
+  CHECK(!finished.value().registered);
+  CHECK(!finished.value().terminalRecorded);
+  CHECK(fixture.producer().takes.size() == 2U);
+  const auto found = fixture.registry.find(campaign.sha);
+  CHECK(found);
+  CHECK(!found.value());
+
+  // A retry verifies the receipts again and changes nothing.
+  const auto finalBytes = fixture.producerBytes();
+  const auto retried = fixture.advance(campaign, "2026-09-28T03:42:00Z");
+  CHECK(retried);
+  CHECK(retried.value().outcome == Outcome::Completed);
+  CHECK(!retried.value().registered);
+  CHECK(fixture.producerBytes() == finalBytes);
 }
 
 TEST_CASE("the request registry admits only requests and outcomes the producer history supports") {

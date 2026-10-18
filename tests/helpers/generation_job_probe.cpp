@@ -8,13 +8,16 @@
 
 int main(int argc, char** argv) {
   if (argc == 7 && std::string_view{argv[1]} == "campaign-sigkill") {
-    const auto result = seam::authoring::advanceGenerationCampaign(
-        seam::voicebank_production::ProductionProjectRepository{argv[2]}, argv[3], argv[4], argv[5], argv[6], {}, []() -> bool {
+    // Advances one batch of the campaign and dies after its commit, before its receipt.
+    seam::authoring::CampaignAdvanceOptions options;
+    options.interruptBeforeReceipt = []() -> bool {
 #if defined(__APPLE__) || defined(__linux__)
-          std::raise(SIGKILL);
+      std::raise(SIGKILL);
 #endif
-          std::_Exit(87);
-        });
+      std::_Exit(87);
+    };
+    const auto result =
+        seam::authoring::advanceGenerationRequest(argv[2], argv[3], argv[4], argv[5], argv[6], {}, options);
     return result ? 0 : 1;
   }
   if (argc != 4) return 1;

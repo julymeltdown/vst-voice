@@ -1042,15 +1042,8 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
       root / "advanced-campaign" / "preflight");
   CHECK(advancePreflight);
   if (advancePreflight) CHECK(advancePreflight.value().passed);
-  // Retained bytes count only inside the request's own output; a canary beside the campaign would not.
-  CHECK(std::filesystem::create_directory(root / "advanced-campaign/batch-0"));
-  const auto storageCanary = root / "advanced-campaign/batch-0/storage-canary";
-  CHECK(core::durableAtomicWriteTextNew(storageCanary, "x"));
-  std::filesystem::resize_file(storageCanary, 8ULL * 1024ULL * 1024ULL * 1024ULL + 1U);
-  CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z"));
-  CHECK(advancedRepository.recover().value().takes.empty());
-  CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0/batch-inputs.json"));
-  std::filesystem::rename(root / "advanced-campaign/batch-0", root / "held-storage-canary");
+  // An exhausted output budget ends a request durably, so it is tested on its own requests in
+  // test_voice_generation_workflow.cpp and tests/production/test_generation_request_mirror.py.
   CHECK(std::filesystem::create_directory(root / "storage-scan"));
   CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/a", "abc"));
   CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/b", "de"));
@@ -1067,8 +1060,10 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(runProcess(SEAM_TEST_GENERATION_PROBE, {"campaign-sigkill", (root / "advanced-producer").string(),
       advancePath.string(), advanceHash, "producer", "2026-09-13T00:00:01Z"}) == 128 + SIGKILL);
 #else
-  CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z",
-      {}, [] { return true; }));
+  authoring::CampaignAdvanceOptions interruptedBeforeReceipt;
+  interruptedBeforeReceipt.interruptBeforeReceipt = [] { return true; };
+  CHECK(!authoring::advanceGenerationRequest(root / "advanced-producer", advancePath, advanceHash, "producer",
+      "2026-09-13T00:00:01Z", {}, interruptedBeforeReceipt));
 #endif
   CHECK(advancedRepository.recover().value().takes.size() == 1U);
   CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0/collection.json"));
@@ -1081,9 +1076,10 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(runVoicebankCli({"advance-generation-campaign", (root / "advanced-producer").string(), advancePath.string(),
       advanceHash, "producer", "2026-09-13T00:00:01Z"}) == 0);
 #else
-  const auto recoveredAdvance = authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash,
+  const auto recoveredAdvance = authoring::advanceGenerationRequest(root / "advanced-producer", advancePath, advanceHash,
       "producer", "2026-09-13T00:00:01Z"); CHECK(recoveredAdvance);
-  CHECK(recoveredAdvance.value().completedBatches == 1U); CHECK(!recoveredAdvance.value().complete);
+  CHECK(recoveredAdvance.value().completedBatches == 1U);
+  CHECK(recoveredAdvance.value().outcome == authoring::CampaignAdvanceOutcome::BatchCollected);
 #endif
   CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == killedProducerBytes);
   CHECK(!std::filesystem::exists(killedJobDirectory / "output"));
@@ -1100,7 +1096,7 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   auto externalAfterAdvance = advancedRepository.recover().value();
   CHECK(advancedRepository.save(externalAfterAdvance, {"save", "external", "producer", "2026-09-13T00:00:03Z"}));
   // A completed campaign stays completed: later producer work (review, edits) is the normal next
-  // step, so re-advancing reports completion from the verified receipts and changes nothing.
+  // step, so re-advancing reports the recorded completion and changes nothing.
   const auto externallySaved = production::encodeProductionProject(advancedRepository.recover().value());
   CHECK(runVoicebankCli(advanceArgs) == 0);
   CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == externallySaved);

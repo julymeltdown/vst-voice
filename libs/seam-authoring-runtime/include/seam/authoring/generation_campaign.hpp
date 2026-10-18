@@ -59,11 +59,6 @@ struct PreparedCampaignBatch final {
     const std::filesystem::path& directory,
     std::optional<voicebank_production::ProductionCommitReceipt> predecessor = {},
     std::stop_token stop = {});
-struct CampaignAdvanceResult final {
-  std::size_t completedBatches{0U}, totalBatches{0U};
-  std::string producerSha256;
-  bool complete{false};
-};
 struct CampaignStorageUsage final { std::uint64_t logicalBytes{0U}; std::size_t entries{0U}; };
 // Bounded, read-only scan. Counts logical sizes (including sparse files), not
 // allocated disk blocks. Rejects symlinks/special files and does not delete data.
@@ -78,13 +73,6 @@ struct CampaignStorageUsage final { std::uint64_t logicalBytes{0U}; std::size_t 
 [[nodiscard]] core::Result<CampaignStorageUsage> measureCampaignRequestStorage(
     const std::filesystem::path& root, std::size_t batchCount,
     std::size_t maximumEntries = 262144U, std::stop_token stop = {});
-// Legacy form over the typed advancement below. It neither submits the campaign to the workspace
-// nor records terminal outcomes; cancellation, staleness and budget exhaustion return errors.
-[[nodiscard]] core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
-    const voicebank_production::ProductionProjectRepository& repository,
-    const std::filesystem::path& campaignPath, std::string_view campaignSha256,
-    std::string operatorId, std::string occurredAtUtc, std::stop_token stop = {},
-    std::function<bool()> interruptBeforeReceipt = {});
 
 // Every way one advancement can end without a fault. Integrity and I/O faults remain errors.
 enum class CampaignAdvanceOutcome { BatchCollected, Completed, Cancelled, Stale, BudgetExhausted };

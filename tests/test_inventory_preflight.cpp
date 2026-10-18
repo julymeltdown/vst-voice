@@ -185,7 +185,7 @@ TEST_CASE("a preflight renders its phrases, retains dry audio and collects nothi
 TEST_CASE("a campaign cannot advance until its own preflight passes") {
   Fixture fixture;
   // No report at all: the campaign is refused before anything renders or commits.
-  const auto missing = authoring::advanceGenerationCampaign(fixture.repository, fixture.campaignPath,
+  const auto missing = authoring::advanceGenerationRequest(fixture.workspace, fixture.campaignPath,
       fixture.campaignSha256, "producer", "2026-09-14T00:00:01Z");
   CHECK(!missing);
   if (!missing) CHECK(missing.error().message.find("preflight") != std::string::npos);
@@ -205,7 +205,7 @@ TEST_CASE("a campaign cannot advance until its own preflight passes") {
   CHECK(refused.value().phrases[1].verdict == "REFUSED");
   CHECK(refused.value().phrases[1].detail == "injected refusal for a defective class");
   CHECK(std::filesystem::exists(fixture.preflight() / "report.json"));
-  const auto blocked = authoring::advanceGenerationCampaign(fixture.repository, fixture.campaignPath,
+  const auto blocked = authoring::advanceGenerationRequest(fixture.workspace, fixture.campaignPath,
       fixture.campaignSha256, "producer", "2026-09-14T00:00:02Z");
   CHECK(!blocked);
   if (!blocked) CHECK(blocked.error().message.find("preflight") != std::string::npos);
@@ -221,11 +221,11 @@ TEST_CASE("a campaign cannot advance until its own preflight passes") {
   CHECK(core::durableAtomicWriteTextNew(cleanRoot / "campaign.json", fixture.campaign));
   CHECK(std::filesystem::create_directory(cleanRoot / "preflight"));
   CHECK(core::durableAtomicWriteTextNew(cleanRoot / "preflight" / "report.json", passing.value().json));
-  const auto advanced = authoring::advanceGenerationCampaign(fixture.repository, cleanRoot / "campaign.json",
+  const auto advanced = authoring::advanceGenerationRequest(fixture.workspace, cleanRoot / "campaign.json",
       fixture.campaignSha256, "producer", "2026-09-14T00:00:03Z");
   CHECK(advanced);
   if (!advanced) return;
-  CHECK(advanced.value().complete);
+  CHECK(advanced.value().outcome == authoring::CampaignAdvanceOutcome::Completed);
   CHECK(advanced.value().completedBatches == advanced.value().totalBatches);
   const auto collected = fixture.repository.recover(); CHECK(collected);
   CHECK(collected.value().takes.size() == 3U);

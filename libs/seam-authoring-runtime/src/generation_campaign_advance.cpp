@@ -62,11 +62,10 @@ core::Result<production::GenerationRequest> campaignRequest(const VerifiedGenera
   return request;
 }
 
-// One advancement over the campaign's durable receipts. With a registry, a fresh campaign is
-// submitted and every terminal outcome becomes the request's retained record; without one (the
-// legacy entry point) nothing outside the campaign directory and the producer is written.
+// One advancement over the campaign's durable receipts. A fresh campaign is submitted first, and
+// every terminal outcome of a submitted request becomes its retained record.
 core::Result<CampaignAdvanceReport> advanceCampaign(const production::ProductionProjectRepository& repository,
-    const production::GenerationRequestRegistry* registry, const std::filesystem::path& campaignPath,
+    const production::GenerationRequestRegistry& registry, const std::filesystem::path& campaignPath,
     std::string_view campaignSha256, const std::string& operatorId, const std::string& occurredAtUtc,
     std::stop_token stop, const CampaignAdvanceOptions& options) {
   using Output = CampaignAdvanceReport;
@@ -102,21 +101,18 @@ core::Result<CampaignAdvanceReport> advanceCampaign(const production::Production
   if (!production::isProductionUtcTimestamp(occurredAtUtc) || std::none_of(before.value().operators.begin(),
       before.value().operators.end(), [&](const auto& entry) { return entry.operatorId == operatorId; }))
     return fail("Campaign operator or timestamp is invalid");
-  std::optional<production::GenerationRequestRecord> record;
-  if (registry != nullptr) {
-    const auto found = registry->find(campaignSha256, stop);
-    if (!found) {
-      if (stop.stop_requested()) return finish(Outcome::Cancelled, 0U, cancelledDetail);
-      return core::Result<Output>{found.error()};
-    }
-    record = found.value();
-    if (record && record->terminal) {
-      // A terminal request is never worked again: every retry returns the retained outcome.
-      const auto& terminal = *record->terminal;
-      report.registered = report.terminalRecorded = true;
-      report.retainedBytes = static_cast<std::uint64_t>(terminal.retainedBytes);
-      return finish(fromTerminal(terminal.outcome), static_cast<std::size_t>(terminal.completedBatches), terminal.detail);
-    }
+  const auto found = registry.find(campaignSha256, stop);
+  if (!found) {
+    if (stop.stop_requested()) return finish(Outcome::Cancelled, 0U, cancelledDetail);
+    return core::Result<Output>{found.error()};
+  }
+  std::optional<production::GenerationRequestRecord> record = found.value();
+  if (record && record->terminal) {
+    // A terminal request is never worked again: every retry returns the retained outcome.
+    const auto& terminal = *record->terminal;
+    report.registered = report.terminalRecorded = true;
+    report.retainedBytes = static_cast<std::uint64_t>(terminal.retainedBytes);
+    return finish(fromTerminal(terminal.outcome), static_cast<std::size_t>(terminal.completedBatches), terminal.detail);
   }
   const auto root = std::filesystem::absolute(campaignPath).parent_path();
   // A campaign may not multiply a phone class across the bank until the held-out
@@ -126,14 +122,14 @@ core::Result<CampaignAdvanceReport> advanceCampaign(const production::Production
     if (stop.stop_requested()) return finish(Outcome::Cancelled, 0U, cancelledDetail);
     return fail("Campaign preflight is not admitted: " + preflight.error().message);
   }
-  if (registry != nullptr && !record) {
+  if (!record) {
     // Only a campaign whose producer is still at its initial state can be submitted. A campaign
     // advanced before submission existed keeps working unregistered, as it always did.
     const auto current = repository.recover();
     if (!current) return core::Result<Output>{current.error()};
     if (producerHash(current.value()) == initialHash) {
       const auto request = campaignRequest(verified.value(), campaignPath, operatorId, occurredAtUtc, stop);
-      const auto submitted = request ? registry->submit(request.value(), stop)
+      const auto submitted = request ? registry.submit(request.value(), stop)
                                      : core::Result<production::GenerationRequestRecord>{request.error()};
       if (!submitted) {
         if (stop.stop_requested()) return finish(Outcome::Cancelled, 0U, cancelledDetail);
@@ -159,7 +155,7 @@ core::Result<CampaignAdvanceReport> advanceCampaign(const production::Production
         .retainedBytes = outcome == Outcome::BudgetExhausted ? static_cast<std::int64_t>(retained) : 0,
         .detail = report.detail, .recordedBy = operatorId, .recordedAtUtc = occurredAtUtc};
     // The outcome has already happened, so recording it is not cancellable.
-    const auto recorded = registry->recordTerminal(campaignSha256, terminal);
+    const auto recorded = registry.recordTerminal(campaignSha256, terminal);
     if (!recorded) return core::Result<Output>{recorded.error()};
     report.terminalRecorded = true;
     return report;
@@ -325,21 +321,6 @@ core::Result<CampaignAdvanceReport> advanceGenerationRequest(
     std::stop_token stop, CampaignAdvanceOptions options) {
   const production::ProductionProjectRepository repository{workspace};
   const production::GenerationRequestRegistry registry{workspace};
-  return advanceCampaign(repository, &registry, campaignPath, campaignSha256, operatorId, occurredAtUtc, stop, options);
-}
-
-core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
-    const voicebank_production::ProductionProjectRepository& repository,
-    const std::filesystem::path& campaignPath, std::string_view campaignSha256,
-    std::string operatorId, std::string occurredAtUtc, std::stop_token stop,
-    std::function<bool()> interruptBeforeReceipt) {
-  const CampaignAdvanceOptions options{.interruptBeforeReceipt = std::move(interruptBeforeReceipt), .renderProgress = {}};
-  const auto report = advanceCampaign(repository, nullptr, campaignPath, campaignSha256, operatorId, occurredAtUtc, stop, options);
-  if (!report) return core::Result<CampaignAdvanceResult>{report.error()};
-  const auto& value = report.value();
-  if (value.outcome != Outcome::BatchCollected && value.outcome != Outcome::Completed)
-    return core::failure<CampaignAdvanceResult>(core::ErrorCode::Conflict, value.detail);
-  return CampaignAdvanceResult{value.completedBatches, value.totalBatches, value.producerSha256,
-                               value.outcome == Outcome::Completed};
+  return advanceCampaign(repository, registry, campaignPath, campaignSha256, operatorId, occurredAtUtc, stop, options);
 }
 }
