@@ -472,7 +472,6 @@ add_library(seam_editor_ui
   libs/seam-editor-ui/src/expression_lane.cpp
   libs/seam-editor-ui/src/phoneme_lane_model.cpp
   libs/seam-editor-ui/src/text_composition_model.cpp
-  libs/seam-editor-ui/src/svg_renderer.cpp
 )
 target_include_directories(seam_editor_ui PUBLIC libs/seam-editor-ui/include)
 target_link_libraries(seam_editor_ui PUBLIC seam_application seam_synthesis seam_phonemizer seam_domain seam_core)
@@ -933,11 +932,6 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     target_compile_options(seam_candidate_audition_probe PRIVATE -Wno-mismatched-new-delete)
   endif()
 endif()
-
-add_executable(seam_phase1_demo apps/seam-phase1-demo/main.cpp)
-target_link_libraries(seam_phase1_demo PRIVATE
-  seam_editor_ui seam_formats seam_platform seam_application seam_domain seam_core)
-seam_apply_compiler_options(seam_phase1_demo)
 
 add_executable(seam_phase2_demo apps/seam-phase2-demo/main.cpp)
 target_link_libraries(seam_phase2_demo PRIVATE
@@ -3278,49 +3272,20 @@ if(SEAM_BUILD_TESTS)
   endif()
 endif()
 
-if(SEAM_BUILD_BENCHMARKS)
-  add_executable(seam_phase1_benchmark benchmarks/phase1_benchmark.cpp)
-  target_link_libraries(seam_phase1_benchmark PRIVATE
+# The one maintained benchmark: the native editor frame/interaction budget, checked by a
+# contract test. Earlier phase benchmarks were only consumed by retired evidence generators.
+if(SEAM_BUILD_BENCHMARKS AND SEAM_BUILD_NATIVE_DESKTOP)
+  add_executable(seam_phase5_benchmark benchmarks/phase5_benchmark.cpp)
+  target_link_libraries(seam_phase5_benchmark PRIVATE
+    seam_native_ui seam_playback_platform seam_platform seam_rendering
     seam_editor_ui seam_application seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase1_benchmark)
-
-  add_executable(seam_phase2_benchmark benchmarks/phase2_benchmark.cpp)
-  target_link_libraries(seam_phase2_benchmark PRIVATE
-    seam_synthesis seam_voicebank seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase2_benchmark)
-
-  add_executable(seam_phase3_benchmark benchmarks/phase3_benchmark.cpp)
-  target_link_libraries(seam_phase3_benchmark PRIVATE
-    seam_rendering seam_synthesis seam_voicebank seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase3_benchmark)
-
-  add_executable(seam_phase4_benchmark benchmarks/phase4_benchmark.cpp)
-  target_link_libraries(seam_phase4_benchmark PRIVATE
-    seam_playback_platform seam_platform seam_rendering seam_synthesis seam_voicebank seam_domain seam_core)
-  seam_apply_compiler_options(seam_phase4_benchmark)
-
-  if(SEAM_BUILD_NATIVE_DESKTOP)
-    add_executable(seam_phase5_benchmark benchmarks/phase5_benchmark.cpp)
-    target_link_libraries(seam_phase5_benchmark PRIVATE
-      seam_native_ui seam_playback_platform seam_platform seam_rendering
-      seam_editor_ui seam_application seam_domain seam_core)
-    seam_apply_compiler_options(seam_phase5_benchmark)
-    if(SEAM_BUILD_TESTS)
-      add_test(NAME seam_phase5_benchmark_contract
-        COMMAND ${Python3_EXECUTABLE}
-          ${CMAKE_CURRENT_SOURCE_DIR}/tests/design/test_phase5_benchmark_contract.py
-          $<TARGET_FILE:seam_phase5_benchmark>)
-    endif()
-
-    add_executable(seam_phase9_benchmark benchmarks/phase9_benchmark.cpp)
-    target_link_libraries(seam_phase9_benchmark PRIVATE seam_text seam_core)
-    seam_apply_compiler_options(seam_phase9_benchmark)
+  seam_apply_compiler_options(seam_phase5_benchmark)
+  if(SEAM_BUILD_TESTS)
+    add_test(NAME seam_phase5_benchmark_contract
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/design/test_phase5_benchmark_contract.py
+        $<TARGET_FILE:seam_phase5_benchmark>)
   endif()
-
-  add_executable(seam_phase10_benchmark benchmarks/phase10_benchmark.cpp)
-  target_link_libraries(seam_phase10_benchmark PRIVATE seam_clap seam_core)
-  seam_apply_compiler_options(seam_phase10_benchmark)
-
 endif()
 
 if(Python3_Interpreter_FOUND)
@@ -3336,79 +3301,15 @@ if(Python3_Interpreter_FOUND)
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Auditing dependency licenses and repository policy")
 
-  if(SEAM_BUILD_TESTS AND SEAM_BUILD_BENCHMARKS)
-    add_custom_target(seam_phase1_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase1_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase1_demo seam_phase1_benchmark
+  if(SEAM_BUILD_TESTS AND SEAM_BUILD_NATIVE_DESKTOP)
+    add_custom_target(seam_native_ui_design_matrix
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/capture_native_ui_design_matrix.py
+              --build-dir ${CMAKE_BINARY_DIR}
+              --output ${CMAKE_BINARY_DIR}/native-editor-design
+      DEPENDS seam_tests
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 1 verification evidence")
-
-    add_custom_target(seam_phase2_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase2_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase2_demo seam_voicebank_cli seam_phase2_benchmark
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 2 verification evidence")
-
-    add_custom_target(seam_phase3_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase3_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase3_demo seam_voicebank_cli seam_phase3_benchmark
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 3 verification evidence")
-
-    add_custom_target(seam_phase4_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase4_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase4_demo seam_voicebank_cli seam_phase4_benchmark
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 4 verification evidence")
-
-    add_custom_target(seam_phase4_1_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase4_1_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase2_demo seam_phase3_demo seam_phase4_demo
-              seam_voicebank_cli seam_phase4_benchmark
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 4.1 stabilization evidence")
-
-    if(SEAM_BUILD_NATIVE_DESKTOP)
-      add_custom_target(seam_native_ui_design_matrix
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/capture_native_ui_design_matrix.py
-                --build-dir ${CMAKE_BINARY_DIR}
-                --output ${CMAKE_BINARY_DIR}/native-editor-design
-        DEPENDS seam_tests
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Capturing deterministic native editor design fixtures")
-      add_custom_target(seam_phase5_evidence
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase5_evidence.py
-                --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-        DEPENDS seam_tests seam_phase5_demo seam_editor_native seam_phase5_benchmark
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating Phase 5 native-runtime evidence")
-      add_custom_target(seam_phase8_evidence
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase8_evidence.py
-                --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-        DEPENDS seam_tests seam_phase8_demo seam_editor_native seam_voicebank_studio_native
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating Phase 8 cross-platform source and Linux regression evidence")
-      add_custom_target(seam_phase9_evidence
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase9_evidence.py
-                --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-        DEPENDS seam_tests seam_phase9_demo seam_editor_native seam_phase9_benchmark
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating Phase 9 Unicode/CJK rendering evidence")
-    endif()
-    add_custom_target(seam_phase10_evidence
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase10_evidence.py
-              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
-      DEPENDS seam_tests seam_phase10_demo seam_clap_state_tool seam_phase10_benchmark
-              $<$<BOOL:${SEAM_BUILD_CLAP_PLUGIN}>:seam_clap_plugin>
-              $<$<BOOL:${SEAM_BUILD_CLAP_PLUGIN}>:seam_clap_host>
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      COMMENT "Generating Phase 10 CLAP plug-in evidence")
+      COMMENT "Capturing deterministic native editor design fixtures")
   endif()
 endif()
 
