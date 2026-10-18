@@ -2,30 +2,30 @@
 
 **Living document.** It answers one question: *what still has to happen before Project SEAM functions for a person who sits down to sing a song with it?* A scheduled scan refreshes it every seven hours (see [§9](#9-how-this-page-is-maintained)). Each scan rewrites the current-state sections in place and appends one entry to the [direction log](#10-direction-log). Gate states remain owned by [STATUS](../STATUS.md), and the order of milestone work by the [completion plan](2026-10-18-project-completion-plan.md). This page translates both into "can it function yet, and what is the next smallest step?"
 
-Last full scan: **2026-10-19 08:05 KST**, `master` at `8500aec7`, clean tree.
+Last full scan: **2026-10-19 08:26 KST**, dedicated clone at `origin/master` `ee35b905`, clean tree before scan.
 
 ## 1. Verdict
 
-Project SEAM builds, passes its tests and launches into a polished editor, but **on a clean Mac it cannot make a sound**. No singer ships with the application and none is installed by default, so a new project opens with the singer card showing *MISSING — Voicebank unavailable* and every expression control showing *UNAVAILABLE*. Sound exists today only inside prepared engineering setups: the observation kit's procedural diagnostic singer, the synthetic fixture bank used by tests, and banks a developer installs by hand from the command line. No recorded Japanese voice exists in any of them.
+Project SEAM builds and has a verified editor launch, but this unattended scan did not pass the full fast tier: a listening comparison stalled opening host-local audio (see F0). **On a clean Mac it cannot make a sound**. No singer ships with the application and none is installed by default, so a new project opens with the singer card showing *MISSING — Voicebank unavailable* and every expression control showing *UNAVAILABLE*. Sound exists today only inside prepared engineering setups: the observation kit's procedural diagnostic singer, the synthetic fixture bank used by tests, and banks a developer installs by hand from the command line. No recorded Japanese voice exists in any of them.
 
 The shortest route to a functioning product therefore runs through **getting one real Japanese singer onto the machine**. The editor, renderer, project lifecycle and export pipeline do not need to be built first; they are already built. Section 5 lists engineering work that can start today without waiting for owner decisions. The most valuable item is an engineering-only Japanese sample bank made from a corpus already on disk (PJS 1.1), which the completion plan's D1 analysis did not consider.
 
 ## 2. Functional ladder
 
-Each rung needs the one before it. "Evidence" names what was executed in this scan or the code that decides the outcome.
+Each rung needs the one before it. "Evidence" names this scan's results, a dated earlier run, or the code that decides the outcome.
 
 | Rung | Meaning | State | Evidence |
 |---|---|---|---|
-| F0 Builds and tests | Release build and the fast tier pass | **Yes** | `cmake --build build/release -j6` exit 0 (143 steps); `ctest --preset release -LE '^slow$' -j6` 209/209 passed in 35.5 s; `ctest -N` lists 241 entries |
-| F1 Launches and edits | The standalone opens a responsive editor | **Yes** | Launched `build/release/Project SEAM.app` against a fresh support root with `--evidence-dir`; the SING shell rendered with the empty-score prompt |
-| F2 Sound on a clean Mac | A new user hears anything at all | **No** | Same run reported `voicebank_resolved=false`, `render_state=idle`, `transport_available=false`; the bundle contains no voicebank; `~/Library/Application Support/ProjectSEAM/Voicebanks` and `Singers` do not exist on the development Mac |
+| F0 Builds and tests | Release build and the fast tier pass | **Build yes; fast tier blocked** | `cmake --build build/release -j6` exit 0 in 230.5 s; `ctest --preset release -LE '^slow$' -j6` exit 8, 195/196 passed in 145.66 s (`seam_listening_packet_comparison` timed out at 120 s); 227 registered, with native GUI tests off and optional ONNX SDK unset in `build/release/CMakeCache.txt` |
+| F1 Launches and edits | The standalone opens a responsive editor | **Yes** | Baseline launch at `8500aec7` (2026-10-19 08:05 KST): `build/release/Project SEAM.app` against a fresh support root with `--evidence-dir`; the SING shell rendered with the empty-score prompt |
+| F2 Sound on a clean Mac | A new user hears anything at all | **No** | Same baseline run reported `voicebank_resolved=false`, `render_state=idle`, `transport_available=false`; the bundle contains no voicebank; `~/Library/Application Support/ProjectSEAM/Voicebanks` and `Singers` do not exist on the development Mac |
 | F3 Japanese song in a recorded voice | Japanese lyrics sung by a sample-concatenative bank made from human recordings | **No** | No Japanese human-recorded bank exists; the 1,469 female downloads contain no Japanese CV syllables ([STATUS](../STATUS.md)); PJS 1.1 is on disk but not converted |
 | F4 Musically acceptable to the owner | The owner hears a render and judges it usable | **Unknown** | No verdict recorded on any song; [observation form](../implementation/NATIVE_OBSERVATION_FORM_2026-10-12.json) still `NOT_OBSERVED` in every step, `largerObstacle: UNDECIDED` |
 | F5 Unaided Usable Alpha journey | UA-001–UA-020 from Finder | **No** | 0/20 recorded, all `NOT_RUN` ([record](../product/usable-alpha-acceptance.json)) |
 | F6 Works in a DAW | CLAP/VST3/AUv2 in REAPER, Bitwig, Logic | **No** | Only the first-party `seam_clap_host` has loaded the plug-ins; G2–G5 all `passed: false` |
 | F7 Shareable | Signed, notarized, installable by someone else | **No** | No Developer ID run; External Beta 0/9 |
 
-F2 is the first missing rung, and F3 and F4 follow directly from it. The work that matters most now sits at F2–F4. F6 and F7 are real but later.
+F2 remains the first missing product capability; F0 now also needs the scan's host-local audio read unblocked. F3 and F4 follow directly from F2. The work that matters most now sits at F2–F4. F6 and F7 are real but later.
 
 ## 3. What a person can do today, journey by journey
 
@@ -73,7 +73,7 @@ The procedural path makes sound, but its quality is unqualified: the dry procedu
 
 ### G4 — No listening verdict and no observation (blocks F4)
 
-*Evidence:* the observation form is unfilled; an observation-kit instance of the app (`out/observation/native-song-2026-10-12/apps/Project SEAM.app`) was still running at the time of this scan, opened on 2026-10-12, with six rendered PCM files in its cache. The kit sings with the procedural diagnostic singer `seam-pilot-01-voiced-stop-diagnostic` (`NOT_QUALIFIED`).
+*Evidence:* the observation form is unfilled; an observation-kit instance of the app (`out/observation/native-song-2026-10-12/apps/Project SEAM.app`) is still running, started on 2026-10-12; the 08:05 baseline counted six rendered PCM files in its cache. The kit sings with the procedural diagnostic singer `seam-pilot-01-voiced-stop-diagnostic` (`NOT_QUALIFIED`).
 
 *Why it matters:* the project has no musical feedback at all. D9 costs about thirty minutes and needs no other decision. It decides whether the first repair block goes to the editor workflow or to sound.
 
@@ -137,3 +137,5 @@ Logs and each run's short summary go to `~/Library/Logs/ProjectSEAM/readiness-sc
 Newest last. One entry per scan: date, commit, what changed in evidence, and the direction adjustment, if any.
 
 - **2026-10-19 08:05 KST, `8500aec7` — baseline.** First functional scan. Evidence: build exit 0, fast tier 209/209, gate verifiers unchanged (UA contract valid with 0/20 rows, voicebank gate exit 3 with 12 categories, G2–G5 exit 3). New findings: a clean install has no singer (F2 fails), in-app install refuses self-signed banks from a Finder launch, PJS 1.1 is a usable Japanese engineering source the plan overlooked, and D9 is still unrecorded although the kit has been open since 2026-10-12. Direction: put an engineering Japanese bank (item 2) and the owner's observation (item 1) ahead of all remaining M0 cleanup and every M2 task.
+
+- **2026-10-19 08:26 KST, `ee35b905` — scan limitation; no product change.** New commits only add readiness documentation/automation. Build exit 0 (230.5 s); fast tier exit 8, 195/196 in 145.66 s, with `seam_listening_packet_comparison` timing out at 120 s. Timestamps and source hashes checked: its Python files match HEAD; the retained WAV predates this build. A 25 s diagnostic also stalled in `compare_artifacts` (`scripts/compare_listening_packets.py:310`), called by `test_the_retained_d1_packet_compares_to_its_own_rerender`, opening audio under `~/Downloads/seam-listening-artifacts/2026-09-15-d1-repeat/`; no stale linked binary explains it. This clone registers 227 tests with native GUI tests off and no optional ONNX SDK, so STATUS/plan's historical 241-test runs and the baseline's 209-test fast-tier pass do not describe this scan. Gates unchanged: UA contract exit 0/PASS, acceptance BLOCKED 0/20; voicebank exit 3/`passed: false`, 52 errors/12 categories; G2, G3, G4 and G5 each exit 3/`passed: false`. D9 remains unobserved, Appendix C unfilled, and `pjs_cohort.py` and the default installed bank/singer roots absent. Fresh-root launch not repeated: none of the trigger paths changed. Direction: **no change** to section 5; resolve the scan's host-local audio dependency before claiming a passing fast tier, while D9 and the engineering Japanese bank remain first.
