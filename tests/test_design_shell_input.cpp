@@ -152,6 +152,35 @@ void checkLyricRect(ui::Rect actual, ui::Rect expected) {
 
 }  // namespace
 
+TEST_CASE("the SING ruler shows the playback loop while it is on") {
+  // Rehearsal 2026-10-20: Toggle Loop wrapped playback with nothing on screen to say where.
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  const auto l = f.shell.layout();
+  const auto paintWith = [&f](std::optional<std::pair<double, double>> loop) {
+    auto state = f.controller.sceneState();
+    state.loopPixels = loop;
+    f.surface = native_ui::PixelSurface{1600U, 900U};
+    native_ui::RasterCanvas canvas{f.surface, 1.0, nullptr};
+    CHECK(f.shell.paint(canvas, f.controller, state, f.controller.playheadTick()));
+    return std::vector<std::uint32_t>{f.surface.pixels().begin(), f.surface.pixels().end()};
+  };
+  const auto rowSum = [&l](const std::vector<std::uint32_t>& pixels, double from, double to) {
+    double sum = 0.0;
+    const auto y = static_cast<std::size_t>(l.ruler.y + l.ruler.height * 0.6);
+    for (auto x = static_cast<std::size_t>(l.grid.x + from); x < static_cast<std::size_t>(l.grid.x + to); ++x) {
+      const auto p = pixels[y * 1600U + x];
+      sum += static_cast<double>((p >> 16U) & 255U) + ((p >> 8U) & 255U) + (p & 255U);
+    }
+    return sum;
+  };
+  const auto off = paintWith(std::nullopt);
+  const auto on = paintWith(std::pair{300.0, 500.0});
+  CHECK(std::abs(rowSum(on, 340.0, 460.0) - rowSum(off, 340.0, 460.0)) > 1000.0);
+  CHECK(rowSum(on, 700.0, 820.0) == rowSum(off, 700.0, 820.0));
+}
+
 TEST_CASE("the active shell keeps the input geometry when a sheet opens") {
   ShellFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;

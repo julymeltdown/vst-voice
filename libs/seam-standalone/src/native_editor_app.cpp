@@ -2172,6 +2172,13 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   auto state = authoring_->controller().sceneState();
   state.playheadPixel =
       authoring_->controller().pianoRoll().timeline().tickToPixel(tick);
+  if (transport.loop.enabled && transport.loop.endFrame > transport.loop.startFrame) {
+    const auto rate = authoring_->runtime().transport().sampleRate();
+    const auto& timeline = authoring_->controller().pianoRoll().timeline();
+    state.loopPixels = std::pair{
+        timeline.tickToPixel(project.tempoMap().tickAtSampleFrame(transport.loop.startFrame, rate)),
+        timeline.tickToPixel(project.tempoMap().tickAtSampleFrame(transport.loop.endFrame, rate))};
+  }
   // An edit that lands on the playhead needs the tick, not the pixel.
   authoring_->controller().setPlayheadTick(tick);
   if (progress.state == authoring::RenderState::Queued ||

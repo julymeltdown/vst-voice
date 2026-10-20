@@ -2628,6 +2628,24 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     c.fill(Path::rect(box), t.color.selectionFill);
     c.stroke(Path::rect(box), t.color.accent, StrokeStyle{1.0});
   }
+  if (state.loopPixels.has_value()) {
+    // The loop: a band on the ruler with its edges carried down the grid, under the playhead.
+    layerTo(paint::Layer::Dynamic, "loop-range");
+    const auto left = std::max(l.grid.x, l.grid.x + state.loopPixels->first);
+    const auto right = std::min(l.grid.right(), l.grid.x + state.loopPixels->second);
+    if (right > left) {
+      c.fill(Path::rect({left, l.ruler.y, right - left, l.ruler.height}),
+             withAlpha(t.color.accentTime, 0.28));
+      c.fill(Path::rect({left, l.grid.y, right - left, l.grid.height}),
+             withAlpha(t.color.accentTime, 0.05));
+      for (const auto x : {l.grid.x + state.loopPixels->first, l.grid.x + state.loopPixels->second}) {
+        if (x < l.grid.x || x > l.grid.right()) continue;
+        Path edge;
+        edge.moveTo({x, l.ruler.y}).lineTo({x, l.grid.bottom()});
+        c.stroke(edge, withAlpha(t.color.accentTime, 0.55), StrokeStyle{1.0});
+      }
+    }
+  }
   if (state.playheadPixel >= 0.0) {
     layerTo(paint::Layer::Dynamic, "playhead");
     const auto x = l.grid.x + state.playheadPixel;

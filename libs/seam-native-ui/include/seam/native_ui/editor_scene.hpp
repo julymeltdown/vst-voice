@@ -25,6 +25,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -184,6 +185,9 @@ struct EditorSceneState final {
   std::optional<ui::Rect> lyricEditor;
   std::string compositionPreview;
   double playheadPixel{0.0};
+  // The playback loop's edges on the timeline, in the same pixels as playheadPixel, while a loop is
+  // on. Rehearsal 2026-10-20: Toggle Loop wrapped playback with nothing on screen to say where.
+  std::optional<std::pair<double, double>> loopPixels;
 
   phonemizer::Result phonemes;
   std::vector<domain::UnitSelectionOverride> unitOverrides;
