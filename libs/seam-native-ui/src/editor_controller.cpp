@@ -374,6 +374,9 @@ EditorSceneState NativeEditorController::sceneState() const {
     // remaining permanently neutral/focused.  Native hosts select the actual
     // state asset from this semantic value after the scene is built.
     switch (state.voiceIdentity.state) {
+      case VoiceIdentityState::NoSinger:
+        state.characterState = character::State::Neutral;
+        break;
       case VoiceIdentityState::Missing:
         state.characterState = character::State::Warning;
         break;

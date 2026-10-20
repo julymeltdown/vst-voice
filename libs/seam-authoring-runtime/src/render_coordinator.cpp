@@ -92,6 +92,7 @@ std::string_view renderStateName(RenderState state) noexcept {
 std::string_view renderFailureName(RenderFailureKind failure) noexcept {
   switch (failure) {
     case RenderFailureKind::None: return "none";
+    case RenderFailureKind::SingerNotSelected: return "singer-not-selected";
     case RenderFailureKind::VoicebankMissing: return "voicebank-missing";
     case RenderFailureKind::VoicebankVersionMismatch:
       return "voicebank-version-mismatch";
@@ -793,6 +794,12 @@ AuthoringRenderCoordinator::preflight(const Request& request) {
         }
         continue;
       }
+    }
+    if (track.voicebank.id.empty() && track.voicebank.version.empty() &&
+        track.voicebank.contentHash.empty()) {
+      result.failure = RenderFailureKind::SingerNotSelected;
+      result.diagnostic = "No singer is selected for audible track " + track.id.toString();
+      return result;
     }
     if (track.voicebank.id.empty() || track.voicebank.version.empty()) {
       result.failure = RenderFailureKind::VoicebankMissing;

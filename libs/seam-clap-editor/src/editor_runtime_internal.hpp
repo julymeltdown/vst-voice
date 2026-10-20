@@ -57,6 +57,7 @@ inline PreviewStatus previewStatusFor(
     authoring::RenderFailureKind failure) noexcept {
   switch (failure) {
     case authoring::RenderFailureKind::None: return PreviewStatus::Ready;
+    case authoring::RenderFailureKind::SingerNotSelected:
     case authoring::RenderFailureKind::VoicebankMissing:
     case authoring::RenderFailureKind::InvalidProject:
       return PreviewStatus::VoicebankMissing;

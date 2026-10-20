@@ -3091,8 +3091,10 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     const auto railColor = identity.state == VoiceIdentityState::Missing ||
                                    identity.state == VoiceIdentityState::Error
                                ? t.color.error
-                               : identity.state == VoiceIdentityState::Warning ? t.color.warning
-                                                                              : t.color.accent;
+                               : identity.state == VoiceIdentityState::Warning ||
+                                         identity.state == VoiceIdentityState::NoSinger
+                                     ? t.color.warning
+                                     : t.color.accent;
     {
       const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
       const auto* package = characterPortrait(characterState_);
@@ -3124,8 +3126,10 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   const auto stateColor = identity.state == VoiceIdentityState::Missing ||
                                   identity.state == VoiceIdentityState::Error
                               ? t.color.error
-                              : identity.state == VoiceIdentityState::Warning ? t.color.warning
-                                                                              : t.color.success;
+                              : identity.state == VoiceIdentityState::Warning ||
+                                        identity.state == VoiceIdentityState::NoSinger
+                                    ? t.color.warning
+                                    : t.color.success;
   const auto chipWidth = c.measure(stateName, style(FontRole::UiBold, 10.5, 1.2)) + 20.0;
   const ui::Rect chip{l.singer.right() - 16.0 - chipWidth, l.singer.y + 10.0, chipWidth, 20.0};
   c.fill(Path::capsule(chip), withAlpha(stateColor, 0.16));
@@ -3221,7 +3225,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   const auto identityStyle = style(FontRole::UiSemibold, t.type.label, 0.4);
   c.text(identityBox, midEllipsis(c, name, identityStyle, identityBox.width), identityStyle,
          t.color.textPrimary);
-  const auto detail = identity.state == VoiceIdentityState::Missing && !identity.recovery.empty()
+  const auto detail = (identity.state == VoiceIdentityState::Missing ||
+                       identity.state == VoiceIdentityState::NoSinger) && !identity.recovery.empty()
                           ? identity.recovery
                           : identity.identity;
   const auto detailBox = ui::Rect{l.singer.x + 18.0, footerY + 13.0,
@@ -3283,8 +3288,10 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   const auto stateColor = identity.state == VoiceIdentityState::Missing ||
                                   identity.state == VoiceIdentityState::Error
                               ? t.color.error
-                              : identity.state == VoiceIdentityState::Warning ? t.color.warning
-                                                                              : t.color.success;
+                              : identity.state == VoiceIdentityState::Warning ||
+                                        identity.state == VoiceIdentityState::NoSinger
+                                    ? t.color.warning
+                                    : t.color.success;
   const auto ring = l.portraitRing;
   const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
   const auto inner = ring.width * 0.5 - 2.0;

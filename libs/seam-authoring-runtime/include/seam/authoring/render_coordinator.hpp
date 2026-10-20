@@ -35,6 +35,9 @@ enum class RenderState {
 
 enum class RenderFailureKind {
   None,
+  // An audible track that has never been given a singer: no sample bank, recipe or neural
+  // resource. Nothing is broken, so it is reported as a choice still to make, not a missing bank.
+  SingerNotSelected,
   VoicebankMissing,
   VoicebankVersionMismatch,
   VoicebankContentHashMissing,

@@ -447,11 +447,14 @@ std::string expectedExportStemName(std::string trackName) {
 TEST_CASE("An installed original singer renders an authored lyric song") {
   const auto installed = installSongSinger("song-journey-render");
   auto editor = makeEditor(installed);
+  // Before any singer is chosen the editor says so, rather than reporting a bank that is missing.
   const auto startupDiagnostics = editor.session->runtime().diagnostics();
   CHECK(std::any_of(startupDiagnostics.begin(), startupDiagnostics.end(),
                     [](const auto& diagnostic) {
-                      return diagnostic.code == "BANK_MISSING";
+                      return diagnostic.code == "SINGER_NOT_SELECTED";
                     }));
+  CHECK(std::none_of(startupDiagnostics.begin(), startupDiagnostics.end(),
+                     [](const auto& diagnostic) { return diagnostic.code == "BANK_MISSING"; }));
   // The creator sees what the installed singer supports before selecting it: the offer carries a
   // summary from the shared route resolver, naming the carrier and the controls it will actually apply.
   const auto offers = editor.controller->installedSingerOffers();
@@ -479,7 +482,9 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
   const auto initialDiagnostics = editor.session->runtime().diagnostics();
   const auto staleMissingBank = std::any_of(
       initialDiagnostics.begin(), initialDiagnostics.end(),
-      [](const auto& diagnostic) { return diagnostic.code == "BANK_MISSING"; });
+      [](const auto& diagnostic) {
+        return diagnostic.code == "BANK_MISSING" || diagnostic.code == "SINGER_NOT_SELECTED";
+      });
   CHECK(!staleMissingBank);
   const auto* initialTrack = editor.session->runtime().document().session().project()
       .findVocalTrack(editor.session->runtime().selectedTrack());

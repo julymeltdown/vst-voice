@@ -969,7 +969,9 @@ TEST_CASE("native audio-unavailable diagnostic opens live audio settings") {
   CHECK(app.value()->authoring().controller().audioSettingsVisible());
 }
 
-TEST_CASE("native startup promotes missing voicebank into an actionable diagnostic") {
+// A fresh start has no singer at all. That is a choice still to make, not a missing bank, and its first
+// action is to install one.
+TEST_CASE("native startup without a singer offers an actionable choose-or-install diagnostic") {
   const auto root = seam::test::support::temporaryDirectory(
       "native-startup-bank-diagnostic");
   seam::standalone::NativeEditorAppConfig config;
@@ -982,12 +984,16 @@ TEST_CASE("native startup promotes missing voicebank into an actionable diagnost
   const auto diagnostics = app.value()->authoring().runtime().diagnostics();
   const auto missing = std::find_if(
       diagnostics.begin(), diagnostics.end(), [](const auto& diagnostic) {
-        return diagnostic.code == "BANK_MISSING";
+        return diagnostic.code == "SINGER_NOT_SELECTED";
       });
   CHECK(missing != diagnostics.end());
+  if (missing == diagnostics.end()) return;
+  CHECK(missing->severity == seam::authoring::DiagnosticSeverity::Warning);
   CHECK(!missing->actions.empty());
   CHECK(missing->actions.front() ==
         seam::authoring::DiagnosticAction::InstallVoicebank);
+  CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                     [](const auto& diagnostic) { return diagnostic.code == "BANK_MISSING"; }));
 }
 
 // A key the editor refuses as things stand was recorded in lastError_, which only reaches stderr when the

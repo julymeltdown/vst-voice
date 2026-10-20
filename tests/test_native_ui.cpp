@@ -672,6 +672,34 @@ TEST_CASE("voice identity suppresses mismatched character presentation") {
   CHECK(completed.state == seam::native_ui::VoiceIdentityState::Complete);
 }
 
+// A track that was never given a singer is a choice still to make; a saved singer that cannot be found
+// is missing. The card says which, so a new project does not read as broken.
+TEST_CASE("voice identity distinguishes no singer from a missing saved singer") {
+  const auto none = seam::native_ui::resolveVoiceIdentity({.reference = {}});
+  CHECK(none.state == seam::native_ui::VoiceIdentityState::NoSinger);
+  CHECK(none.name == "No singer selected");
+  CHECK(none.recovery.find("Install a voicebank") != std::string::npos);
+  CHECK(seam::native_ui::voiceIdentityStateName(none.state) == "No singer");
+  CHECK(!none.characterActive);
+
+  const auto missing = seam::native_ui::resolveVoiceIdentity({.reference = seam::domain::VoicebankReference{
+      .id = "voice.saved", .version = "1.0.0", .contentHash = std::string(64U, 'a')}});
+  CHECK(missing.state == seam::native_ui::VoiceIdentityState::Missing);
+  CHECK(missing.name == "Voicebank unavailable");
+  CHECK(missing.recovery.find("relink") != std::string::npos);
+
+  const auto presentation = seam::native_ui::presentDiagnostic(seam::authoring::Diagnostic{
+      .code = "SINGER_NOT_SELECTED",
+      .severity = seam::authoring::DiagnosticRegistry::severity("SINGER_NOT_SELECTED"),
+      .messageKey = "render.singer-not-selected",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions("SINGER_NOT_SELECTED"),
+      .occurrenceCount = 1U});
+  CHECK(presentation.title == "No singer selected");
+  CHECK(seam::authoring::DiagnosticRegistry::severity("SINGER_NOT_SELECTED") ==
+        seam::authoring::DiagnosticSeverity::Warning);
+}
+
 TEST_CASE("diagnostic presentation keeps recovery copy separate from stable codes") {
   const auto presentation = seam::native_ui::presentDiagnostic({
       .code = "BANK_MISSING",

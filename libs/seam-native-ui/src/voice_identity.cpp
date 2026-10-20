@@ -65,6 +65,9 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
       : activeKind == domain::SingerResourceKind::Neural
           ? std::string_view{"Neural singer"}
           : std::string_view{"Sample singer"};
+  const bool noSinger = sampleRoute && !cardMatches && !alternativeSelected &&
+                        input.reference.id.empty() && input.reference.version.empty() &&
+                        input.reference.contentHash.empty();
   if (cardMatches) {
     result.name = input.card->displayName;
     result.identity = input.reference.id + " " + input.reference.version;
@@ -73,7 +76,8 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
     result.identity = std::string{family} + " " + input.activeResource->id + " " +
         input.activeResource->version + " #" + input.activeResource->contentHash.substr(0U, 12U);
   } else {
-    result.name = sampleRoute ? "Voicebank unavailable" : std::string{family} + " not selected";
+    result.name = noSinger ? "No singer selected"
+                  : sampleRoute ? "Voicebank unavailable" : std::string{family} + " not selected";
     result.identity = sampleRoute
         ? (input.reference.id.empty() ? "No sample singer selected"
                                       : input.reference.id + " " + input.reference.version)
@@ -82,6 +86,7 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
   result.recovery = cardMatches ? "" : alternativeSelected
       ? (currentRenderConfirmed(input.renderStatus)
             ? "" : "Selected resource; render to confirm availability")
+      : noSinger ? "Install a voicebank or create a singer in Voicebank Studio"
       : sampleRoute ? "Choose or relink a trusted voicebank"
                     : "Select a complete singer resource identity";
   if (input.character != nullptr && input.character->resourceIdentity.has_value() &&
@@ -93,6 +98,8 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
   if (hasError(input.diagnostics)) result.state = VoiceIdentityState::Error;
   else if (input.renderStatus.state == RenderStatusState::Failed)
     result.state = VoiceIdentityState::Error;
+  else if (noSinger)
+    result.state = VoiceIdentityState::NoSinger;
   else if (!cardMatches && !alternativeSelected)
     result.state = sampleRoute ? VoiceIdentityState::Missing : VoiceIdentityState::Selected;
   else if (hasWarning(input.diagnostics) ||
@@ -112,6 +119,7 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
     result.state = VoiceIdentityState::Ready;
   }
   result.characterActive = matchingCharacter(input) &&
+                           result.state != VoiceIdentityState::NoSinger &&
                            result.state != VoiceIdentityState::Missing &&
                            result.state != VoiceIdentityState::Error;
   if (result.characterActive) {
@@ -124,6 +132,7 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
 
 std::string_view voiceIdentityStateName(VoiceIdentityState state) noexcept {
   switch (state) {
+    case VoiceIdentityState::NoSinger: return "No singer";
     case VoiceIdentityState::Missing: return "Missing";
     case VoiceIdentityState::Selected: return "Selected";
     case VoiceIdentityState::Ready: return "Ready";

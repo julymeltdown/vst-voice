@@ -12,7 +12,8 @@
 
 namespace seam::native_ui {
 
-enum class VoiceIdentityState { Missing, Selected, Ready, Rendering, Complete, Warning, Error };
+// NoSinger: the track has never been given a singer. Missing: a saved singer cannot be found.
+enum class VoiceIdentityState { NoSinger, Missing, Selected, Ready, Rendering, Complete, Warning, Error };
 
 struct VoiceIdentityInput final {
   domain::VoicebankReference reference;

@@ -25,6 +25,8 @@ bool isResolved(const TrackVoicebankState& state) noexcept {
 
 std::string_view renderDiagnosticCode(RenderFailureKind failure) noexcept {
   switch (failure) {
+    case RenderFailureKind::SingerNotSelected:
+      return "SINGER_NOT_SELECTED";
     case RenderFailureKind::VoicebankMissing:
     case RenderFailureKind::VoicebankVersionMismatch:
     case RenderFailureKind::VoicebankContentHashMissing:
@@ -165,7 +167,9 @@ std::vector<Diagnostic> AuthoringRuntime::diagnostics() const {
     if (!known) result.push_back(diagnostic);
   };
   if (bankUnavailable_)
-    add(renderDiagnostic(RenderFailureKind::VoicebankMissing, "voicebank-missing"));
+    add(noSingerSelected_
+            ? renderDiagnostic(RenderFailureKind::SingerNotSelected, "singer-not-selected")
+            : renderDiagnostic(RenderFailureKind::VoicebankMissing, "voicebank-missing"));
   // Also a standing condition: it holds until the transport has been given what it is owed.
   if (transportDebtDiagnostic_.has_value()) add(*transportDebtDiagnostic_);
   for (const auto& recorded : diagnostics_) {
@@ -175,9 +179,10 @@ std::vector<Diagnostic> AuthoringRuntime::diagnostics() const {
   return result;
 }
 
-void AuthoringRuntime::noteBankAvailability(bool unavailable) {
+void AuthoringRuntime::noteBankAvailability(bool unavailable, bool noSingerSelected) {
   std::lock_guard lock(diagnosticsMutex_);
   bankUnavailable_ = unavailable;
+  noSingerSelected_ = unavailable && noSingerSelected;
 }
 
 void AuthoringRuntime::settleWithNothingToRender() {
@@ -703,7 +708,7 @@ void AuthoringRuntime::requestPreviewImpl(
 
   PreviewAssessment assessment;
   auto request = makePreviewRequest(std::move(impact), &assessment);
-  noteBankAvailability(assessment.bankUnavailable);
+  noteBankAvailability(assessment.bankUnavailable, assessment.noSingerSelected);
   if (!request.has_value()) {
     if (assessment.nothingAudible) settleWithNothingToRender();
     return;
@@ -789,6 +794,12 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact,
   const auto nothingAudible = !hasBackingAudio && !anyNoteToSing;
   if (assessment != nullptr) {
     assessment->bankUnavailable = !project.vocalTracks().empty() && !anyUsableSinger;
+    assessment->noSingerSelected = assessment->bankUnavailable &&
+        std::none_of(project.vocalTracks().begin(), project.vocalTracks().end(),
+                     [](const domain::VocalTrack& track) {
+                       return !track.voicebank.id.empty() || track.proceduralRecipe.has_value() ||
+                              track.neuralResource.has_value();
+                     });
     assessment->nothingAudible = nothingAudible;
   }
   if (nothingAudible) return std::nullopt;

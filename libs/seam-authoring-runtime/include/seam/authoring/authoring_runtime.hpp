@@ -220,6 +220,9 @@ private:
   struct PreviewAssessment final {
     // The score has vocal tracks and none of them has a bank (or a recipe) it can be rendered with.
     bool bankUnavailable{false};
+    // ... and none of those tracks refers to any singer at all: a new score whose singer has not
+    // been chosen, as opposed to a saved choice that can no longer be found.
+    bool noSingerSelected{false};
     // Nothing anywhere in the score could sound: no backing audio, and no note on a track that has
     // something to sing it. Only then is there nothing to render; a selected region with no notes
     // does not make the score empty.
@@ -228,7 +231,7 @@ private:
 
   [[nodiscard]] std::optional<PreviewRequest> makePreviewRequest(
       application::CommandImpact impact, PreviewAssessment* assessment = nullptr) const;
-  void noteBankAvailability(bool unavailable);
+  void noteBankAvailability(bool unavailable, bool noSingerSelected = false);
   // Nothing is left to render: drops the attempt outcomes, the audio the transport still holds and
   // the coordinator's state, so nothing keeps sounding or describing a render of a score that is gone.
   void settleWithNothingToRender();
@@ -324,6 +327,7 @@ private:
   std::vector<RecordedDiagnostic> diagnostics_;
   // Derived from the last render request that was composed; see PreviewAssessment.
   bool bankUnavailable_{false};
+  bool noSingerSelected_{false};
   // What diagnostics() says of transportDebt_. Written with it, under performanceAuditionMutex_.
   std::optional<Diagnostic> transportDebtDiagnostic_;
   // Guarded by performanceAuditionMutex_.

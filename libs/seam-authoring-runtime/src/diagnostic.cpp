@@ -24,6 +24,10 @@ constexpr DiagnosticAction kChooseBankSupport[]{DiagnosticAction::ChooseVoiceban
                                                  DiagnosticAction::OpenSupport};
 constexpr DiagnosticAction kChooseBank[]{DiagnosticAction::ChooseVoicebank,
                                           DiagnosticAction::CopyDiagnostic};
+// A new score with no singer: on a fresh install there is nothing to choose yet, so installing comes
+// first; choosing an installed singer is the other way forward.
+constexpr DiagnosticAction kChooseSinger[]{DiagnosticAction::InstallVoicebank,
+                                            DiagnosticAction::ChooseVoicebank};
 constexpr DiagnosticAction kBankRecovery[]{DiagnosticAction::InstallVoicebank,
                                             DiagnosticAction::RelinkVoicebank,
                                             DiagnosticAction::ChooseVoicebank,
@@ -70,6 +74,7 @@ constexpr DiagnosticAction kRetryNotice[]{DiagnosticAction::Retry, DiagnosticAct
 constexpr std::array definitions{
     Definition{"INSTALL_DURABILITY_UNCONFIRMED", DiagnosticSeverity::Warning, kRendererChanged},
     Definition{"PROJECT_NOT_FOUND", DiagnosticSeverity::Error, kOpenSupport},
+    Definition{"SINGER_NOT_SELECTED", DiagnosticSeverity::Warning, kChooseSinger},
     Definition{"BANK_MISSING", DiagnosticSeverity::Error, kBankRecovery},
     Definition{"BANK_UNTRUSTED", DiagnosticSeverity::Error, kChooseBankSupport},
     Definition{"BANK_COVERAGE_MISSING", DiagnosticSeverity::Warning, kChooseBank},
