@@ -3297,6 +3297,14 @@ if(SEAM_BUILD_BENCHMARKS AND SEAM_BUILD_NATIVE_DESKTOP)
   endif()
 endif()
 
+# Voicebank catalogue scan cost (the scan a plug-in instance runs when it opens). Run by hand
+# against real installed banks; there is no test, because the numbers depend on the banks present.
+if(SEAM_BUILD_BENCHMARKS)
+  add_executable(seam_voicebank_scan_benchmark benchmarks/voicebank_scan_benchmark.cpp)
+  target_link_libraries(seam_voicebank_scan_benchmark PRIVATE seam_voicebank seam_domain seam_core)
+  seam_apply_compiler_options(seam_voicebank_scan_benchmark)
+endif()
+
 if(Python3_Interpreter_FOUND)
   add_custom_target(seam_branch_policy
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_master_branch.py
