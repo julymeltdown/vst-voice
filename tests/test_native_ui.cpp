@@ -6085,6 +6085,42 @@ TEST_CASE("compact toolbar reserves a project identity subtitle") {
   CHECK(!layout.compactProjectTitleBoundsForWidth(720.0).has_value());
 }
 
+TEST_CASE("native scene publishes the latest render's unit plan for the unit lane") {
+  // Rehearsal 2026-10-20: the unit lane drew only overrides, so the units a render chose
+  // (Usable Alpha UA-005) were invisible until the user overrode one.
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  region->lyrics.front().surface = U"こ";
+  region->lyrics.front().language = seam::domain::Language::Japanese;
+  seam::authoring::TechnicalRenderView view;
+  seam::synthesis::UnitPlanEntry consonant;
+  consonant.unitId = "ko_C4";
+  consonant.tokenStart = 0U;
+  consonant.tokenCount = 2U;
+  consonant.renderer = seam::domain::UnitRendererKind::ClassicPsola;
+  seam::synthesis::UnitPlanEntry outside = consonant;
+  outside.unitId = "past-the-region";
+  outside.tokenStart = 99U;
+  view.units.push_back({.entry = consonant, .usedFallback = false, .diagnostic = {}});
+  view.units.push_back({.entry = outside, .usedFallback = false, .diagnostic = {}});
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{.renderedUnitPlan = [view] { return view; }}};
+  controller.resize(1280.0, 720.0);
+  const auto state = controller.sceneState();
+  CHECK(state.phonemes.tokens.size() >= 2U);
+  CHECK(state.renderedUnits.size() == 1U);
+  CHECK(state.renderedUnits.front().unitId == "ko_C4");
+  CHECK(state.renderedUnits.front().startKey == state.phonemes.tokens.front().key);
+  CHECK(state.renderedUnits.front().tokenCount == 2U);
+  CHECK(state.renderedUnits.front().renderer == seam::domain::UnitRendererKind::ClassicPsola);
+
+  seam::native_ui::NativeEditorController without{fixture.session, fixture.factory, fixture.regionId};
+  without.resize(1280.0, 720.0);
+  CHECK(without.sceneState().renderedUnits.empty());
+}
+
 TEST_CASE("native scene renders phoneme unit pitch and full character dock") {
   NativeUiFixture fixture;
   auto* region = fixture.session.project().findRegion(fixture.regionId);

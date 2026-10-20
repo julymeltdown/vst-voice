@@ -106,6 +106,10 @@ public:
   [[nodiscard]] phonemizer::Result phonemes() const;
   [[nodiscard]] std::optional<TechnicalUnitView> unitDiagnostic(
       domain::PhonemeKey key) const;
+  // The unit plan of the latest render, for the editor's unit lane. Empty without a provider.
+  [[nodiscard]] TechnicalRenderView renderView() const {
+    return renderViewProvider_ ? renderViewProvider_() : TechnicalRenderView{};
+  }
 
 private:
   [[nodiscard]] const domain::VocalRegion* region() const noexcept;

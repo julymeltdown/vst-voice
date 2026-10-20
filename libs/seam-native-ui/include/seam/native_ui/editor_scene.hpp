@@ -29,6 +29,15 @@
 #include <vector>
 
 namespace seam::native_ui {
+
+// A unit the latest render chose, spanning tokenCount phonemes from startKey. The unit lane draws
+// these so the user sees the selection before overriding it (Usable Alpha UA-005).
+struct RenderedUnitSpan final {
+  domain::PhonemeKey startKey;
+  std::uint16_t tokenCount{1U};
+  std::string unitId;
+  domain::UnitRendererKind renderer{domain::UnitRendererKind::Inherit};
+};
 inline constexpr std::array<const char*, 6U> kReplacementReviewActions{
     "Previous", "Next", "Lyrics / dependencies", "Apply replacement", "Cancel / close", "Refresh review"};
 struct ReplacementReviewView final {
@@ -177,6 +186,7 @@ struct EditorSceneState final {
 
   phonemizer::Result phonemes;
   std::vector<domain::UnitSelectionOverride> unitOverrides;
+  std::vector<RenderedUnitSpan> renderedUnits;
   std::vector<domain::SeamOverride> seamOverrides;
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};

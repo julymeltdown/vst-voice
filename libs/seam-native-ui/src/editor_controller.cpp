@@ -468,6 +468,20 @@ EditorSceneState NativeEditorController::sceneState() const {
   if (const auto* region = session_.project().findRegion(regionId_); region != nullptr) {
     state.phonemes = regionPronunciation(*region);
     state.unitOverrides = region->unitSelectionOverrides;
+    if (callbacks_.renderedUnitPlan) {
+      // Plan entries index the region's phoneme tokens, the same inspection the lanes draw.
+      const auto& tokens = state.phonemes.tokens;
+      for (const auto& unit : callbacks_.renderedUnitPlan().units) {
+        if (unit.entry.tokenStart >= tokens.size() || unit.entry.unitId.empty()) continue;
+        const auto count = std::min(unit.entry.tokenCount, tokens.size() - unit.entry.tokenStart);
+        state.renderedUnits.push_back(RenderedUnitSpan{
+            .startKey = tokens[unit.entry.tokenStart].key,
+            .tokenCount = static_cast<std::uint16_t>(std::clamp<std::size_t>(count, 1U, 0xffffU)),
+            .unitId = unit.entry.unitId,
+            .renderer = unit.entry.renderer,
+        });
+      }
+    }
     state.seamOverrides = region->seamOverrides;
     state.pitchAutomation = region->pitchAutomation.points();
     state.automationOriginTick = region->startTick;

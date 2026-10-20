@@ -270,6 +270,7 @@ void AuthoringSession::configureController() {
       .cycleUnitRenderer = [this](domain::PhonemeKey key) {
         return runtime_->technicalEdits().cycleUnitRenderer(key);
       },
+      .renderedUnitPlan = [this] { return runtime_->technicalEdits().renderView(); },
       .upsertPitchPoint = [this](domain::PitchAutomationPoint point) {
         return runtime_->technicalEdits().upsertPitchPoint(point);
       },

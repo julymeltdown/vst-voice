@@ -177,6 +177,8 @@ struct EditorHostCallbacks final {
   std::function<void()> retryRender;
   std::function<core::Result<void>(domain::PhonemeKey)> cycleUnitVariant;
   std::function<core::Result<void>(domain::PhonemeKey)> cycleUnitRenderer;
+  // The latest render's unit plan, so the unit lane can show which unit each phoneme uses.
+  std::function<authoring::TechnicalRenderView()> renderedUnitPlan;
   std::function<core::Result<void>(domain::PitchAutomationPoint)> upsertPitchPoint;
   std::function<core::Result<void>(domain::PhonemeKey, bool,
                                    time::Microseconds)> movePhonemeBoundary;

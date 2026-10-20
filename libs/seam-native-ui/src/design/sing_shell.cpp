@@ -3019,6 +3019,29 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
       tick.moveTo({visual.bounds.x, unitBand.y + 3.0}).lineTo({visual.bounds.x, unitBand.bottom() - 3.0});
       c.stroke(tick, withAlpha(t.color.gridWeak, 0.9), StrokeStyle{1.0});
     }
+    // The units the latest render chose, muted; an override on the same span is drawn over it.
+    for (const auto& unit : state.renderedUnits) {
+      const bool overridden = std::any_of(state.unitOverrides.begin(), state.unitOverrides.end(),
+                                          [&unit](const auto& o) { return o.startKey == unit.startKey; });
+      if (overridden) continue;
+      const auto start = std::find_if(visuals.begin(), visuals.end(),
+                                      [&unit](const ui::PhonemeVisual& v) { return v.key == unit.startKey; });
+      if (start == visuals.end()) continue;
+      auto end = start;
+      for (std::uint16_t n = 1U; n < unit.tokenCount && end + 1 != visuals.end(); ++n) ++end;
+      const auto left = std::max(plot.x, start->bounds.x);
+      const auto right = std::min(plot.right(), end->bounds.right());
+      if (right <= left) continue;
+      const ui::Rect card{left, metrics.unitContentTop(unitBand.y), std::max(3.0, right - left),
+                          metrics.unitContentHeight(unitBand.height)};
+      c.fill(Path::roundedRect(card, 3.0), withAlpha(t.color.surfaceSunken, 0.9));
+      c.stroke(Path::roundedRect(card, 3.0), withAlpha(t.color.border, 0.6), StrokeStyle{1.0});
+      const ui::Rect textBox{card.x + 4.0, card.y, std::max(0.0, card.width - 8.0), card.height};
+      if (textBox.width >= 12.0)
+        c.text(textBox, unit.unitId,
+               fittedToTen(c, unit.unitId, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+               t.color.textSecondary);
+    }
     for (const auto& unit : state.unitOverrides) {
       const auto start = std::find_if(visuals.begin(), visuals.end(),
                                       [&unit](const ui::PhonemeVisual& v) { return v.key == unit.startKey; });
