@@ -25,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace seam::native_ui {
 
@@ -383,6 +384,25 @@ core::Result<void> NativeEditorController::keyDownGlobalShortcut(const KeyEvent&
       reconcileWithProject();
       markDocumentChanged();
     }
+  } else if (event.modifiers.primaryShortcut() && !event.modifiers.alt && !event.modifiers.shift &&
+             event.key == NativeKey::A) {
+    // Command-A selects every note of the selected region. Before this branch the key fell
+    // through to the plain A below and silently slurred the selection (or added a track).
+    if (const auto* region = session_.project().findRegion(regionId_); region != nullptr) {
+      std::vector<domain::NoteId> ids;
+      ids.reserve(region->notes.size());
+      for (const auto& note : region->notes) ids.push_back(note.id);
+      session_.selection().replace(ids);
+    }
+  } else if (event.modifiers.primaryShortcut() &&
+             (event.key == NativeKey::A || event.key == NativeKey::C ||
+              event.key == NativeKey::V || event.key == NativeKey::X ||
+              event.key == NativeKey::Q || event.key == NativeKey::L ||
+              event.key == NativeKey::I || event.key == NativeKey::Space ||
+              event.key == NativeKey::Enter)) {
+    // These letters are single-key editor commands. With Command or Control held the user means
+    // an application shortcut (copy, paste, cut, quit ...), so none of them may edit the score
+    // or toggle a panel. Note clipboard commands do not exist yet.
   } else if ((event.key == NativeKey::Delete ||
               event.key == NativeKey::Backspace || event.key == NativeKey::X) &&
              event.modifiers.shift && session_.selection().empty()) {
@@ -455,8 +475,19 @@ core::Result<void> NativeEditorController::keyDownGlobalShortcut(const KeyEvent&
       if (result) loopEnabled_ = !loopEnabled_;
     }
   } else if (event.key == NativeKey::Enter) {
-    const auto selected = session_.selection().noteIds();
-    if (!selected.empty()) result = beginLyricEdit(selected.front());
+    // The selection is an unordered set; edit the earliest selected note, not a hash-order pick.
+    std::optional<domain::NoteId> first;
+    const domain::Note* firstNote = nullptr;
+    for (const auto id : session_.selection().noteIds()) {
+      const auto* note = session_.project().findNote(id);
+      if (note == nullptr) continue;
+      if (firstNote == nullptr || note->startTick < firstNote->startTick ||
+          (note->startTick == firstNote->startTick && id.value() < first->value())) {
+        first = id;
+        firstNote = note;
+      }
+    }
+    if (first.has_value()) result = beginLyricEdit(*first);
   } else if (event.key == NativeKey::C) {
     const auto mode = session_.project().settings().characterDisplay;
     setCharacterDisplay(mode == domain::CharacterDisplayMode::Full

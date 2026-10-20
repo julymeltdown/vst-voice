@@ -1574,6 +1574,59 @@ bool frameAt(ShellFixture& f, double width, double height) {
 
 }  // namespace
 
+TEST_CASE("SING: Command-A selects the region's notes and Command letters never edit the score") {
+  // Found in the 2026-10-20 engineering rehearsal: with Edit > Select All disabled, Command-A fell
+  // through to the plain A and slurred the selected note, so a batch lyric edit reached one note.
+  ShellFixture f{time::Tick{0}, true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.session.selection().noteIds().size() == 1U);
+  const auto send = [&f](KeyEvent event) {
+    if (!f.shell.handleShellKey(f.controller, event)) static_cast<void>(f.controller.keyDown(event));
+  };
+  const auto revision = f.controller.documentRevision();
+  const auto& notes = f.session.project().findRegion(f.regionId)->notes;
+  send(KeyEvent{.key = NativeKey::A, .modifiers = {.command = true}});
+  CHECK(f.session.selection().noteIds().size() == notes.size());
+  CHECK(f.controller.documentRevision() == revision);
+  for (const auto& note : notes) {
+    CHECK(note.articulation == domain::NoteArticulation::Normal);
+    CHECK(!note.slurGroup.has_value());
+  }
+
+  const auto display = f.controller.characterDisplay();
+  const auto noteCount = notes.size();
+  const auto tracks = f.session.project().vocalTracks().size();
+  const auto starts = f.textInputStarts;
+  for (const auto key : {NativeKey::C, NativeKey::V, NativeKey::X, NativeKey::Q, NativeKey::L,
+                         NativeKey::I, NativeKey::Space, NativeKey::Enter}) {
+    send(KeyEvent{.key = key, .modifiers = {.command = true}});
+    send(KeyEvent{.key = key, .modifiers = {.control = true}});
+  }
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == noteCount);
+  CHECK(f.session.project().vocalTracks().size() == tracks);
+  CHECK(f.controller.characterDisplay() == display);
+  CHECK(!f.controller.voicebankBrowserVisible());
+  CHECK(!f.controller.audioSettingsVisible());
+  CHECK(f.textInputStarts == starts);
+  CHECK(f.session.selection().noteIds().size() == noteCount);
+
+  // A plain click on one note of the selection narrows it to that note; Return on a
+  // multi-selection edits the earliest note (ties by id), never a hash-order pick.
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.session.selection().noteIds().size() == 1U);
+  CHECK(f.session.selection().contains(f.note().id));
+  send(KeyEvent{.key = NativeKey::A, .modifiers = {.command = true}});
+  CHECK(f.session.selection().noteIds().size() == noteCount);
+  send(KeyEvent{.key = NativeKey::Enter});
+  CHECK(f.textInputStarts == starts + 1U);
+  CHECK(f.lastTextInput.has_value() && f.lastTextInput->lyricId == f.note().lyricTokenId);
+}
+
 TEST_CASE("EXPORT keeps modified and plain editing keys away from the hidden score") {
   using native_ui::design::Workspace;
   ShellFixture f;

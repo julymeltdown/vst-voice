@@ -2251,6 +2251,7 @@ core::Result<void> NativeEditorController::pointerDown(
     } else if (!session_.selection().contains(selectedHit)) {
       session_.selection().selectOnly(selectedHit);
     }
+    pressedNote_ = event.modifiers.shift ? std::nullopt : std::optional<domain::NoteId>{selectedHit};
     const auto visuals = pianoRoll_.visibleNotes();
     const auto resizeHandle = std::any_of(
         visuals.begin(), visuals.end(),
@@ -2938,6 +2939,10 @@ core::Result<void> NativeEditorController::pointerUp(
     if (deltaTick != time::Tick{0} || semitone != 0) {
       result = pianoRoll_.moveSelection(deltaTick, semitone);
       if (result) markDocumentChanged();
+    } else if (pressedNote_.has_value() && session_.selection().size() > 1U) {
+      // A click that did not drag selects only the clicked note, so Return then edits that
+      // note's lyric rather than whichever selected note the set yields first.
+      session_.selection().selectOnly(*pressedNote_);
     }
   } else if (dragMode_ == DragMode::ResizeNotes) {
     const auto deltaX = dragCurrent_.x - dragStart_.x;
@@ -2958,6 +2963,7 @@ core::Result<void> NativeEditorController::pointerUp(
   }
   dragMode_ = DragMode::None;
   dragPhoneme_.reset();
+  pressedNote_.reset();
   repaint();
   return result;
 }

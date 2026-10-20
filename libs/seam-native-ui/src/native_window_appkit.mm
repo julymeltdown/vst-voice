@@ -321,7 +321,11 @@ public:
     textRequest_ = request;
     textStorage_ = [stringFromUtf32(request.currentText) mutableCopy];
     if (textStorage_ == nil) textStorage_ = [NSMutableString string];
-    selectedRange_ = NSMakeRange(textStorage_.length, 0U);
+    // A note's lyric opens fully selected so typing replaces it, as in other vocal editors; other
+    // fields keep the caret at the end.
+    selectedRange_ = request.anchor == TextInputAnchor::NoteGrid
+                         ? NSMakeRange(0U, textStorage_.length)
+                         : NSMakeRange(textStorage_.length, 0U);
     markedRange_ = NSMakeRange(NSNotFound, 0U);
     [window_ makeFirstResponder:view_];
     [[view_ inputContext] activate];
@@ -724,6 +728,11 @@ public:
   }
 
   void command(SEL selector) noexcept {
+    if (!textInputActive_ && client_ != nullptr && selector == @selector(selectAll:)) {
+      // Edit > Select All outside a text field selects the region's notes, exactly like the key.
+      client_->keyDown(KeyEvent{.key = NativeKey::A, .modifiers = InputModifiers{.command = true}, .repeat = false});
+      return;
+    }
     if (!textInputActive_ || client_ == nullptr) return;
     if (selector == @selector(paste:)) {
       NSString* incoming = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
@@ -1352,6 +1361,7 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
 - (void)selectAll:(id)sender { (void)sender; if (_owner != nullptr) _owner->command(@selector(selectAll:)); }
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
   const auto action = item.action;
+  if (action == @selector(selectAll:)) return _owner != nullptr;
   if (action == @selector(paste:) || action == @selector(copy:) || action == @selector(cut:) || action == @selector(selectAll:))
     return _owner != nullptr && _owner->textInputActive();
   return YES;

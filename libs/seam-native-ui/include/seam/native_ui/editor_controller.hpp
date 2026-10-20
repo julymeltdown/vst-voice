@@ -912,6 +912,8 @@ private:
   std::optional<VibratoHandleKind> vibratoKeyboardFocus_;
   ui::Point dragStart_;
   ui::Point dragCurrent_;
+  // The note under a plain press; a press that never moves narrows a multi-selection to it.
+  std::optional<domain::NoteId> pressedNote_;
   bool dragAdditive_{false};
   std::optional<domain::PhonemeKey> dragPhoneme_;
   bool dragPhonemeStart_{true};
