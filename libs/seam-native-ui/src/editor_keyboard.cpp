@@ -429,15 +429,13 @@ core::Result<void> NativeEditorController::keyDownGlobalShortcut(const KeyEvent&
       result = duplicateSelectedTrack();
     }
   } else if (event.key == NativeKey::A) {
+    // A edits the selected notes only. Rehearsal 2026-10-20: with nothing selected a stray A
+    // silently added a vocal track; adding a track stays on the Track menu command.
     if (!session_.selection().empty()) {
       result = event.modifiers.shift
                    ? setSelectedNotesSlur(false)
                    : (event.modifiers.alt ? setSelectedNotesMelisma()
                                           : setSelectedNotesSlur(true));
-    } else {
-      const auto added = addVocalTrack("Voice " +
-                                      std::to_string(session_.project().vocalTracks().size() + 1U));
-      if (!added) result = core::Result<void>{added.error()};
     }
   } else if (event.key == NativeKey::Q) {
     if (!session_.selection().empty()) {

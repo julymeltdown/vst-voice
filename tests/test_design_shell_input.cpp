@@ -1656,6 +1656,23 @@ TEST_CASE("SING: Command-A selects the region's notes and Command letters never 
   CHECK(f.lastTextInput.has_value() && f.lastTextInput->lyricId == f.note().lyricTokenId);
 }
 
+TEST_CASE("SING: A with no note selected changes nothing") {
+  // Rehearsal 2026-10-20: a plain A with nothing selected silently added a vocal track.
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.session.selection().empty());
+  const auto revision = f.controller.documentRevision();
+  const auto tracks = f.session.project().vocalTracks().size();
+  for (const KeyEvent event : {KeyEvent{.key = NativeKey::A},
+                               KeyEvent{.key = NativeKey::A, .modifiers = {.shift = true}},
+                               KeyEvent{.key = NativeKey::A, .modifiers = {.alt = true}}}) {
+    if (!f.shell.handleShellKey(f.controller, event)) static_cast<void>(f.controller.keyDown(event));
+  }
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.session.project().vocalTracks().size() == tracks);
+}
+
 TEST_CASE("EXPORT keeps modified and plain editing keys away from the hidden score") {
   using native_ui::design::Workspace;
   ShellFixture f;
