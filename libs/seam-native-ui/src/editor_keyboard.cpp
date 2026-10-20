@@ -447,8 +447,14 @@ core::Result<void> NativeEditorController::keyDownGlobalShortcut(const KeyEvent&
     if (regionId_.valid()) {
       const auto* region = session_.project().findRegion(regionId_);
       if (region != nullptr) {
-        result = splitSelectedRegion(
-            time::Tick{region->durationTick.value() / 2});
+        // Split where the playhead stands, as a DAW does. Rehearsal 2026-10-20: a stray S split
+        // at the region's midpoint and moved the editor to the empty right half, so every note
+        // seemed to vanish. With the playhead on an edge there is nothing to split.
+        const auto local = playheadTick_ - region->startTick;
+        result = local > time::Tick{0} && local < region->durationTick
+                     ? splitSelectedRegion(local)
+                     : core::failure(core::ErrorCode::InvalidArgument,
+                                     "Move the playhead inside the region to split it there");
       }
     }
   } else if (event.key == NativeKey::E && !event.modifiers.primaryShortcut()) {

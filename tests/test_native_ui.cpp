@@ -3154,6 +3154,31 @@ TEST_CASE("native arrangement controller exposes undoable track and region editi
   CHECK(fixture.session.project().findVocalTrack(addedTrack.value()) != nullptr);
 }
 
+TEST_CASE("native controller S splits the region at the playhead and refuses on its edges") {
+  // Rehearsal 2026-10-20: a stray S split the region at its midpoint and moved the editor to the
+  // empty right half, so every note seemed to vanish.
+  NativeUiFixture fixture;
+  seam::native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(1280.0, 720.0);
+  const auto regions = [&fixture] {
+    return fixture.session.project().vocalTracks().front().regions.size();
+  };
+  controller.setPlayheadTick(seam::time::Tick{0});
+  CHECK(!controller.keyDown({.key = seam::native_ui::NativeKey::S}));
+  CHECK(regions() == 1U);
+  CHECK(controller.selectedRegion() == fixture.regionId);
+  controller.setPlayheadTick(seam::time::Tick{7680});
+  CHECK(!controller.keyDown({.key = seam::native_ui::NativeKey::S}));
+  CHECK(regions() == 1U);
+
+  controller.setPlayheadTick(seam::time::Tick{3840});
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::S}));
+  CHECK(regions() == 2U);
+  const auto* left = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(left != nullptr);
+  if (left != nullptr) CHECK(left->durationTick == seam::time::Tick{3840});
+}
+
 TEST_CASE("native controller reconcile moves the editor off a region that Undo removed and tells the host") {
   using namespace seam;
   NativeUiFixture fixture;
