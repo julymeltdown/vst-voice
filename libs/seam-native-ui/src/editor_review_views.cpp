@@ -19,6 +19,7 @@
 // them comes from each open() rather than from here.
 
 #include "seam/native_ui/editor_controller.hpp"
+#include "review_labels.hpp"
 
 #include "seam/application/view_commands.hpp"
 
@@ -330,7 +331,7 @@ ReplacementReviewView NativeEditorController::findReviewView(ReplacementReviewVi
           std::to_string(std::max(std::size_t{1U}, (count + 5U) / 6U));
       for (std::size_t i = offset; i < std::min(offset + 6U, count); ++i) {
         const auto& hit = findNavigation_->result().hits[i];
-        view.rows.push_back(hit.noteId.toString() + " / " + std::to_string(hit.start.value()) + " ticks / " + domain::toUtf8(hit.matchedText));
+        view.rows.push_back(review_labels::note(session_.project(), regionId_, hit.noteId) + ": " + domain::toUtf8(hit.matchedText));
       }
       view.rowsInspectable = current && count > 0U;
       view.enabled[0] = replacementPage_ > 0U; view.enabled[1] = offset + 6U < count;
@@ -374,14 +375,14 @@ ReplacementReviewView NativeEditorController::noteCleanupReviewView(ReplacementR
     for (std::size_t i = offset; i < std::min(offset + 6U, count); ++i) {
       if (!replacementDependencies_) {
         const auto& row = rows[i];
-        view.rows.push_back(row.noteId.toString() + ": " + std::to_string(row.beforeDuration.value()) + " -> " +
+        view.rows.push_back(review_labels::note(session_.project(), regionId_, row.noteId) + ": " + std::to_string(row.beforeDuration.value()) + " -> " +
             std::to_string(row.afterDuration.value()) + " ticks / " + ui::noteCleanupOutcomeName(row.outcome));
         if (row.beforeArticulation != row.afterArticulation) view.rows.back() += " / set legato";
       } else {
         const auto& row = dependencies[i];
         const auto status = [](std::optional<bool> state) { return !state ? "absent" : (*state ? "unresolved" : "resolved"); };
         const auto kind = row.kind == ui::DependentEditKind::Phoneme ? "Phone " : (row.kind == ui::DependentEditKind::Unit ? "Unit " : "Seam ");
-        view.rows.push_back(std::string{kind} + row.key.toString() + " " + status(row.beforeUnresolved) + " -> " + status(row.afterUnresolved));
+        view.rows.push_back(std::string{kind} + "of " + review_labels::sound(session_.project(), regionId_, row.key) + ": " + status(row.beforeUnresolved) + " -> " + status(row.afterUnresolved));
       }
     }
     if (count == 0U) view.rows.push_back("No retained dependency records");
@@ -400,7 +401,7 @@ ReplacementReviewView NativeEditorController::clearVibratoReviewView(Replacement
         " enabled vibratos / page " + std::to_string(replacementPage_ + 1U) + "/" + std::to_string(std::max(std::size_t{1U}, (edits.size() + 5U) / 6U));
     const auto offset = replacementPage_ * 6U;
     for (std::size_t i = offset; i < std::min(offset + 6U, edits.size()); ++i)
-      view.rows.push_back(edits[i].noteId.toString() + ": enabled -> disabled");
+      view.rows.push_back(review_labels::note(session_.project(), regionId_, edits[i].noteId) + ": enabled -> disabled");
     if (edits.empty()) view.rows.push_back("Selected notes have no enabled vibrato");
     view.labels[2] = "Settings preserved"; view.labels[3] = "Clear vibrato";
     view.enabled[0] = replacementPage_ > 0U; view.enabled[1] = offset + 6U < edits.size();

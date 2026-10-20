@@ -1,4 +1,5 @@
 #include "seam/native_ui/editor_controller.hpp"
+#include "review_labels.hpp"
 #include "seam/core/finite_decimal.hpp"
 
 #include "seam/native_ui/editor_notices.hpp"
@@ -529,7 +530,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     if (source && reviewedEdit_ < review.retainedEdits.size()) {
       const auto& edit = review.retainedEdits[reviewedEdit_];
       state.phonemeReview.source = "Edit " + std::to_string(reviewedEdit_ + 1U) + "/" +
-          std::to_string(reviewEditCount()) + "  " + edit.key.toString() + "  " +
+          std::to_string(reviewEditCount()) + "  " + review_labels::sound(session_.project(), regionId_, edit.key) + "  " +
           edit.symbol.value_or("timing") + (edit.locked ? " locked  " : " unlocked  ") + "start/end us: " +
           (edit.timing.startOffset ? std::to_string(*edit.timing.startOffset) : "auto") + "/" +
           (edit.timing.endOffset ? std::to_string(*edit.timing.endOffset) : "auto");
@@ -539,17 +540,17 @@ EditorSceneState NativeEditorController::sceneState() const {
       const auto& edits = *renderEditReview_;
       if (index < edits.units.size()) {
         const auto& edit = edits.units[index];
-        state.phonemeReview.source = "Unit " + edit.unitId + "  " + edit.startKey.toString() +
+        state.phonemeReview.source = "Unit " + edit.unitId + " from " + review_labels::sound(session_.project(), regionId_, edit.startKey) +
             "  span " + std::to_string(edit.tokenCount) + "  " + std::string(domain::unitRendererKindName(edit.renderer)) +
             (edit.locked ? " locked" : " unlocked");
       } else {
         const auto& edit = edits.seams[index - edits.units.size()];
-        state.phonemeReview.source = "Seam " + edit.incomingStartKey.toString() + "  amount " +
+        state.phonemeReview.source = "Seam into " + review_labels::sound(session_.project(), regionId_, edit.incomingStartKey) + "  amount " +
             (edit.seamAmount ? std::to_string(*edit.seamAmount) : "auto") + "  overlap us " +
             (edit.overlap ? std::to_string(*edit.overlap) : "auto");
       }
     }
-    state.phonemeReview.target = target ? "Target " + targets[*reviewedTarget_].key.toString() +
+    state.phonemeReview.target = target ? "Target " + review_labels::sound(session_.project(), regionId_, targets[*reviewedTarget_].key) +
         "  " + targets[*reviewedTarget_].symbol : "Choose a current sound with Next sound";
     if (target && source && reviewedEdit_ >= review.retainedEdits.size() && renderEditReview_) {
       const auto index = reviewedEdit_ - review.retainedEdits.size();
@@ -557,11 +558,11 @@ EditorSceneState NativeEditorController::sceneState() const {
         const auto count = renderEditReview_->units[index].tokenCount;
         if (count > 0U && count <= targets.size() - *reviewedTarget_) {
           const auto& last = targets[*reviewedTarget_ + count - 1U];
-          state.phonemeReview.target += " through " + last.key.toString() + " " + last.symbol;
+          state.phonemeReview.target += " through " + review_labels::sound(session_.project(), regionId_, last.key) + " " + last.symbol;
         } else state.phonemeReview.target += " (incomplete span)";
       } else {
         state.phonemeReview.target += *reviewedTarget_ == 0U ? " (initial boundary)"
-            : " after " + targets[*reviewedTarget_ - 1U].key.toString() + " " + targets[*reviewedTarget_ - 1U].symbol;
+            : " after " + review_labels::sound(session_.project(), regionId_, targets[*reviewedTarget_ - 1U].key) + " " + targets[*reviewedTarget_ - 1U].symbol;
       }
     }
     state.phonemeReview.status = reviewStatus_;
@@ -674,7 +675,7 @@ ReplacementReviewView NativeEditorController::replacementReviewView() const {
   if (replacementDetail_) {
     const auto& detail = *replacementDetail_;
     const auto& lines = detail.lines[detail.side];
-    view.summary = detail.lyricId.toString() + (detail.side == 0U ? " BEFORE " : " AFTER ") +
+    view.summary = review_labels::lyric(session_.project(), regionId_, detail.lyricId) + (detail.side == 0U ? " BEFORE " : " AFTER ") +
         std::to_string(detail.page + 1U) + "/" + std::to_string((lines.size() + 5U) / 6U);
     const auto offset = detail.page * 6U;
     for (std::size_t i = offset; i < std::min(offset + 6U, lines.size()); ++i) {
@@ -700,11 +701,11 @@ ReplacementReviewView NativeEditorController::replacementReviewView() const {
     for (const auto& row : review->dependenciesPage(replacementPage_)) {
       const auto kind = row.kind == ui::ReplacementDependencyKind::Phoneme ? "Phone " :
           (row.kind == ui::ReplacementDependencyKind::Unit ? "Unit " : "Seam ");
-      view.rows.push_back(std::string{kind} + row.key.toString() + "  " + status(row.beforeUnresolved) + " -> " + status(row.afterUnresolved));
+      view.rows.push_back(std::string{kind} + "of " + review_labels::sound(session_.project(), regionId_, row.key) + ": " + status(row.beforeUnresolved) + " -> " + status(row.afterUnresolved));
     }
   } else {
     for (const auto& row : review->editsPage(replacementPage_))
-      view.rows.push_back(row.lyricId.toString() + ": " + domain::toUtf8(row.before) + " -> " + domain::toUtf8(row.after));
+      view.rows.push_back(review_labels::lyric(session_.project(), regionId_, row.lyricId) + ": " + domain::toUtf8(row.before) + " -> " + domain::toUtf8(row.after));
   }
   if (view.rows.empty()) view.rows.push_back(replacementDependencies_ ? "No retained dependency records" : "No lyrics would change");
   view.enabled[0] = replacementPage_ > 0U;
@@ -772,7 +773,7 @@ core::Result<void> NativeEditorController::openReplacementRow(std::size_t pageRo
         const auto& issue = report->issues[index];
         detail = std::string(voicebank::coverageIssueKindName(issue.kind)) + "\nPhone: " + issue.symbol +
             "\nStyle: " + issue.requestedStyle + "\nMIDI: " + std::to_string(issue.targetMidi) +
-            "\nNote: " + issue.phonemeKey.noteId.toString() + "\nPhone ordinal (zero-based): " + std::to_string(issue.phonemeKey.ordinal) + "\n" + issue.diagnostic;
+            "\nWhere: " + review_labels::sound(session_.project(), regionId_, issue.phonemeKey) + "\n" + issue.diagnostic;
         for (const auto& unit : issue.relatedUnitIds) detail += "\nRelated unit: " + unit;
         detail += "\nStructural evidence only; not audio QA.";
       }

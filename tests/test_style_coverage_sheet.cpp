@@ -265,7 +265,9 @@ TEST_CASE("native coverage issues expose full paged diagnostics without changing
   }
   CHECK(reconstructed.find("disabled-unit") != std::string::npos);
   CHECK(reconstructed.find("soft-a") != std::string::npos);
-  CHECK(reconstructed.find(f.project.findRegion(f.region)->notes.back().id.toString()) != std::string::npos);
+  // The issue names its note by place and lyric; the raw id meant nothing on screen.
+  CHECK(reconstructed.find("Where: Note ") != std::string::npos);
+  CHECK(reconstructed.find(f.project.findRegion(f.region)->notes.back().id.toString()) == std::string::npos);
   CHECK(session.project() == f.project); CHECK(session.selection().empty()); CHECK(!session.canUndo());
   CHECK(controller.replacementReviewAction(2U)); // Detail -> original issue page.
   CHECK(controller.sceneState().replacementReview.rows.size() == 2U);

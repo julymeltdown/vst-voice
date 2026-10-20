@@ -4413,6 +4413,14 @@ TEST_CASE("a review is a shell sheet whose rows and actions are the controller's
   CHECK(f.frame(480.0, 320.0));
   const auto view = f.controller.sceneState().replacementReview;
   const auto open = f.controller.replacementReviewSemanticPrefix();
+  // Rehearsal 2026-10-20: review rows named notes by their 16-digit ids; they read by place now.
+  CHECK(!view.rows.empty());
+  if (!view.rows.empty()) {
+    const auto noteId = f.session.project().findRegion(f.regionId)->notes.front().id.toString();
+    CHECK(view.rows.front().starts_with("Note "));
+    CHECK(view.rows.front().find("(bar ") != std::string::npos);
+    CHECK(view.rows.front().find(noteId) == std::string::npos);
+  }
   focusEveryControl(f, "shell.overlay.review.");
   for (std::size_t i = 0U; i < view.rows.size(); ++i) {
     const auto row = nodeNow(f, open + "row." + std::to_string(i));
