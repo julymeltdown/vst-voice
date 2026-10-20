@@ -11,7 +11,7 @@ Schema 3 extends v2 with an **optional Character product binding**. Audio synthe
   "displayName": "Official Voicebank 01",
   "characterId": "official.character.01",
   "characterVersion": "0.1.0",
-  "language": "japanese",
+  "language": "ja",
   "expectedSampleRate": 48000,
   "styles": ["original"],
   "units": []

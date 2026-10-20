@@ -13,7 +13,7 @@ Schema 2 is the current data-only voicebank manifest used by the Phase 3 synthes
   "id": "official.voice.01",
   "version": "1.0.0",
   "displayName": "Voicebank 01",
-  "language": "japanese",
+  "language": "ja",
   "expectedSampleRate": 48000,
   "styles": ["original"],
   "units": []

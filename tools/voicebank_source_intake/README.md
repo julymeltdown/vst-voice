@@ -62,3 +62,28 @@ build/release/seam_voicebank_cli verify-phone-donor \
 It checks the exact packet, plan, license, attribution and selected canonical WAV hashes, the selected PCM geometry/hash, plan identity and unapproved fields. It reads only the selected donor's audio; `wholePacketAudioVerified` remains false. It does not reopen the separately retained original recordings or authenticate their annotation content. The Python whole-packet preflight remains separate. The C++ `PreparedPhoneDonorSnapshot` owns the bytes so a later importer can consume and retain them without reopening preparation paths. Durable project retention, import, recovery, candidate publication and installed notice propagation are still unfinished. See [the native reader report](../../docs/implementation/NATIVE_PHONE_DONOR_SNAPSHOT_2026-10-15.md) for the actual SLT trial and verification limits.
 
 For native integration, `loadPreparedPhoneDonorEvidence` reads only the packet, plan, original license and attribution; its audio digest is a declaration, not a measurement. `validatePreparedPhoneDonorSnapshot` revalidates held evidence and selected WAV bytes against the caller's retained packet digest and donor ID without filesystem reads, reconstructing cached proposal/measurement fields. Shared snapshots live under `PreparedPhoneDonorSnapshot::evidence`. The [API report](../../docs/implementation/PREPARED_PHONE_DONOR_EVIDENCE_API_2026-10-15.md) records deletion/mutation tests and the Release/sanitizer evidence. These APIs grant no source or bank approval.
+
+## Engineering-only Japanese bank from PJS 1.1
+
+`pjs_engineering_bank.py` turns the PJS 1.1 singing corpus and the pinned manual relabel into a sample bank that the shipped renderer can sing Japanese lyrics with. It exists to exercise the product with a human-recorded Japanese voice before a rights-cleared production bank exists. **It is not a release resource.** PJS and the relabel are CC BY-SA 4.0, which conflicts with the product EULA's ban on bank redistribution; the bank ID starts with `engineering.`, and the output carries `LICENSE`, `NOTICE` (attribution and changes) and `provenance.json` (source and label hashes, source frame span and measured pitch for every unit).
+
+```sh
+python3 tools/voicebank_source_intake/pjs_engineering_bank.py \
+  --corpus out/evidence/internet-vocal-sources-2026-10-12/source/PJS_corpus_ver1.1 \
+  --labels out/evidence/internet-vocal-sources-2026-10-12/manual-labels/pjs-manual-labels-cc08bead6bf2b06e88608a8ece12555bcc720ec9/lab \
+  --pitch-tool build/release/seam_voicebank_cli \
+  --output out/engineering-banks/pjs-male-01
+```
+
+Labels are HTK mono labels in 100 ns units; PJS's devoiced `I`/`U`/`O` and `pau0` map onto the editor phonemizer's `i`/`u`/`o` and `pau`. Each consonant+vowel pair becomes a `cv` unit and each vowel or `N` after silence or another vowel becomes a `sustain` unit, the two shapes the timing solver treats as simple. A span is kept only if its vowel lasts at least 120 ms, the engine's own `extract-pitch` finds it at least 70% voiced with a median absolute deviation of at most 0.5 semitone, and no sample reaches the validator's clipping threshold. PCM is copied without resampling; the tool adds 3 ms/8 ms edge fades, snaps the loop to whole pitch periods and sets `gainDb` toward −20 dBFS RMS. At most `--max-takes` units (default 2) are kept per alias and root pitch. Python's `wave` module omits the RIFF pad byte after an odd data chunk, and some PJS files have that defect; the tool writes canonical RIFF itself and, when the strict native reader refuses a corpus file, measures pitch on a canonical copy of the same PCM and records that.
+
+On the full corpus (2026-10-20) it produced 1,696 units over 111 aliases, MIDI 44–79; `seam_voicebank_cli validate` reports 0 errors and 34 warnings (loop-boundary jumps and root-pitch mismatches). To use it, pack and install it with a local key, then pin a project to it:
+
+```sh
+build/release/seam_bank_tool keygen KEYS/private.json KEYS/public.json
+build/release/seam_bank_tool pack out/engineering-banks/pjs-male-01 BANK.seambank KEYS/private.json
+build/release/seam_bank_tool install BANK.seambank "$HOME/Library/Application Support/ProjectSEAM/Voicebanks" --public-key KEYS/public.json
+build/release/seam_voicebank_cli export-installed-bank-project PROJECT.seam OUT.wav "$HOME/Library/Application Support/ProjectSEAM/Voicebanks"
+```
+
+A CLI install records a signer-trusted receipt, so the bank is selectable in `Project SEAM.app` launched from Finder. `export-installed-bank-project` resolves each vocal track's exact pin under that root, refuses development fixtures and untrusted receipts, migrates legacy styles as project open does, and commits through the same `ExportService` as the app. Its output is engineering evidence only. Tests: `python3 -m unittest tests.test_pjs_engineering_bank` (part of CTest `seam_vocal_source_intake_tests`).

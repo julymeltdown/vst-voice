@@ -15,6 +15,8 @@
 #include "seam/neural_synthesis/model_contract.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/authoring/export_service.hpp"
+#include "seam/voicebank/catalog.hpp"
+#include "seam/authoring/voicebank_session.hpp"
 #include "seam/authoring/generation_job.hpp"
 #include "signal_cancellation.hpp"
 #include "sample_review_commands.hpp"
@@ -345,6 +347,95 @@ int bakeProjectCommand(int argc, char** argv) {
       {"receipt", seam::formats::JsonValue{exported.value().receiptPath.string()}}}}) << '\n';
   return 0;
 }
+
+// Engineering export for a project whose vocal tracks are pinned to sample banks installed under one
+// explicit root. It resolves each pin exactly, as the standalone app does, refuses development
+// fixtures and untrusted receipts, and commits through the same ExportService. It does not establish
+// playback, listening or release acceptance.
+int exportInstalledBankProjectCommand(int argc, char** argv) {
+  if (argc != 5) {
+    std::cerr << "export-installed-bank-project requires PROJECT OUTPUT_DIRECTORY VOICEBANK_ROOT\n";
+    return 1;
+  }
+  std::error_code error;
+  const auto path = std::filesystem::absolute(argv[2], error);
+  if (error) { std::cerr << "error: cannot resolve project path\n"; return 1; }
+  const auto root = std::filesystem::absolute(argv[4], error);
+  if (error) { std::cerr << "error: cannot resolve voicebank root\n"; return 1; }
+  auto project = seam::formats::ProjectJsonCodec{}.load(path);
+  if (!project) { printError(project.error()); return 1; }
+  const seam::voicebank::VoicebankSearchRoot searchRoot{
+      .path = root, .kind = seam::voicebank::VoicebankRootKind::Installed};
+  // Older projects carry a style that only the exact bank can resolve; opening a project in the
+  // app performs this same migration before anything renders.
+  seam::authoring::VoicebankSession session({searchRoot}, false);
+  if (const auto refreshed = session.refresh(); !refreshed) { printError(refreshed.error()); return 1; }
+  if (const auto migrated = session.migrateLegacyStyles(project.value()); !migrated) {
+    printError(migrated.error());
+    return 1;
+  }
+  const seam::voicebank::VoicebankCatalog catalog;
+  const auto candidates = catalog.scan({searchRoot});
+  if (!candidates) { printError(candidates.error()); return 1; }
+  std::vector<seam::rendering::TrackVoicebankSource> sources;
+  seam::formats::JsonValue::Array banks;
+  seam::domain::TrackId activeTrack;
+  seam::domain::RegionId activeRegion;
+  for (const auto& track : project.value().vocalTracks()) {
+    const auto region = std::find_if(track.regions.begin(), track.regions.end(),
+                                     [](const auto& value) { return !value.notes.empty(); });
+    if (region == track.regions.end()) continue;
+    if (track.proceduralRecipe || track.neuralResource) {
+      std::cerr << "error: export-installed-bank-project renders sample-bank tracks only\n";
+      return 1;
+    }
+    const auto resolution = catalog.resolve(track.voicebank, candidates.value(),
+        seam::voicebank::VoicebankResolveOptions{.requireTrustedInstalled = true,
+                                                 .allowDevelopmentFixtures = false});
+    if (!resolution.resolved()) {
+      std::cerr << "error: track '" << track.name << "' voicebank "
+                << seam::voicebank::voicebankResolveStatusName(resolution.status) << ": "
+                << resolution.diagnostic << '\n';
+      return 1;
+    }
+    const auto& candidate = *resolution.candidate;
+    sources.push_back(seam::rendering::TrackVoicebankSource{
+        .trackId = track.id, .manifest = candidate.manifest, .bankRoot = candidate.bankRoot,
+        .contentHash = candidate.contentHash, .trust = candidate.trust});
+    banks.emplace_back(seam::formats::JsonValue::Object{
+        {"id", seam::formats::JsonValue{candidate.manifest.id}},
+        {"version", seam::formats::JsonValue{candidate.manifest.version}},
+        {"contentHash", seam::formats::JsonValue{candidate.contentHash}},
+        {"trust", seam::formats::JsonValue{std::string{seam::voicebank::voicebankTrustName(candidate.trust)}}}});
+    if (!activeTrack.valid()) {
+      activeTrack = track.id;
+      activeRegion = region->id;
+    }
+  }
+  if (!activeTrack.valid()) { std::cerr << "error: project has no notes on a vocal track\n"; return 1; }
+  const auto exported = seam::authoring::ExportService{}.exportProject(
+      project.value(), sources, activeTrack, activeRegion, 0U, argv[3]);
+  if (!exported) { printError(exported.error()); return 1; }
+  const auto& result = exported.value();
+  if (result.state != seam::authoring::ExportState::Committed) {
+    std::cerr << "error: export did not commit: " << result.diagnostic << '\n';
+    return 1;
+  }
+  std::cout << seam::formats::stringifyJson(seam::formats::JsonValue{seam::formats::JsonValue::Object{
+      {"state", seam::formats::JsonValue{"Committed"}},
+      {"master", seam::formats::JsonValue{result.masterPath.string()}},
+      {"masterSha256", seam::formats::JsonValue{result.masterSha256}},
+      {"masterPeakAbs", seam::formats::JsonValue{static_cast<double>(result.masterPeakAbs)}},
+      {"masterClipped", seam::formats::JsonValue{result.masterClipped}},
+      {"receipt", seam::formats::JsonValue{result.receiptPath.string()}},
+      {"files", seam::formats::JsonValue{static_cast<std::int64_t>(result.files.size())}},
+      {"voicebanks", seam::formats::JsonValue{std::move(banks)}},
+      {"evidenceScope", seam::formats::JsonValue{"ENGINEERING_ONLY"}},
+      {"playback", seam::formats::JsonValue{"NOT_RUN"}},
+      {"humanAcceptance", seam::formats::JsonValue{"NOT_RUN"}}}}) << '\n';
+  return 0;
+}
+
 
 int prepareGenerationBatchCommand(int argc, char** argv) {
   if (argc < 4 || argc > 67) {
@@ -875,6 +966,8 @@ void printUsage() {
       << "  seam_voicebank_cli prepare-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES\n"
       << "  seam_voicebank_cli analyze WAV OUTPUT_DIRECTORY\n"
       << "  seam_voicebank_cli bake-project PROJECT OUTPUT_DIRECTORY [SAMPLE_RATE]\n"
+      << "  seam_voicebank_cli export-installed-bank-project PROJECT OUTPUT_DIRECTORY VOICEBANK_ROOT\n"
+      << "    Engineering export of sample-bank tracks pinned to trusted banks installed under one root.\n"
       << "  seam_voicebank_cli export-score PROJECT.seam DESTINATION.ustx|.mid|.midi\n"
       << "    Writes a score a DAW or OpenUtau can open, through the editor's own conversion service.\n"
       << "  seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n"
@@ -996,6 +1089,7 @@ int main(int argc, char** argv) {
   if (command == "prepare-generation") return prepareGenerationCommand(argc, argv);
   if (command == "prepare-generation-batch") return prepareGenerationBatchCommand(argc, argv);
   if (command == "bake-project") return bakeProjectCommand(argc, argv);
+  if (command == "export-installed-bank-project") return exportInstalledBankProjectCommand(argc, argv);
   if (command == "export-score") return exportScoreCommand(argc, argv);
   if (command == "import-score") return importScoreCommand(argc, argv);
   if (command == "--help" || command == "-h" || command == "help") {
