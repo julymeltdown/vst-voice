@@ -453,6 +453,8 @@ void EditorRuntime::configureControllerCallbacks() {
       },
       // The shell's Phonemes lane and TUNE pitch points edit through the controller, which calls back in (recursive lock).
       .cycleUnitVariant = [this](domain::PhonemeKey key) { return cycleUnitVariant(key); }, .cycleUnitRenderer = [this](domain::PhonemeKey key) { return cycleUnitRenderer(key); },
+      // The units the latest render chose, for the unit lane; read under the same recursive lock.
+      .renderedUnitPlan = [this] { return authoring_->technicalEdits().renderView(); },
       .upsertPitchPoint = [this](domain::PitchAutomationPoint point) { return upsertPitchPoint(point); },
       .movePhonemeBoundary = [this](domain::PhonemeKey key, bool start, time::Microseconds offset) { return movePhonemeBoundary(key, start, offset); },
       .movePitchPoint = [this](time::Tick from, domain::PitchAutomationPoint point) { return movePitchPoint(from, point); }, .removePitchPoint = [this](time::Tick tick) { return removePitchPoint(tick); }, .cyclePitchInterpolation = [this](time::Tick tick) { return cyclePitchInterpolation(tick); },

@@ -100,6 +100,19 @@ TEST_CASE("CLAP microscope shares full captured selection details and working po
   CHECK(runtime.projectCopy() == project); CHECK(runtime.revision() == revision);
 }
 
+TEST_CASE("CLAP editor unit lane shows the units the latest render chose") {
+  // The standalone has drawn them since 691c72a7; the embedded editor left the callback unset.
+  using namespace seam; auto runtime = runtimeFixture();
+  const auto preview = ready(runtime);
+  CHECK(!preview->unitPlan.empty());
+  const auto state = runtime.controller().sceneState();
+  CHECK(!state.renderedUnits.empty());
+  for (const auto& unit : state.renderedUnits) {
+    CHECK(!unit.unitId.empty());
+    CHECK(!unit.label.empty());
+  }
+}
+
 TEST_CASE("CLAP microscope isolates complete focus traversal retained SetValue and background edit shortcuts") {
   using namespace seam; auto runtime = runtimeFixture();
   const auto preview = ready(runtime); const auto key = keyFor(runtime, *preview);
