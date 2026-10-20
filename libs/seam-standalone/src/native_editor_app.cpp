@@ -849,22 +849,7 @@ core::Result<void> NativeEditorApp::initialize() {
   if (hasCharacterPackage) {
     const auto character = character_.load(config_.characterPackage);
     if (character) {
-      authoring_->controller().setCharacterMetadata(
-          character_.displayName(), character_.styleName());
-      const auto* package = character_.package();
-      if (package != nullptr) {
-        authoring_->controller().setCharacterBinding({
-            .id = package->manifest.characterId,
-            .version = package->manifest.version,
-            .voicebankId = package->manifest.voicebankId,
-            .resourceIdentity = package->manifest.resourceIdentity,
-            .accentPrimary = package->manifest.accent.primary,
-            .accentSecondary = package->manifest.accent.secondary,
-            .hasPerformance = character_.hasPerformanceAssets(),
-        });
-      }
-      authoring_->controller().setCharacterPortrait(
-          character_.portrait(character::State::Neutral));
+      applyCharacterToController();
     } else {
       lastError_ = character.error().message;
     }
@@ -872,7 +857,36 @@ core::Result<void> NativeEditorApp::initialize() {
   auto audio = initializeAudio();
   if (!audio) return audio;
   refreshCrashRecoveryContext();
+  hostStateController_ = &authoring_->controller();
   return core::success();
+}
+
+void NativeEditorApp::applyCharacterToController() {
+  if (character_.package() == nullptr) return;
+  authoring_->controller().setCharacterMetadata(character_.displayName(), character_.styleName());
+  const auto* package = character_.package();
+  authoring_->controller().setCharacterBinding({
+      .id = package->manifest.characterId,
+      .version = package->manifest.version,
+      .voicebankId = package->manifest.voicebankId,
+      .resourceIdentity = package->manifest.resourceIdentity,
+      .accentPrimary = package->manifest.accent.primary,
+      .accentSecondary = package->manifest.accent.secondary,
+      .hasPerformance = character_.hasPerformanceAssets(),
+  });
+  authoring_->controller().setCharacterPortrait(character_.portrait(character::State::Neutral));
+}
+
+void NativeEditorApp::republishHostStateIfControllerReplaced() {
+  // Found in the 2026-10-20 rehearsal: after New Project or Recover the fresh controller had no
+  // voicebank cards while the per-frame cache still matched, so every sample singer read
+  // "Voicebank unavailable" until the app was relaunched with the project as an argument.
+  const auto* controller = &authoring_->controller();
+  if (controller == hostStateController_) return;
+  hostStateController_ = controller;
+  publishedVoicebankCards_.reset();
+  applyCharacterToController();
+  refreshDistributionAuthority();
 }
 
 core::Result<void> NativeEditorApp::initializeAudio() {
@@ -1836,6 +1850,7 @@ std::optional<std::filesystem::path> NativeEditorApp::documentPath()
 
 void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (authoring_ == nullptr) return;
+  republishHostStateIfControllerReplaced();
   const auto paintStarted = std::chrono::steady_clock::now();
   struct PaintTimer final {
     std::vector<double>& samples;

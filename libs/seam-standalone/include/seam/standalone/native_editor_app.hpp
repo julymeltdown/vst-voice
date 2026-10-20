@@ -252,6 +252,12 @@ private:
   // measured profile. Both are rebuilt only when what they would publish differs from what the last
   // frame published, which is the same rule setDiagnostics already uses for the notices.
   std::optional<std::vector<authoring::VoicebankCard>> publishedVoicebankCards_;
+  // The controller that received the state this app pushes once rather than every frame. Replacing
+  // the project (New Project, Open, Recover) builds a new controller with none of it, so paint
+  // republishes it when the controller changes.
+  const native_ui::NativeEditorController* hostStateController_{nullptr};
+  void applyCharacterToController();
+  void republishHostStateIfControllerReplaced();
   std::optional<std::vector<native_ui::EditorSceneState::AudioDeviceOption>> publishedAudioDevices_;
   // What publishedAudioDevices_ was built from: the settings that chose the row and the device the
   // platform reported when it was built. A device the platform takes away changes the second, so

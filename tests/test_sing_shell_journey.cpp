@@ -377,6 +377,33 @@ TEST_CASE("sing shell journey: focused bank controls show failure on Enter and S
   }
 }
 
+TEST_CASE("sing shell journey: a replaced project keeps the voicebank cards and resolves its singer") {
+  // Rehearsal 2026-10-20: New Project and Recover build a new editor controller, and the app's
+  // per-frame card cache still matched, so the new controller never received the cards and a
+  // correctly referenced sample singer read "Voicebank unavailable".
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("sing-shell-replaced-project");
+  JourneyApp f{root, {}};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  f.paint();
+  CHECK(!f.app->authoring().controller().sceneState().voicebankCards.empty());
+  const auto candidates = f.app->authoring().runtime().voicebanks().candidates();
+  CHECK(!candidates.empty());
+  if (candidates.empty()) return;
+  seam::authoring::NewProjectRequest request;
+  request.name = "Replaced";
+  request.initialVoicebank = candidates.front();
+  const auto* before = &f.app->authoring().controller();
+  CHECK(f.app->authoring().createNewProject(std::move(request)));
+  CHECK(&f.app->authoring().controller() != before);
+  f.paint();
+  const auto state = f.app->authoring().controller().sceneState();
+  CHECK(!state.voicebankCards.empty());
+  CHECK(state.voiceIdentity.state != seam::native_ui::VoiceIdentityState::Missing);
+  CHECK(state.voiceIdentity.name != "Voicebank unavailable");
+}
+
 TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through real commands") {
   if (!seam::native_ui::paint::vectorBackendAvailable()) return;
   const auto root = seam::test::support::temporaryDirectory("sing-shell-journey");
