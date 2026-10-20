@@ -80,6 +80,51 @@ TEST_CASE("voicebank content identity binds bounded per-unit alignment bytes") {
   CHECK(!identity());
 }
 
+TEST_CASE("voicebank content identity resolves every unit file under the canonical bank root") {
+  // The catalogue scan canonicalizes a bank root once and then checks each unit path component;
+  // the checks a per-asset canonicalization made must still hold.
+  const auto base = seam::test::support::temporaryDirectory("asset-resolver-identity");
+  const auto root = base / "bank";
+  std::filesystem::create_directories(root / "audio");
+  const auto manifest = seam::test::support::makeManifest({
+      seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 69,
+          seam::voicebank::UnitKind::Sustain, 24000),
+      seam::test::support::makeUnit("i", {"i"}, "audio/i.wav", 69,
+          seam::voicebank::UnitKind::Sustain, 24000)});
+  for (const auto* name : {"a.wav", "i.wav"})
+    CHECK(seam::voicebank::writeMonoPcm16Wav(root / "audio" / name, 48000U,
+        seam::test::support::sineWave(48000U, 440.0, 0.5)));
+  const auto identity = [&](const std::filesystem::path& bankRoot) {
+    return seam::voicebank::computeVoicebankContentHash(manifest, bankRoot);
+  };
+  const auto direct = identity(root);
+  CHECK(direct);
+  // A symlinked bank root is allowed (it is canonicalized) and reads the same bytes.
+  std::filesystem::create_directory_symlink(root, base / "linked-bank");
+  CHECK(identity(base / "linked-bank").value() == direct.value());
+  // A unit file that is a link is refused, even one pointing inside the bank.
+  std::filesystem::rename(root / "audio" / "i.wav", root / "i-real.wav");
+  std::filesystem::create_symlink(root / "i-real.wav", root / "audio" / "i.wav");
+  CHECK(!identity(root));
+  std::filesystem::remove(root / "audio" / "i.wav");
+  std::filesystem::rename(root / "i-real.wav", root / "audio" / "i.wav");
+  CHECK(identity(root).value() == direct.value());
+  // So is a linked folder on the way to it.
+  std::filesystem::rename(root / "audio", root / "audio-real");
+  std::filesystem::create_directory_symlink(root / "audio-real", root / "audio");
+  CHECK(!identity(root));
+  std::filesystem::remove(root / "audio");
+  std::filesystem::rename(root / "audio-real", root / "audio");
+  // A missing unit file and a directory in a file's place are refused.
+  std::filesystem::rename(root / "audio" / "i.wav", root / "i-real.wav");
+  CHECK(!identity(root));
+  std::filesystem::create_directory(root / "audio" / "i.wav");
+  CHECK(!identity(root));
+  std::filesystem::remove(root / "audio" / "i.wav");
+  std::filesystem::rename(root / "i-real.wav", root / "audio" / "i.wav");
+  CHECK(identity(root).value() == direct.value());
+}
+
 TEST_CASE("PCM16 WAV round trip and audio statistics remain bounded") {
   constexpr std::uint32_t sampleRate = 48000;
   const auto directory = seam::test::support::temporaryDirectory("wav");

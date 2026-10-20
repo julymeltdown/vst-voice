@@ -154,8 +154,19 @@ core::Result<std::string> computeVoicebankContentHash(
   core::Sha256 hash;
   addField(hash, "project-seam-voicebank-content-v1");
   addField(hash, encodedManifest.value());
+  // Opened on first use, so a bank root is required only when an asset is resolved, as before.
+  std::optional<BankAssetResolver> resolver;
+  const auto resolveAsset = [&](const std::filesystem::path& relative)
+      -> core::Result<std::filesystem::path> {
+    if (!resolver) {
+      auto opened = BankAssetResolver::open(bankRoot);
+      if (!opened) return core::Result<std::filesystem::path>{opened.error()};
+      resolver.emplace(std::move(opened).value());
+    }
+    return resolver->resolve(relative);
+  };
   for (const auto& relative : uniqueAudioPaths) {
-    auto resolved = resolveBankAsset(bankRoot, std::filesystem::path{relative});
+    auto resolved = resolveAsset(std::filesystem::path{relative});
     if (!resolved) return core::Result<std::string>{resolved.error()};
     auto digest = audioFileDigest(resolved.value());
     if (!digest) return core::Result<std::string>{digest.error()};
@@ -198,7 +209,7 @@ core::Result<std::string> computeVoicebankContentHash(
           (!error && !std::filesystem::exists(status))) continue;
       if (error) return core::failure(core::ErrorCode::IoError,
           "Cannot inspect voicebank " + std::string{noun}, path.string());
-      const auto resolved = resolveBankAsset(bankRoot, relative);
+      const auto resolved = resolveAsset(std::filesystem::path{relative});
       if (!resolved) return core::Result<void>{resolved.error()};
       const auto bytes = core::readFileBytesLimited(resolved.value(),
           std::min<std::uint64_t>(512ULL * 1024ULL, maximumBytes - totalBytes));
