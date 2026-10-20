@@ -430,14 +430,9 @@ std::vector<float> readMaster(const std::filesystem::path& path) {
   return master.value().interleaved;
 }
 
+// A stem file carries the track's own name; the receipt's "stems" list links it to the track id.
 std::string expectedExportStemName(std::string trackName) {
-  for (auto& character : trackName) {
-    if (!std::isalnum(static_cast<unsigned char>(character)) &&
-        character != '-' && character != '_') {
-      character = '_';
-    }
-  }
-  return trackName.empty() ? "track" : trackName;
+  return trackName.empty() ? "Track" : trackName;
 }
 
 }  // namespace
@@ -760,8 +755,7 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
   std::vector<authoring::ExportFileReceipt> vocalStems;
   for (const auto& file : exported.value().files) {
     if (file.path == exported.value().setPath / "stems" /
-                         (expectedExportStemName(authoredTrack->name) + "-" +
-                          authoredTrack->id.toString() + ".wav")) {
+                         (expectedExportStemName(authoredTrack->name) + ".wav")) {
       vocalStems.push_back(file);
     }
   }
@@ -819,8 +813,19 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
   if (!receiptFiles->isArray()) return;
   {
     const auto expectedRelative = std::filesystem::path{"stems"} /
-        (expectedExportStemName(authoredTrack->name) + "-" +
-         authoredTrack->id.toString() + ".wav");
+        (expectedExportStemName(authoredTrack->name) + ".wav");
+    const auto* stemLinks = receipt.value().find("stems");
+    CHECK(stemLinks != nullptr);
+    if (stemLinks == nullptr || !stemLinks->isArray()) return;
+    CHECK(stemLinks->asArray().size() == 1U);
+    for (const auto& link : stemLinks->asArray()) {
+      const auto* path = link.find("path");
+      const auto* trackId = link.find("trackId");
+      CHECK(path != nullptr && path->isString() &&
+            path->asString() == expectedRelative.generic_string());
+      CHECK(trackId != nullptr && trackId->isString() &&
+            trackId->asString() == authoredTrack->id.toString());
+    }
     std::size_t durableStemReceipts = 0U;
     for (const auto& file : receiptFiles->asArray()) {
       const auto* path = file.find("path");

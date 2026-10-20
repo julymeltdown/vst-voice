@@ -8,7 +8,9 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/streaming_pcm_source.hpp"
+#include <array>
 #include <map>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -153,14 +155,51 @@ core::Result<void> removeTree(const std::filesystem::path& path) {
   return core::success();
 }
 
-std::string safeStem(std::string value) {
-  for (auto& character : value) {
-    const auto allowed = std::isalnum(static_cast<unsigned char>(character)) ||
-                         character == '-' || character == '_';
-    if (!allowed) character = '_';
+// A stem file carries the track's own name, so a creator finds "Voice 1.wav" or "メイン.wav" in
+// the set. Only what file systems refuse or hide is replaced: path separators, the characters
+// Windows reserves, control characters and leading or trailing dots and spaces. Multi-byte UTF-8
+// passes through unchanged and long names are cut at a character boundary.
+std::string stemFileName(std::string_view trackName) {
+  std::string value;
+  value.reserve(trackName.size());
+  for (const char character : trackName) {
+    const auto byte = static_cast<unsigned char>(character);
+    const bool refused = byte < 0x20U || byte == 0x7fU ||
+                         std::string_view{"/\\:*?\"<>|"}.find(character) != std::string_view::npos;
+    value.push_back(refused ? '_' : character);
   }
-  if (value.empty()) value = "track";
+  constexpr std::size_t kMaximumBytes = 96U;
+  if (value.size() > kMaximumBytes) {
+    std::size_t cut = kMaximumBytes;
+    while (cut > 0U && (static_cast<unsigned char>(value[cut]) & 0xc0U) == 0x80U) --cut;
+    value.resize(cut);
+  }
+  const auto first = value.find_first_not_of(" .");
+  if (first == std::string::npos) return "Track";
+  value.erase(0U, first);
+  value.erase(value.find_last_not_of(" .") + 1U);
+  std::string upper;
+  for (const char character : value.substr(0U, value.find('.')))
+    upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
+  static constexpr std::array<std::string_view, 22> kReserved{
+      "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+      "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"};
+  if (std::find(kReserved.begin(), kReserved.end(), upper) != kReserved.end()) value.push_back('_');
   return value;
+}
+
+// Two tracks may share a name, and macOS and Windows compare file names without regard to ASCII
+// case, so the second "Voice" becomes "Voice (2)".
+std::string uniqueStemFileName(std::string base, std::unordered_set<std::string>& used) {
+  const auto folded = [](std::string value) {
+    for (auto& character : value)
+      character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    return value;
+  };
+  auto candidate = base;
+  for (std::size_t suffix = 2U; !used.insert(folded(candidate)).second; ++suffix)
+    candidate = base + " (" + std::to_string(suffix) + ")";
+  return candidate;
 }
 
 std::string wavFormatName(voicebank::WavSampleFormat format) {
@@ -816,6 +855,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   }
 
   std::vector<std::pair<domain::TrackId, bool>> stems;
+  formats::JsonValue::Array stemEntries;
   std::map<std::string, std::string> packageFiles;
   std::vector<PackagedMedia> packageMedia;
   std::vector<rendering::TrackSingerSource> frozenSources;
@@ -1107,13 +1147,23 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     result.masterPath = destination / "master.wav";
     ++completed;
   }
+  std::unordered_set<std::string> usedStemNames;
   for (const auto& [trackId, vocal] : stems) {
     const auto* track = vocal ? project.findVocalTrack(trackId) : nullptr;
-    const auto trackName = track == nullptr
-                               ? std::string{"audio"}
-                               : track->name;
+    std::string trackName = track == nullptr ? std::string{"Audio"} : track->name;
+    if (!vocal) {
+      const auto audio = std::find_if(project.audioTracks().begin(), project.audioTracks().end(),
+                                      [&](const auto& candidate) { return candidate.id == trackId; });
+      if (audio != project.audioTracks().end() && !audio->name.empty()) trackName = audio->name;
+    }
     const auto relative = std::filesystem::path{"stems"} /
-        (safeStem(trackName) + "-" + trackId.toString() + ".wav");
+        (uniqueStemFileName(stemFileName(trackName), usedStemNames) + ".wav");
+    // The receipt keeps the link from each stem file back to its track.
+    stemEntries.emplace_back(formats::JsonValue::Object{
+        {"path", formats::JsonValue{relative.generic_string()}},
+        {"trackId", formats::JsonValue{trackId.toString()}},
+        {"trackName", formats::JsonValue{trackName}},
+    });
     const auto isolated = isolatedProject(renderProject, trackId, vocal);
     domain::RegionId stemRegion{};
     if (vocal && track != nullptr && !track->regions.empty()) {
@@ -1311,6 +1361,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
           {"includesProceduralCandidates", formats::JsonValue{settings.includeProceduralCandidates}},
           {"files", formats::JsonValue{std::move(files)}},
       }};
+  if (!stemEntries.empty())
+    receiptValue.asObject().emplace("stems", formats::JsonValue{std::move(stemEntries)});
   if (settings.includeMaster) {
     receiptValue.asObject().emplace("masterPeakAbs", static_cast<double>(result.masterPeakAbs));
     receiptValue.asObject().emplace("masterClipped", result.masterClipped);

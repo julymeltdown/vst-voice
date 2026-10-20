@@ -3234,6 +3234,72 @@ TEST_CASE("export service cancellation leaves no claimed output") {
   CHECK(!std::filesystem::exists(destination));
 }
 
+TEST_CASE("export service names stem files after their tracks and links them in the receipt") {
+  // Rehearsal 2026-10-20: a set exported "stems/Voice_1-00000000000003ec.wav", and a Japanese track
+  // name became a run of underscores.
+  const auto root = seam::test::support::temporaryDirectory("export-stem-names");
+  const auto media = root / "backing.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(
+      media, 48000U, seam::test::support::sineWave(4800U, 220.0, 0.05)));
+  auto source = seam::rendering::StreamingPcmSource::open(media, 4096U);
+  CHECK(source);
+  if (!source) return;
+
+  seam::application::ProjectFactory factory{21000U};
+  auto project = factory.createProject("Stem names");
+  const std::vector<std::string> names{"メイン/リード", "Backing", "backing", " .hidden", ""};
+  for (std::size_t index = 0U; index < names.size(); ++index) {
+    project.audioTracks().push_back(seam::domain::AudioTrack{
+        .id = seam::domain::TrackId{21001U + index},
+        .name = names[index],
+        .mediaPath = media.string(),
+        .mediaHash = source.value()->info().contentHash,
+        .mediaOwnership = seam::domain::MediaOwnership::ExternalReference,
+        .originalFilename = media.filename().string(),
+        .sourceSampleRate = source.value()->info().sampleRate,
+        .sourceChannels = source.value()->info().channels,
+        .sourceFrameCount = source.value()->info().frameCount,
+        .startTick = seam::time::Tick{0},
+        .outputRoute = seam::domain::TrackOutputRoute{
+            .bus = seam::domain::BusId{1U},
+            .matrix = seam::domain::RoutingMatrix::monoToStereo(),
+        },
+    });
+  }
+  CHECK(project.validate());
+
+  const auto destination = root / "set";
+  seam::authoring::ExportService service;
+  const auto exported = service.exportSet(project, {}, {}, {}, 1U, destination, exportSettings());
+  CHECK(exported);
+  if (!exported) return;
+  CHECK(exported.value().state == seam::authoring::ExportState::Committed);
+  const std::vector<std::string> expected{
+      "stems/メイン_リード.wav", "stems/Backing.wav", "stems/backing (2).wav", "stems/hidden.wav",
+      "stems/Audio.wav"};
+  for (const auto& relative : expected)
+    CHECK(std::filesystem::exists(destination / std::filesystem::path{std::u8string{relative.begin(), relative.end()}}));
+
+  const auto text = seam::core::readTextFileLimited(destination / "receipt.json", 4U * 1024U * 1024U);
+  CHECK(text);
+  if (!text) return;
+  const auto receipt = seam::formats::parseJson(text.value());
+  CHECK(receipt);
+  if (!receipt) return;
+  const auto* links = receipt.value().find("stems");
+  CHECK(links != nullptr && links->isArray());
+  if (links == nullptr || !links->isArray()) return;
+  CHECK(links->asArray().size() == expected.size());
+  for (std::size_t index = 0U; index < links->asArray().size() && index < expected.size(); ++index) {
+    const auto& link = links->asArray()[index];
+    const auto* path = link.find("path");
+    const auto* trackId = link.find("trackId");
+    CHECK(path != nullptr && path->isString() && path->asString() == expected[index]);
+    CHECK(trackId != nullptr && trackId->isString() &&
+          trackId->asString() == seam::domain::TrackId{21001U + index}.toString());
+  }
+}
+
 TEST_CASE("export service publishes master and stems while preserving canaries") {
   const auto root = seam::test::support::temporaryDirectory("export-set");
   const auto media = root / "backing.wav";
