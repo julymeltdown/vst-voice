@@ -1435,16 +1435,17 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::RecoverLatestAutosave: {
       auto candidates = recoveryCandidates();
       if (!candidates) return core::Result<void>{candidates.error()};
-      const auto iterator = std::find_if(
-          candidates.value().rbegin(), candidates.value().rend(),
-          [](const authoring::RecoveryCandidate& value) {
-            return value.recoverable;
-          });
-      if (iterator == candidates.value().rend()) {
+      // Newest by creation time: discovery follows directory order, which promises no order at all.
+      const authoring::RecoveryCandidate* newest = nullptr;
+      for (const auto& value : candidates.value()) {
+        if (value.recoverable && (newest == nullptr || value.createdAtUnixMs > newest->createdAtUnixMs))
+          newest = &value;
+      }
+      if (newest == nullptr) {
         return core::failure(core::ErrorCode::NotFound,
                              "No recoverable autosave is available");
       }
-      return recover(*iterator);
+      return recover(*newest);
     }
     case platform::ApplicationCommand::SaveProject: {
       if (!session_.runtime().document().identity().projectPath.has_value()) {

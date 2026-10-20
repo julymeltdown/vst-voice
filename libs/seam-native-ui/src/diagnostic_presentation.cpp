@@ -40,6 +40,14 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
     result.title = "No singer selected";
     result.impact = "Choose a singer to hear this track. If none is installed, install a voicebank "
                     "or create a singer in Voicebank Studio.";
+  } else if (diagnostic.code == "UNSAVED_WORK_RECOVERABLE") {
+    result.title = "Unsaved work can be recovered";
+    result.impact = "SEAM closed without saving. Recover " +
+                    (diagnostic.detail.empty() ? std::string{"the latest autosave"} : diagnostic.detail) +
+                    ", or dismiss and find it later in File > Recover Autosave.";
+  } else if (diagnostic.code == "CRASH_RECOVERY_AVAILABLE") {
+    result.title = "SEAM quit unexpectedly";
+    result.impact = "Recover the latest autosave, or open Support to report what happened.";
   } else if (diagnostic.code == "BANK_MISSING") {
     result.title = "Voicebank needs attention";
     result.impact = "This track cannot render until its exact voicebank is available.";

@@ -294,6 +294,13 @@ private:
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.
   std::optional<authoring::Diagnostic> rendererChangedDiagnostic_;
+  // The notice that offers recovery at startup: CRASH_RECOVERY_AVAILABLE after a recorded crash, or
+  // UNSAVED_WORK_RECOVERABLE when the session ledger shows an exit no handler saw. Kept until it is
+  // dismissed or acted on, because the per-frame diagnostics rebuild would otherwise drop it.
+  std::optional<authoring::Diagnostic> startupRecoveryDiagnostic_;
+  std::optional<std::filesystem::path> startupRecoveryAutosave_;
+  std::optional<std::int64_t> uncleanSessionStartedAtUnixMs_;
+  std::filesystem::path sessionLedgerFile_;
   // Installation notices belong to the app, survive document/frame changes and are dismissed
   // individually. A later installation never silently clears another resource's warning.
   std::vector<authoring::Diagnostic> installationDiagnostics_;

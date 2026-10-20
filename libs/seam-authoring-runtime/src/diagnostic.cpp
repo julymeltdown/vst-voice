@@ -57,6 +57,9 @@ constexpr DiagnosticAction kCrashSupport[]{DiagnosticAction::RecoverAutosave,
                                             DiagnosticAction::CopyDiagnostic,
                                             DiagnosticAction::OpenSupport,
                                             DiagnosticAction::Dismiss};
+// SEAM closed without cleanup and no crash was recorded: recover the autosave or keep it for later.
+constexpr DiagnosticAction kUnsavedWork[]{DiagnosticAction::RecoverAutosave,
+                                           DiagnosticAction::Dismiss};
 constexpr DiagnosticAction kSupportPreview[]{
     DiagnosticAction::ExportSupportBundle,
     DiagnosticAction::Dismiss};
@@ -95,6 +98,7 @@ constexpr std::array definitions{
     Definition{"UPDATE_UNTRUSTED", DiagnosticSeverity::Error, kOpenSupport},
     Definition{"INSTALL_FAILED", DiagnosticSeverity::Error, kRetrySupport},
     Definition{"CRASH_RECOVERY_AVAILABLE", DiagnosticSeverity::Warning, kCrashSupport},
+    Definition{"UNSAVED_WORK_RECOVERABLE", DiagnosticSeverity::Warning, kUnsavedWork},
     Definition{"SUPPORT_BUNDLE_PREVIEW_READY", DiagnosticSeverity::Info,
                kSupportPreview},
     Definition{"SUPPORT_BUNDLE_EXPORTED", DiagnosticSeverity::Info,

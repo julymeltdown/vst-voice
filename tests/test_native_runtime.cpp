@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/authoring/autosave_service.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/distribution/update_manifest.hpp"
 #include "seam/core/sha256.hpp"
@@ -20,6 +21,12 @@
 #include <chrono>
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 #include <cmath>
 #include <memory>
 #include <string>
@@ -585,6 +592,17 @@ TEST_CASE("native startup surfaces a persisted crash marker as a separate diagno
   const auto& entries = app.value()->authoring().controller().diagnosticPanel().entries();
   CHECK(!entries.empty());
   CHECK(entries.front().diagnostic.code == "CRASH_RECOVERY_AVAILABLE");
+  {
+    // The notice outlives the first frame, whose diagnostics rebuild used to drop it.
+    seam::native_ui::PixelSurface surface{1280U, 800U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    app.value()->resized(1280.0, 800.0, 1.0);
+    app.value()->paint(canvas);
+    const auto& painted = app.value()->authoring().controller().diagnosticPanel().entries();
+    CHECK(std::any_of(painted.begin(), painted.end(), [](const auto& entry) {
+      return entry.diagnostic.code == "CRASH_RECOVERY_AVAILABLE";
+    }));
+  }
   CHECK(app.value()->authoring().controller().activateDiagnostic(
       0U, seam::authoring::DiagnosticAction::Dismiss));
   CHECK(!app.value()->startupCrashMarker().has_value());
@@ -1060,4 +1078,128 @@ TEST_CASE("native app shows a key the editor refuses as a notice and keeps the p
   CHECK(shown.size() == 1U);
   if (shown.size() != 1U) return;
   CHECK(shown.front().detail == "Find/replace input belongs to a changed document or region");
+}
+
+namespace {
+
+// Writes one dirty autosave of an unsaved project called name under dataRoot/Autosaves.
+void writeUnsavedAutosave(const std::filesystem::path& dataRoot, const std::string& name) {
+  seam::application::ProjectFactory factory{100U};
+  auto project = factory.createProject(name);
+  const auto track = factory.addVocalTrack(project, "Voice");
+  const auto region = factory.addRegion(project, track, "Region", seam::time::Tick{0},
+                                        seam::time::Tick{3840});
+  seam::authoring::ProjectDocument document{
+      std::move(project), seam::application::ProjectFactory{factory.nextIdValue()}};
+  auto [lyric, note] = document.factory().makeNote(seam::time::Tick{0}, seam::time::Tick{960}, 60U, U"あ");
+  CHECK(document.execute(std::make_unique<seam::application::AddNoteCommand>(
+      region, std::move(lyric), std::move(note))));
+  seam::authoring::AutosaveService service({
+      .root = dataRoot / "Autosaves", .maximumGenerations = 5U, .faultInjector = {}, .wallClock = {}});
+  CHECK(service.request(document));
+  CHECK(service.flush());
+  service.shutdown();
+}
+
+}  // namespace
+
+TEST_CASE("native startup offers the autosave of a session that ended without cleanup") {
+#if defined(_WIN32)
+  return;  // The session ledger is POSIX-only for now.
+#endif
+  // Rehearsal 2026-10-20: after kill -9 the app opened an Untitled project and said nothing; the
+  // creator had to find File > Recover Autosave. A crash marker only exists for caught signals.
+  const auto root = seam::test::support::temporaryDirectory("native-unclean-exit");
+  const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
+  const auto sessions = paths.crashReportsRoot.parent_path() / "Sessions";
+  std::filesystem::create_directories(sessions);
+  const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::system_clock::now().time_since_epoch()).count();
+  {
+    std::ofstream stale{sessions / "999999.session"};  // macOS pids stop below 100000
+    stale << 999999 << ' ' << (now - 3'600'000) << '\n';
+  }
+  writeUnsavedAutosave(paths.userDataRoot, "Lost Song");  // the app keeps autosaves under user data
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  if (!app) return;
+  CHECK(!std::filesystem::exists(sessions / "999999.session"));
+  const auto own = sessions / (std::to_string(::getpid()) + ".session");
+  CHECK(std::filesystem::exists(own));
+
+  // The notice survives the per-frame diagnostics rebuild.
+  seam::native_ui::PixelSurface surface{1280U, 800U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  app.value()->resized(1280.0, 800.0, 1.0);
+  app.value()->paint(canvas);
+  const auto find = [&app]() -> std::optional<std::size_t> {
+    const auto& entries = app.value()->authoring().controller().diagnosticPanel().entries();
+    for (std::size_t index = 0; index < entries.size(); ++index)
+      if (entries[index].diagnostic.code == "UNSAVED_WORK_RECOVERABLE") return index;
+    return std::nullopt;
+  };
+  const auto index = find();
+  CHECK(index.has_value());
+  if (!index) return;
+  const auto& notice = app.value()->authoring().controller().diagnosticPanel().entries()[*index].diagnostic;
+  CHECK(notice.detail.rfind("Unsaved project — ", 0U) == 0U);
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      *index, seam::authoring::DiagnosticAction::RecoverAutosave));
+  CHECK(app.value()->authoring().runtime().document().session().project().name() == "Lost Song");
+  app.value()->paint(canvas);
+  CHECK(!find().has_value());
+  app.value().reset();
+  CHECK(!std::filesystem::exists(own));
+}
+
+TEST_CASE("native crash notice clears once its recovery succeeds") {
+  if (seam::platform::crashCaptureBackendName() == "unavailable") return;
+  const auto root = seam::test::support::temporaryDirectory("native-crash-recover-clears");
+  const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
+  const auto child = seam::test::support::runCrashCaptureProbe(paths.crashReportsRoot, "terminate");
+  CHECK(child.abnormalExit);
+  writeUnsavedAutosave(paths.userDataRoot, "Crashed Song");
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  if (!app) return;
+  seam::native_ui::PixelSurface surface{1280U, 800U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  app.value()->resized(1280.0, 800.0, 1.0);
+  app.value()->paint(canvas);
+  const auto& entries = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(!entries.empty());
+  if (entries.empty()) return;
+  CHECK(entries.front().diagnostic.code == "CRASH_RECOVERY_AVAILABLE");
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::RecoverAutosave));
+  CHECK(app.value()->authoring().runtime().document().session().project().name() == "Crashed Song");
+  app.value()->paint(canvas);
+  const auto& painted = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(std::none_of(painted.begin(), painted.end(), [](const auto& entry) {
+    return entry.diagnostic.code == "CRASH_RECOVERY_AVAILABLE";
+  }));
+}
+
+TEST_CASE("native startup stays quiet when every earlier session shut down cleanly") {
+  const auto root = seam::test::support::temporaryDirectory("native-clean-exit");
+  writeUnsavedAutosave(seam::platform::ApplicationPaths::forTestRoot(root).userDataRoot, "Kept Song");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  if (!app) return;
+  for (const auto& entry : app.value()->authoring().controller().diagnosticPanel().entries())
+    CHECK(entry.diagnostic.code != "UNSAVED_WORK_RECOVERABLE");
 }

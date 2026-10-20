@@ -17,6 +17,11 @@
 #if defined(__APPLE__)
 #include <mach/mach.h>
 #endif
+#if !defined(_WIN32)
+#include <cerrno>
+#include <csignal>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -31,6 +36,50 @@
 #include <utility>
 
 namespace seam::standalone {
+
+namespace {
+
+// A session ledger: each running instance writes State/Sessions/<pid>.session at start and removes
+// it when it shuts down. A file whose process is gone means that session ended without cleanup: a
+// Force Quit, kill -9, power loss or a crash the signal handler could not record. Signals are the
+// crash marker's job; the ledger covers the exits no handler sees. Returns when the earliest such
+// session started, in Unix milliseconds.
+std::optional<std::int64_t> claimSessionLedger(const std::filesystem::path& directory,
+                                               std::filesystem::path& ownFile) {
+#if defined(_WIN32)
+  static_cast<void>(directory);
+  static_cast<void>(ownFile);
+  return std::nullopt;  // TODO(windows): process liveness through OpenProcess.
+#else
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
+  if (error) return std::nullopt;
+  std::optional<std::int64_t> earliest;
+  const auto self = static_cast<long long>(::getpid());
+  for (std::filesystem::directory_iterator it{directory, error}, end; !error && it != end;
+       it.increment(error)) {
+    if (it->path().extension() != ".session") continue;
+    std::ifstream in{it->path()};
+    long long pid = 0;
+    long long started = 0;
+    if (!(in >> pid >> started) || pid <= 0 || pid == self) continue;
+    in.close();
+    if (::kill(static_cast<pid_t>(pid), 0) == 0 || errno != ESRCH) continue;  // still running
+    earliest = earliest ? std::min<std::int64_t>(*earliest, started) : started;
+    std::error_code removeError;
+    std::filesystem::remove(it->path(), removeError);
+  }
+  const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::system_clock::now().time_since_epoch()).count();
+  ownFile = directory / (std::to_string(self) + ".session");
+  std::ofstream out{ownFile, std::ios::trunc};
+  out << self << ' ' << now << '\n';
+  if (!out) ownFile.clear();
+  return earliest;
+#endif
+}
+
+}  // namespace
 
 NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
     const std::vector<StandaloneApplicationController::InstalledSingerOffer>&
@@ -219,6 +268,11 @@ NativeEditorApp::~NativeEditorApp() {
   // and nothing calls it once the device is gone, so it may outlive the ring until the members go.
   audioDevice_.reset();
   authoring_.reset();
+  // A clean shutdown leaves no ledger entry, so the next start does not offer a recovery.
+  if (!sessionLedgerFile_.empty()) {
+    std::error_code error;
+    std::filesystem::remove(sessionLedgerFile_, error);
+  }
 }
 
 core::Result<void> NativeEditorApp::initialize() {
@@ -313,6 +367,8 @@ core::Result<void> NativeEditorApp::initialize() {
   } else {
     lastError_ = recoveredCrash.error().message;
   }
+  uncleanSessionStartedAtUnixMs_ = claimSessionLedger(
+      paths.value().crashReportsRoot.parent_path() / "Sessions", sessionLedgerFile_);
   auto crashCapture = platform::CrashCapture::install(crashConfig);
   if (crashCapture) {
     crashCapture_ = std::move(crashCapture).value();
@@ -482,14 +538,15 @@ core::Result<void> NativeEditorApp::initialize() {
   // these fields are read.
   refreshDistributionAuthority();
   if (startupCrashMarker_.has_value()) {
-    authoring_->controller().setDiagnostics({authoring::Diagnostic{
+    startupRecoveryDiagnostic_ = authoring::Diagnostic{
         .code = "CRASH_RECOVERY_AVAILABLE",
         .severity = authoring::DiagnosticSeverity::Warning,
         .messageKey = "crash.recovery_available",
         .affectedIds = {},
         .actions = authoring::DiagnosticRegistry::actions(
             "CRASH_RECOVERY_AVAILABLE"),
-        .occurrenceCount = 1U}});
+        .occurrenceCount = 1U};
+    authoring_->controller().setDiagnostics({*startupRecoveryDiagnostic_});
   }
 
   const auto supportRoot = config_.applicationSupportRoot;
@@ -779,6 +836,35 @@ core::Result<void> NativeEditorApp::initialize() {
       [this] { closeRequested_.store(true, std::memory_order_release); });
   if (!application) return core::Result<void>{application.error()};
   applicationController_ = std::move(application).value();
+  // The previous session ended without cleanup and left an autosave written after it started:
+  // offer that autosave now instead of leaving the creator to find File > Recover Autosave. A
+  // recorded crash already raises its own notice, which offers the same recovery.
+  if (!startupCrashMarker_.has_value() && uncleanSessionStartedAtUnixMs_.has_value()) {
+    auto candidates = applicationController_->recoveryCandidates();
+    if (candidates) {
+      const authoring::RecoveryCandidate* newest = nullptr;
+      for (const auto& candidate : candidates.value()) {
+        if (!candidate.recoverable || candidate.createdAtUnixMs < *uncleanSessionStartedAtUnixMs_)
+          continue;
+        if (newest == nullptr || candidate.createdAtUnixMs > newest->createdAtUnixMs)
+          newest = &candidate;
+      }
+      if (newest != nullptr) {
+        authoring::Diagnostic notice{
+            .code = "UNSAVED_WORK_RECOVERABLE",
+            .severity = authoring::DiagnosticRegistry::severity("UNSAVED_WORK_RECOVERABLE"),
+            .messageKey = "recovery.unsaved_work",
+            .affectedIds = {},
+            .actions = authoring::DiagnosticRegistry::actions("UNSAVED_WORK_RECOVERABLE"),
+            .occurrenceCount = 1U,
+        };
+        notice.setDetail(recoveryMenuLabel(*newest));
+        startupRecoveryDiagnostic_ = std::move(notice);
+        startupRecoveryAutosave_ = newest->metadataPath;
+        authoring_->controller().setDiagnostics({*startupRecoveryDiagnostic_});
+      }
+    }
+  }
   // The SING shell's EXPORT workspace runs the same Export Set command as the menu and Command-E,
   // and shows the settings that command will use.
   shell_.setHostActions(native_ui::design::ShellHostActions{
@@ -1441,6 +1527,11 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
     authoring::DiagnosticAction action) {
   switch (action) {
     case authoring::DiagnosticAction::Dismiss:
+      if (diagnostic.code == "CRASH_RECOVERY_AVAILABLE" ||
+          diagnostic.code == "UNSAVED_WORK_RECOVERABLE") {
+        startupRecoveryDiagnostic_.reset();
+        startupRecoveryAutosave_.reset();
+      }
       if (diagnostic.code == "INSTALL_DURABILITY_UNCONFIRMED") {
         // Copy before rebuilding: the action may refer to the current panel's storage.
         const auto dismissed = diagnostic;
@@ -1449,6 +1540,7 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
         diagnostics.insert(diagnostics.end(), installationDiagnostics_.begin(), installationDiagnostics_.end());
         if (audioDiagnostic_) diagnostics.push_back(*audioDiagnostic_);
         if (rendererChangedDiagnostic_) diagnostics.push_back(*rendererChangedDiagnostic_);
+        if (startupRecoveryDiagnostic_) diagnostics.insert(diagnostics.begin(), *startupRecoveryDiagnostic_);
         authoring_->controller().setDiagnostics(std::move(diagnostics));
         requestWindowRepaint();
         return core::success();
@@ -1487,8 +1579,30 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
         return core::failure(core::ErrorCode::InvalidState,
                              "Recovery is unavailable before application setup");
       }
-      return applicationController_->dispatch(
-          platform::ApplicationCommand::RecoverLatestAutosave);
+      if (diagnostic.code == "UNSAVED_WORK_RECOVERABLE" && startupRecoveryAutosave_.has_value()) {
+        // Recover the autosave the notice named, not whichever is newest by the time it is pressed.
+        auto recovered = applicationController_->recoverAutosave(*startupRecoveryAutosave_);
+        if (recovered) {
+          startupRecoveryDiagnostic_.reset();
+          startupRecoveryAutosave_.reset();
+          requestWindowRepaint();
+        }
+        return recovered;
+      }
+      {
+        // Read the code first: recovery replaces the controller, and with it the panel storage
+        // that diagnostic may refer to.
+        const bool crashNotice = diagnostic.code == "CRASH_RECOVERY_AVAILABLE";
+        auto recovered = applicationController_->dispatch(
+            platform::ApplicationCommand::RecoverLatestAutosave);
+        if (recovered && crashNotice) {
+          // The crash notice has done its job once the autosave is back.
+          startupRecoveryDiagnostic_.reset();
+          startupRecoveryAutosave_.reset();
+          requestWindowRepaint();
+        }
+        return recovered;
+      }
     case authoring::DiagnosticAction::OpenSupport: {
       if (supportExportRoot_.empty() || supportBundle_ == nullptr) {
         return core::failure(core::ErrorCode::InvalidState,
@@ -2006,6 +2120,10 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (rendererChangedDiagnostic_.has_value()) {
     diagnostics.push_back(*rendererChangedDiagnostic_);
   }
+  // The startup recovery offer leads: the first entry is the toast, and after an unclean exit the
+  // creator's unsaved work matters more than anything the new session has to say.
+  if (startupRecoveryDiagnostic_.has_value())
+    diagnostics.insert(diagnostics.begin(), *startupRecoveryDiagnostic_);
   diagnostics.insert(diagnostics.end(), installationDiagnostics_.begin(), installationDiagnostics_.end());
   authoring_->controller().setDiagnostics(std::move(diagnostics));
   const auto& project = authoring_->runtime().document().session().project();
