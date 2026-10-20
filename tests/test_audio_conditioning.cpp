@@ -872,6 +872,35 @@ TEST_CASE("bank content identity covers stored acoustic analyses and keeps legac
   CHECK(!seam::voicebank::computeVoicebankContentHash(manifest, root));
 }
 
+// Catalogue scans reuse a unit file's digest while the file is unchanged. A rewrite of the same size
+// must still change the identity, and restoring the bytes must restore it.
+TEST_CASE("bank content identity follows an audio rewrite of the same size") {
+  const auto root = seam::test::support::temporaryDirectory("content-identity-rewrite");
+  std::filesystem::create_directories(root / "audio");
+  const auto audioPath = root / "audio" / "a.wav";
+  const auto writeTone = [&](double hz) {
+    CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate,
+        seam::test::support::sineWave(kRate, hz, 1.0, 0.5F)));
+  };
+  writeTone(200.0);
+  const auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto manifest = seam::test::support::makeManifest({unit});
+  const auto original = seam::voicebank::computeVoicebankContentHash(manifest, root);
+  CHECK(original);
+  const auto originalSize = std::filesystem::file_size(audioPath);
+  CHECK(seam::voicebank::computeVoicebankContentHash(manifest, root).value() == original.value());
+
+  writeTone(220.0);
+  CHECK(std::filesystem::file_size(audioPath) == originalSize);
+  const auto rewritten = seam::voicebank::computeVoicebankContentHash(manifest, root);
+  CHECK(rewritten);
+  CHECK(rewritten.value() != original.value());
+
+  writeTone(200.0);
+  CHECK(seam::voicebank::computeVoicebankContentHash(manifest, root).value() == original.value());
+}
+
 // U15 "store F0/confidence/voicing spans ... bound to exact audio": the producer
 // path that writes the records. Candidate publication runs it over the staged
 // bank before QC and before the content identity is computed.

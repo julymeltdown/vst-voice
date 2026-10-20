@@ -11,8 +11,15 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <mutex>
+#include <optional>
 #include <set>
 #include <string_view>
+#include <unordered_map>
+
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 
 namespace seam::voicebank {
 namespace {
@@ -25,6 +32,93 @@ void addField(core::Sha256& hash, std::string_view value) noexcept {
   }
   hash.update(encoded);
   hash.update(value);
+}
+
+// Every catalogue scan recomputes each installed bank's identity, and a plug-in host scans once per
+// instance and again on every state load. Rehashing unchanged audio each time made a realistic bank
+// (84 MB, 1,700 files) cost about 0.4 s per scan. A file's digest is therefore reused only while its
+// device, inode, size, modification time and status-change time are all unchanged; the change time
+// cannot be set back from user space, so any rewrite of the file forces a fresh digest. The digest
+// is cached only if the fingerprint is identical before and after hashing. Platforms without a
+// status-change time always hash.
+struct FileFingerprint final {
+  std::uint64_t device{0U};
+  std::uint64_t inode{0U};
+  std::uint64_t size{0U};
+  std::int64_t modifiedSeconds{0};
+  std::int64_t modifiedNanoseconds{0};
+  std::int64_t changedSeconds{0};
+  std::int64_t changedNanoseconds{0};
+  bool operator==(const FileFingerprint&) const = default;
+};
+
+std::optional<FileFingerprint> fingerprint(const std::filesystem::path& path) noexcept {
+#if defined(_WIN32)
+  static_cast<void>(path);
+  return std::nullopt;
+#else
+  struct stat information {};
+  if (::stat(path.c_str(), &information) != 0 || !S_ISREG(information.st_mode) ||
+      information.st_size < 0) {
+    return std::nullopt;
+  }
+#if defined(__APPLE__)
+  const auto& modified = information.st_mtimespec;
+  const auto& changed = information.st_ctimespec;
+#else
+  const auto& modified = information.st_mtim;
+  const auto& changed = information.st_ctim;
+#endif
+  return FileFingerprint{
+      .device = static_cast<std::uint64_t>(information.st_dev),
+      .inode = static_cast<std::uint64_t>(information.st_ino),
+      .size = static_cast<std::uint64_t>(information.st_size),
+      .modifiedSeconds = static_cast<std::int64_t>(modified.tv_sec),
+      .modifiedNanoseconds = static_cast<std::int64_t>(modified.tv_nsec),
+      .changedSeconds = static_cast<std::int64_t>(changed.tv_sec),
+      .changedNanoseconds = static_cast<std::int64_t>(changed.tv_nsec),
+  };
+#endif
+}
+
+class FileDigestCache final {
+public:
+  std::optional<std::string> find(const std::string& path, const FileFingerprint& key) {
+    std::lock_guard lock(mutex_);
+    const auto found = entries_.find(path);
+    if (found == entries_.end() || !(found->second.first == key)) return std::nullopt;
+    return found->second.second;
+  }
+
+  void store(const std::string& path, const FileFingerprint& key, const std::string& digest) {
+    std::lock_guard lock(mutex_);
+    if (entries_.size() >= kMaximumEntries && !entries_.contains(path)) entries_.clear();
+    entries_.insert_or_assign(path, std::pair{key, digest});
+  }
+
+private:
+  static constexpr std::size_t kMaximumEntries = 262144U;
+  std::mutex mutex_;
+  std::unordered_map<std::string, std::pair<FileFingerprint, std::string>> entries_;
+};
+
+FileDigestCache& fileDigestCache() {
+  static FileDigestCache cache;
+  return cache;
+}
+
+core::Result<std::string> audioFileDigest(const std::filesystem::path& path) {
+  const auto key = path.string();
+  const auto before = fingerprint(path);
+  if (before) {
+    if (auto cached = fileDigestCache().find(key, *before)) return core::success(std::move(*cached));
+  }
+  auto digest = core::sha256File(path, kMaximumSupportedWavBytes);
+  if (!digest) return digest;
+  if (const auto after = fingerprint(path); before && after && *before == *after) {
+    fileDigestCache().store(key, *before, digest.value());
+  }
+  return digest;
 }
 
 }  // namespace
@@ -63,7 +157,7 @@ core::Result<std::string> computeVoicebankContentHash(
   for (const auto& relative : uniqueAudioPaths) {
     auto resolved = resolveBankAsset(bankRoot, std::filesystem::path{relative});
     if (!resolved) return core::Result<std::string>{resolved.error()};
-    auto digest = core::sha256File(resolved.value(), kMaximumSupportedWavBytes);
+    auto digest = audioFileDigest(resolved.value());
     if (!digest) return core::Result<std::string>{digest.error()};
     addField(hash, relative);
     addField(hash, digest.value());
