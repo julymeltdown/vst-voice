@@ -125,6 +125,24 @@ TEST_CASE("compact widths follow section 3.4: a 44-point drawer below 860, a 56-
   CHECK(full.rack == RackPresentation::Full && !full.inspectorOpen && full.inspector.width == 0.0);
 }
 
+TEST_CASE("the stacked phoneme, unit and seam bands get a taller lane than a curve") {
+  // Rehearsal 2026-10-20: with the curve lane's height the three bands were about 20 points each
+  // on a short window, too thin to see a seam rail or hit it.
+  for (const auto size : std::vector<std::array<double, 2U>>{
+           {1600.0, 900.0}, {1280.0, 800.0}, {1280.0, 700.0}, {1000.0, 600.0}, {860.0, 520.0}}) {
+    const auto curve = solveSingLayout(size[0], size[1], false, false);
+    const auto stacked = solveSingLayout(size[0], size[1], false, true);
+    CHECK(stacked.lanePlot.height >= curve.lanePlot.height + 30.0);
+    // The seam band takes 28 percent of the plot when all three are open.
+    CHECK(stacked.lanePlot.height * 0.28 >= 16.0);
+    if (size[1] >= 700.0) CHECK(stacked.lanePlot.height * 0.28 >= 30.0);
+    // The score keeps room above it.
+    CHECK(stacked.grid.height >= 120.0);
+    CHECK(stacked.lane.bottom() == curve.lane.bottom());
+    CHECK(stacked.laneTimePlot.height == stacked.lanePlot.height);
+  }
+}
+
 TEST_CASE("compact headers keep a reachable workspace menu and never collide with transport") {
   for (const auto width : {480.0, 600.0, 720.0, 860.0, 1000.0}) {
     const auto l = solveSingLayout(width, 480.0);

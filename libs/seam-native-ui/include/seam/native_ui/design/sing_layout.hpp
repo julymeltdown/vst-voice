@@ -83,8 +83,11 @@ inline constexpr double kSingHeaderAvatar = 28.0;
 
 [[nodiscard]] double singRackWidth(double width) noexcept;
 // inspectorOpen only matters for the compact presentations; the full rack has no inspector.
+// technicalLanes gives the lane strip the extra height its three stacked bands (phoneme, unit and
+// seam) need to stay readable and hittable.
 [[nodiscard]] SingLayout solveSingLayout(double width, double height,
-                                         bool inspectorOpen = false) noexcept;
+                                         bool inspectorOpen = false,
+                                         bool technicalLanes = false) noexcept;
 
 // The eight lane tabs (seven expression channels and Phonemes) share the tab row with the Review
 // button: a tab is at most 104 points, and never so wide that the last one reaches the button.

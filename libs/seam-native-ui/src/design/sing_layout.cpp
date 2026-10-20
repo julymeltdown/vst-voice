@@ -58,7 +58,8 @@ void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
 
 }  // namespace
 
-SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noexcept {
+SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
+                           bool technicalLanes) noexcept {
   SingLayout l;
   const auto W = std::isfinite(width) ? std::max(width, 480.0) : 1600.0;
   const auto H = std::isfinite(height) ? std::max(height, 320.0) : 900.0;
@@ -74,7 +75,15 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   const auto bodyBottom = l.status.y - kSingGap;
   const auto bodyHeight = std::max(0.0, bodyBottom - bodyTop);
   // The lane gives height back to the grid on short windows instead of pushing it off screen.
-  const auto laneHeight = l.compactHeader ? std::clamp(bodyHeight * 0.34, 72.0, 112.0) : 148.0;
+  const auto curveLaneHeight =
+      l.compactHeader ? std::clamp(bodyHeight * 0.34, 72.0, 112.0) : 148.0;
+  // Rehearsal 2026-10-20: sharing the curve lane's height, the phoneme, unit and seam bands were
+  // about 20 points each on a short window, too thin to see a seam rail or hit it. Stacked, they
+  // get about 80 points more, and never less than a curve lane.
+  const auto laneHeight =
+      !technicalLanes ? curveLaneHeight
+      : l.compactHeader ? std::max(curveLaneHeight, std::clamp(bodyHeight * 0.40, 112.0, 184.0))
+                        : 228.0;
 
   // The full rack needs its three cards at their minimum heights; anything shorter or narrower
   // collapses to the portrait rail rather than clipping cards under the status bar.

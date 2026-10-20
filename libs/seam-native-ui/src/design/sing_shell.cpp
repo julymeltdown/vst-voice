@@ -1154,7 +1154,11 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   if (preferences_.reduceMotionFollowsSystem) preferences_.reduceMotion = systemReduceMotion();
   // The inspector exists only in the compact presentations; a window that grows back to the full
   // rack forgets it, so shrinking again starts closed.
-  auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
+  // An expression lane opened elsewhere (the menu, a knob) takes the lane band back, and with it
+  // the stacked bands' extra height.
+  if (controller.expressionLaneOpen()) technicalLane_ = false;
+  auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_,
+                              technicalLane_ && workspace_ == Workspace::Sing);
   if (next.rack == RackPresentation::Full) inspectorWanted_ = false;
   if (next.workspaceMenuButton.width < 24.0) workspaceMenuOpen_ = false;
   // The singer menu is anchored to its button: a resize closes it, and focus returns to the button
@@ -1240,7 +1244,8 @@ void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) 
     controller.cancelTextComposition();
     lyricInputActive_ = false;
   }
-  layout_ = solveSingLayout(layout_.width, layout_.height, open);
+  layout_ = solveSingLayout(layout_.width, layout_.height, open,
+                            technicalLane_ && workspace_ == Workspace::Sing);
   if (open || focusInside) {
     // Every way of opening it (pointer, keyboard, accessibility) gives the inspector the keyboard,
     // so no key reaches the score it covers; closing returns focus that was inside to the button.
@@ -2901,8 +2906,10 @@ SingShell::TechnicalBands SingShell::technicalBands() const noexcept {
                                            : 0.0;
     const auto height = std::clamp(wanted, 0.0, std::max(0.0, plot.bottom() - y));
     out.band[i] = {plot.x, y, plot.width, height};
-    // The label sits in the lane's value gutter, left of the shared musical axis.
-    out.toggle[i] = {l.lanePlot.x, y, std::max(0.0, plot.x - l.lanePlot.x - 2.0), height};
+    // The label sits left of the shared musical axis. The value gutter alone is 22 points, so
+    // "Phoneme" and "Seam" read "Ph..." and "Se..."; the label also takes the lane's inner margin.
+    const auto labelLeft = l.lane.x + 8.0;
+    out.toggle[i] = {labelLeft, y, std::max(0.0, plot.x - labelLeft - 2.0), height};
     y += height;
   }
   // Rounding leaves the last open band the remainder, so the bands fill the plot exactly.
