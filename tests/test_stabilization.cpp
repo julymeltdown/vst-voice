@@ -138,6 +138,22 @@ TEST_CASE("SHA-256 implementation matches published vectors") {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
   CHECK(seam::core::sha256Hex("abc") ==
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  // Multi-block vectors: the hardware block transform must agree with the portable one.
+  CHECK(seam::core::sha256Hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  const std::string million(1000000U, 'a');
+  CHECK(seam::core::sha256Hex(million) ==
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+  // Streaming in uneven pieces crosses every buffer boundary and gives the same digest.
+  seam::core::Sha256 streamed;
+  std::size_t offset = 0U;
+  for (std::size_t piece = 1U; offset < million.size(); piece = piece % 97U + 1U) {
+    const auto size = std::min(piece, million.size() - offset);
+    streamed.update(std::string_view{million}.substr(offset, size));
+    offset += size;
+  }
+  CHECK(streamed.hexDigest() ==
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 }
 
 TEST_CASE("SHA-256 file hashing rejects symlink and non-file targets") {

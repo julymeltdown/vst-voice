@@ -8,6 +8,11 @@
 #include <sstream>
 #include <vector>
 
+#if defined(__aarch64__) && defined(__ARM_FEATURE_SHA2)
+#include <arm_neon.h>
+#define SEAM_SHA256_ARMV8 1
+#endif
+
 namespace seam::core {
 namespace {
 
@@ -44,6 +49,36 @@ void storeBigEndian(std::uint32_t value, std::byte* output) noexcept {
   output[3] = static_cast<std::byte>(value & 0xffU);
 }
 
+#if defined(SEAM_SHA256_ARMV8)
+// The ARMv8 SHA-256 instructions compute four rounds per step. Bank identity hashing reads every unit
+// audio file, and the portable rounds ran at about 330 MB/s on the development Mac.
+void transformArmv8(std::uint32_t* state, const std::byte* block) noexcept {
+  const auto* bytes = reinterpret_cast<const std::uint8_t*>(block);
+  uint32x4_t abcd = vld1q_u32(state);
+  uint32x4_t efgh = vld1q_u32(state + 4);
+  const uint32x4_t abcdSaved = abcd;
+  const uint32x4_t efghSaved = efgh;
+  uint32x4_t m0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(bytes)));
+  uint32x4_t m1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(bytes + 16)));
+  uint32x4_t m2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(bytes + 32)));
+  uint32x4_t m3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(bytes + 48)));
+  for (std::size_t group = 0U; group < 16U; ++group) {
+    const uint32x4_t scheduled = vaddq_u32(m0, vld1q_u32(kRoundConstants.data() + group * 4U));
+    if (group < 12U) m0 = vsha256su1q_u32(vsha256su0q_u32(m0, m1), m2, m3);
+    const uint32x4_t previous = abcd;
+    abcd = vsha256hq_u32(abcd, efgh, scheduled);
+    efgh = vsha256h2q_u32(efgh, previous, scheduled);
+    const uint32x4_t next = m0;
+    m0 = m1;
+    m1 = m2;
+    m2 = m3;
+    m3 = next;
+  }
+  vst1q_u32(state, vaddq_u32(abcd, abcdSaved));
+  vst1q_u32(state + 4, vaddq_u32(efgh, efghSaved));
+}
+#endif
+
 }  // namespace
 
 Sha256::Sha256() noexcept
@@ -51,6 +86,10 @@ Sha256::Sha256() noexcept
              0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U} {}
 
 void Sha256::transform(const std::byte* block) noexcept {
+#if defined(SEAM_SHA256_ARMV8)
+  transformArmv8(state_.data(), block);
+  return;
+#endif
   std::array<std::uint32_t, 64> words{};
   for (std::size_t index = 0; index < 16U; ++index) {
     words[index] = loadBigEndian(block + index * 4U);
