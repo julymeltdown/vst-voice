@@ -1,8 +1,33 @@
 #include "seam/authoring/project_document.hpp"
 
+#include "seam/core/sha256.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <random>
+#include <string>
 #include <utility>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace seam::authoring {
+namespace {
+
+// 32 hex digits that differ between documents, sessions and machines.
+std::string freshAutosaveKey() {
+  static std::atomic<std::uint64_t> counter{0U};
+  std::random_device device;
+  std::string seed = std::to_string(device()) + ':' + std::to_string(device()) + ':' +
+                     std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
+                     ':' + std::to_string(counter.fetch_add(1U, std::memory_order_relaxed));
+#if !defined(_WIN32)
+  seed += ':' + std::to_string(static_cast<long long>(::getpid()));
+#endif
+  return core::sha256Hex(seed).substr(0U, 32U);
+}
+
+}  // namespace
 
 ProjectDocument::ProjectDocument(domain::Project project,
                                  application::ProjectFactory factory,
@@ -11,6 +36,7 @@ ProjectDocument::ProjectDocument(domain::Project project,
       session_(std::move(project), logger) {
   factory_.synchronizeWith(session_.project());
   identity_.lastSavedRevision = session_.revision();
+  identity_.unsavedAutosaveKey = freshAutosaveKey();
   identity_.dirty = false;
 }
 
@@ -50,6 +76,7 @@ core::Result<void> ProjectDocument::replaceProject(domain::Project project) {
   identity_.autosavePath.reset();
   identity_.recoveryOriginPath.reset();
   identity_.baseProjectHash.clear();
+  identity_.unsavedAutosaveKey = freshAutosaveKey();
   identity_.dirty = true;
   return result;
 }
@@ -76,6 +103,10 @@ void ProjectDocument::markRecovered(
     std::string durableProjectHash) noexcept {
   identity_.projectPath.reset();
   identity_.recoveryOriginPath = std::move(originalProjectPath);
+  // Keep writing into the recovered autosave's directory, so its older generations are pruned
+  // together with the new ones instead of lingering beside them.
+  if (const auto directory = autosavePath.parent_path().filename().string(); !directory.empty())
+    identity_.unsavedAutosaveKey = directory;
   identity_.autosavePath = std::move(autosavePath);
   identity_.baseProjectHash = std::move(durableProjectHash);
   identity_.lastSavedRevision = session_.revision();

@@ -6,6 +6,7 @@
 #include "seam/application/note_commands.hpp"
 #include "seam/core/file_io.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -226,6 +227,62 @@ TEST_CASE("autosave_service_keeps_only_five_newest_generations") {
   CHECK(candidates);
   CHECK(candidates.value().size() == 5U);
   CHECK(candidates.value().back().revision == fixture.document.session().revision());
+}
+
+TEST_CASE("autosave_service_keeps_unsaved_projects_that_share_an_id_apart") {
+  // Rehearsal 2026-10-20: every session numbers its projects from the same start, so the first
+  // New Project of each session had id 3eb. Unsaved autosaves were filed under that id, and one
+  // session's five generations pruned another session's unsaved work.
+  const auto root = seam::test::support::temporaryDirectory("autosave-shared-id");
+  seam::authoring::AutosaveService service({
+      .root = root,
+      .maximumGenerations = 5U,
+      .faultInjector = {},
+      .wallClock = {},
+  });
+  auto earlier = makeFixture();
+  CHECK(earlier.document.execute(move(earlier.noteId, seam::time::Tick{0}, seam::time::Tick{60})));
+  CHECK(service.request(earlier.document));
+  CHECK(service.flush());
+
+  auto later = makeFixture();
+  CHECK(later.document.session().project().id() == earlier.document.session().project().id());
+  auto before = seam::time::Tick{0};
+  for (std::size_t index = 0; index < 6U; ++index) {
+    const auto after = seam::time::Tick{static_cast<std::int64_t>((index + 1U) * 120U)};
+    CHECK(later.document.execute(move(later.noteId, before, after)));
+    before = after;
+    CHECK(service.request(later.document));
+    CHECK(service.flush());
+  }
+  auto candidates = service.discover();
+  CHECK(candidates);
+  if (!candidates) return;
+  CHECK(candidates.value().size() == 6U);  // the earlier session's one plus the later's newest five
+  const auto earlierCandidate = std::find_if(
+      candidates.value().begin(), candidates.value().end(),
+      [&](const auto& candidate) { return candidate.revision == earlier.document.session().revision() &&
+                                           candidate.autosavePath.parent_path() !=
+                                               candidates.value().back().autosavePath.parent_path(); });
+  CHECK(earlierCandidate != candidates.value().end());
+  if (earlierCandidate == candidates.value().end()) return;
+  const auto recovered = *earlierCandidate;  // discover() below replaces the vector
+
+  // A recovered document keeps writing into the directory it came from.
+  auto target = makeFixture();
+  CHECK(service.recover(target.document, recovered));
+  CHECK(target.document.execute(move(target.noteId, seam::time::Tick{60}, seam::time::Tick{90})));
+  CHECK(service.request(target.document));
+  CHECK(service.flush());
+  candidates = service.discover();
+  CHECK(candidates);
+  if (!candidates) return;
+  std::size_t inEarlierDirectory = 0U;
+  for (const auto& candidate : candidates.value())
+    if (candidate.autosavePath.parent_path() == recovered.autosavePath.parent_path())
+      ++inEarlierDirectory;
+  CHECK(inEarlierDirectory == 2U);
+  CHECK(candidates.value().size() == 7U);
 }
 
 TEST_CASE("autosave_service_write_failure_and_corruption_do_not_mutate_document") {

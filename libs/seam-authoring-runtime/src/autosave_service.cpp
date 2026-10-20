@@ -36,12 +36,16 @@ std::int64_t unixMilliseconds(std::chrono::system_clock::time_point value) {
 }
 
 std::string stableAutosaveId(const domain::Project& project,
-                             const std::optional<std::filesystem::path>& path) {
-  std::string identity = project.id().toString();
-  identity.push_back('|');
-  identity += path.has_value() ? pathToUtf8(path->lexically_normal())
-                               : std::string{"<unsaved>"};
-  return core::sha256Hex(identity).substr(0U, 32U);
+                             const DocumentIdentity& document) {
+  // A project file names its own directory, so every session editing that file shares it.
+  if (document.projectPath.has_value()) {
+    std::string identity = project.id().toString();
+    identity.push_back('|');
+    identity += pathToUtf8(document.projectPath->lexically_normal());
+    return core::sha256Hex(identity).substr(0U, 32U);
+  }
+  if (!document.unsavedAutosaveKey.empty()) return document.unsavedAutosaveKey;
+  return core::sha256Hex(project.id().toString() + "|<unsaved>").substr(0U, 32U);
 }
 
 std::string generationStem(const AutosaveService::Snapshot& snapshot) {
@@ -167,7 +171,7 @@ AutosaveService::Snapshot AutosaveService::snapshot(
       .project = document.session().project(),
       .explicitProjectPath = explicitPath,
       .revision = document.session().revision(),
-      .stableId = stableAutosaveId(document.session().project(), explicitPath),
+      .stableId = stableAutosaveId(document.session().project(), document.identity()),
       .baseProjectHash = document.identity().baseProjectHash,
       .createdAtUnixMs = unixMilliseconds(config_.wallClock()),
       .sequence = ++sequence_,

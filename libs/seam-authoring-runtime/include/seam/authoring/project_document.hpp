@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace seam::authoring {
 
@@ -19,6 +20,11 @@ struct DocumentIdentity final {
   std::optional<std::filesystem::path> recoveryOriginPath;
   std::uint64_t lastSavedRevision{0U};
   std::string baseProjectHash;
+  // Names the autosave directory while the document has no project file. Project ids repeat from
+  // session to session, so an id-derived directory let one session's autosaves prune another's.
+  // Fresh for every new or replaced project; a recovered document keeps writing into the directory
+  // it was recovered from.
+  std::string unsavedAutosaveKey;
   bool dirty{false};
 };
 
