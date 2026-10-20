@@ -3,6 +3,8 @@
 #include <array>
 #include <string_view>
 #include <unordered_map>
+#include <tuple>
+#include <cstdlib>
 #include <algorithm>
 #include <filesystem>
 #include <utility>
@@ -877,12 +879,31 @@ void AuthoringRuntime::labelTechnicalUnits(std::vector<TechnicalUnitView>& units
   const auto& resolved = bank->resolution();
   if (!resolved.resolved()) return;
   std::unordered_map<std::string_view, const voicebank::Unit*> wanted;
-  for (const auto& unit : units) wanted.emplace(unit.entry.unitId, nullptr);
+  for (const auto& unit : units) {
+    wanted.emplace(unit.entry.unitId, nullptr);
+    for (const auto& alternative : unit.entry.alternatives) wanted.emplace(alternative, nullptr);
+  }
   for (const auto& unit : resolved.candidate->manifest.units)
     if (const auto found = wanted.find(unit.id); found != wanted.end()) found->second = &unit;
   static constexpr std::array<const char*, 12U> kNames{"C", "C#", "D", "D#", "E", "F",
                                                        "F#", "G", "G#", "A", "A#", "B"};
   for (auto& unit : units) {
+    std::vector<std::string> order{unit.entry.unitId};
+    order.insert(order.end(), unit.entry.alternatives.begin(), unit.entry.alternatives.end());
+    std::sort(order.begin(), order.end());
+    order.erase(std::unique(order.begin(), order.end()), order.end());
+    const auto target = unit.entry.targetMidi;
+    const auto rank = [&wanted, target](const std::string& id) {
+      const auto it = wanted.find(id);
+      const auto* source = it == wanted.end() ? nullptr : it->second;
+      // A unit the bank no longer lists goes last, in id order.
+      if (source == nullptr) return std::tuple{std::int64_t{1} << 40, 0, 0};
+      return std::tuple{static_cast<std::int64_t>(std::abs(source->rootMidi - target)),
+                        source->rootMidi, source->take};
+    };
+    std::stable_sort(order.begin(), order.end(),
+                     [&rank](const auto& left, const auto& right) { return rank(left) < rank(right); });
+    unit.variantOrder = std::move(order);
     const auto found = wanted.find(unit.entry.unitId);
     if (found == wanted.end() || found->second == nullptr) continue;
     const auto& source = *found->second;

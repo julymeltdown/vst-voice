@@ -539,6 +539,12 @@ core::Result<void> TechnicalEditController::cycleUnitVariant(
                  selectedView->entry.alternatives.end());
   std::sort(choices.begin(), choices.end());
   choices.erase(std::unique(choices.begin(), choices.end()), choices.end());
+  // Step through the units nearest the note's pitch first when the host can rank them; the same
+  // set, so a stale order is never trusted for membership.
+  if (auto ranked = selectedView->variantOrder; ranked.size() == choices.size()) {
+    std::sort(ranked.begin(), ranked.end());
+    if (ranked == choices) choices = selectedView->variantOrder;
+  }
   if (choices.size() < 2U) {
     return core::failure(core::ErrorCode::Conflict,
                          "No alternative Unit is available for this boundary");

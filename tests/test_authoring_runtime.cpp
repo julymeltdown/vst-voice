@@ -1600,6 +1600,14 @@ TEST_CASE("authoring runtime labels the units a render chose with the bank's ali
   for (const auto& unit : view.units) {
     CHECK(!unit.label.empty());
     CHECK(unit.label != unit.entry.unitId);
+    // The cycle order holds exactly the chosen unit and its alternatives.
+    auto expected = unit.entry.alternatives;
+    expected.push_back(unit.entry.unitId);
+    std::sort(expected.begin(), expected.end());
+    expected.erase(std::unique(expected.begin(), expected.end()), expected.end());
+    auto order = unit.variantOrder;
+    std::sort(order.begin(), order.end());
+    CHECK(order == expected);
     // The alias (which may hold spaces, "k o"), the root note name such as G4, then the take
     // when it is not the first.
     const auto name = unit.label.substr(0U, unit.label.find(" take "));

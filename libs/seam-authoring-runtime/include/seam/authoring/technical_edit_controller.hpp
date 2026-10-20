@@ -21,6 +21,11 @@ struct TechnicalUnitView final {
   // than one ("ka B2", "ka B2 take 2"). Bank unit ids share a long prefix ("ja.pjs.m47.ka.01"), so a
   // fitted id read "ja.pjs...." on every card. Empty when the bank cannot be read.
   std::string label;
+  // The chosen unit and its alternatives in the order Cycle Unit variant steps through them: root
+  // note nearest the note's pitch first, then take and id. Ordering by id walked the pitch layers
+  // from the lowest, so the first press on a B4 note picked a B2 unit. Empty when the bank cannot
+  // be read; the cycle then falls back to id order.
+  std::vector<std::string> variantOrder;
 };
 
 struct TechnicalRenderView final {

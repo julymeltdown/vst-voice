@@ -484,6 +484,48 @@ TEST_CASE("technical_edit_controller_cycles_unit_variant_and_renderer") {
   CHECK(diagnostic->diagnostic == "spectral fallback");
 }
 
+TEST_CASE("technical_edit_controller cycles unit variants nearest the note's pitch first") {
+  // Rehearsal 2026-10-20: ordering variants by id walked the pitch layers from the lowest, so the
+  // first press on a MIDI 71 note picked the m47 unit, two octaves down.
+  seam::domain::RegionId regionId{};
+  auto document = TechnicalFixture::makeDocument(regionId);
+  const seam::domain::PhonemeKey key{
+      .noteId = document.session().project().findRegion(regionId)->notes.front().id, .ordinal = 0U};
+  seam::authoring::TechnicalEditController controller(
+      document, regionId,
+      [] {
+        seam::authoring::TechnicalRenderView view;
+        view.units.push_back(seam::authoring::TechnicalUnitView{
+            .entry = seam::synthesis::UnitPlanEntry{
+                .unitId = "ja.m71.ki.01",
+                .tokenStart = 0U,
+                .tokenCount = 2U,
+                .score = 0.0,
+                .targetMidi = 71,
+                .forced = false,
+                .renderer = seam::domain::UnitRendererKind::Raw,
+                .alternatives = {"ja.m47.ki.01", "ja.m59.ki.01", "ja.m71.ki.02"},
+            },
+            .usedFallback = false,
+            .diagnostic = {},
+            .label = "k i B4",
+            .variantOrder = {"ja.m71.ki.01", "ja.m71.ki.02", "ja.m59.ki.01", "ja.m47.ki.01"},
+        });
+        return view;
+      },
+      [] {});
+  const auto* region = document.session().project().findRegion(regionId);
+  std::vector<std::string> picked;
+  for (int press = 0; press < 4; ++press) {
+    CHECK(controller.cycleUnitVariant(key));
+    const auto* selected = region->findUnitSelectionOverride(key);
+    CHECK(selected != nullptr);
+    if (selected != nullptr) picked.push_back(selected->unitId);
+  }
+  const std::vector<std::string> expected{"ja.m71.ki.02", "ja.m59.ki.01", "ja.m47.ki.01", "ja.m71.ki.01"};
+  CHECK(picked == expected);
+}
+
 TEST_CASE("technical_edit_controller_maps_unit edits from covered nonstart phonemes") {
   TechnicalFixture fixture;
   const seam::domain::PhonemeKey coveredKey{
