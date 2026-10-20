@@ -37,6 +37,9 @@ struct StandaloneApplicationControllerConfig final {
   std::filesystem::path autosaveRoot;
   std::filesystem::path recentProjectsPath;
   std::filesystem::path voicebankInstallRoot{};
+  // Where the folders the creator chose with Relink Voicebank Search Folder are remembered, so a
+  // relinked project still finds its bank after a relaunch. Empty keeps relinks for this session.
+  std::filesystem::path relinkedVoicebankRootsPath{};
   // Where installed procedural singers are catalogued. Empty means the platform default roots.
   std::vector<distribution::ProceduralSearchRoot> proceduralSingerRoots{};
   // The engine and revision this build renders. Required before an installed singer may be selected,
@@ -383,6 +386,9 @@ private:
       std::function<void()> requestQuit);
 
   [[nodiscard]] core::Result<void> initialize();
+  void loadRelinkedVoicebankRoots();
+  void rememberRelinkedVoicebankRoot(const std::filesystem::path& root);
+  [[nodiscard]] voicebank::VoicebankRootKind relinkRootKind() const noexcept;
   [[nodiscard]] core::Result<bool> confirmDestructiveAction();
   // The autosave policy's clock: the configured one, or the steady clock.
   [[nodiscard]] std::chrono::steady_clock::time_point now() const;

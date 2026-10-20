@@ -559,6 +559,7 @@ core::Result<void> NativeEditorApp::initialize() {
           .autosaveRoot = supportRoot / "Autosaves",
           .recentProjectsPath = supportRoot / "recent-projects.json",
           .voicebankInstallRoot = supportRoot / "Voicebanks",
+          .relinkedVoicebankRootsPath = supportRoot / "relinked-voicebank-roots.json",
           // An installed procedural singer is a user resource like a bank, so the shipped application
           // catalogs it beside the banks and keeps its review decisions with the rest of the user data.
           // Declaring the engine here is what lets the picker offer a singer this build can really

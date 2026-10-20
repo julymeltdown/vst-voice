@@ -4,6 +4,7 @@
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/seambank.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/authoring/audio_measurement_capture.hpp"
 #include "seam/distribution/signing.hpp"
@@ -16,6 +17,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/formats/json_value.hpp"
 #include <functional>
+#include <algorithm>
 
 #include <filesystem>
 #include <fstream>
@@ -375,6 +377,85 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
   const auto oversized = controller.value()->selectedRegionCoverage();
   CHECK(!oversized);
   CHECK(oversized.error().message.find("bounds") != std::string::npos);
+}
+
+TEST_CASE("standalone relink remembers its folder for the next launch") {
+  // Rehearsal 2026-10-20: a relinked search folder was held in memory only, so after a relaunch the
+  // project read Missing again and had to be relinked every session.
+  const auto root = seam::test::support::temporaryDirectory("standalone-relink-remembered");
+  auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key);
+  if (!key) return;
+  const auto package = createPackage(root, key.value());
+  const auto remembered = root / "support" / "relinked-voicebank-roots.json";
+  const auto makeSession = [&root] {
+    return seam::standalone::AuthoringSession::create(seam::standalone::AuthoringSessionConfig{
+        .cacheRoot = root / "cache",
+        .voicebankRoots = {},
+        .sampleRate = 48000U,
+        .outputChannels = 2U,
+        .bindFirstAvailableVoicebank = false,
+        .allowDevelopmentVoicebanks = false,
+    });
+  };
+  const auto makeConfig = [&](std::filesystem::path installRoot) {
+    return seam::standalone::StandaloneApplicationControllerConfig{
+        .autosaveRoot = root / "autosaves",
+        .recentProjectsPath = root / "recent.json",
+        .voicebankInstallRoot = std::move(installRoot),
+        .relinkedVoicebankRootsPath = remembered,
+        .trustedVoicebankKeys = {key.value().publicKey},
+        .developmentTrustRoot = std::nullopt,
+        .allowDevelopmentVoicebanks = false,
+    };
+  };
+  {
+    auto session = makeSession();
+    CHECK(session);
+    if (!session) return;
+    auto dialog = std::make_unique<FakeDialog>();
+    auto* dialogPtr = dialog.get();
+    dialogPtr->responses = {package};
+    auto controller = seam::standalone::StandaloneApplicationController::create(
+        *session.value(), std::move(dialog), std::make_unique<FakePrompt>(),
+        makeConfig(root / "voicebanks"));
+    CHECK(controller);
+    if (!controller) return;
+    CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::InstallVoicebank));
+    CHECK(controller.value()->voicebankCards().size() == 1U);
+    if (controller.value()->voicebankCards().empty()) return;
+    const auto card = controller.value()->voicebankCards().front();
+    CHECK(controller.value()->selectVoicebank(card.id, card.version, card.contentHash));
+    dialogPtr->responses.push_back(root / "voicebanks");
+    CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::RelinkVoicebank));
+  }
+  CHECK(std::filesystem::exists(remembered));
+  const auto text = seam::core::readTextFileLimited(remembered, 64U * 1024U);
+  CHECK(text);
+  if (text) CHECK(text.value().find((root / "voicebanks").generic_string()) != std::string::npos);
+
+  // The next launch searches no folder of its own, yet finds the bank through the remembered one.
+  auto session = makeSession();
+  CHECK(session);
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), makeConfig({}));
+  CHECK(controller);
+  if (!controller) return;
+  const auto cards = controller.value()->voicebankCards();
+  CHECK(std::any_of(cards.begin(), cards.end(), [](const auto& card) {
+    return card.id == "standalone.installed.bank";
+  }));
+
+  // A folder that does not hold the track's bank is not remembered.
+  std::filesystem::create_directories(root / "empty");
+  dialogPtr->responses.push_back(root / "empty");
+  static_cast<void>(controller.value()->dispatch(seam::platform::ApplicationCommand::RelinkVoicebank));
+  const auto after = seam::core::readTextFileLimited(remembered, 64U * 1024U);
+  CHECK(after);
+  if (after) CHECK(after.value().find((root / "empty").generic_string()) == std::string::npos);
 }
 
 TEST_CASE("explicit bank refresh revokes current contextual audio and measurement after a losing source changes") {

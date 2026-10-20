@@ -1,4 +1,6 @@
 #include "seam/standalone/application_controller.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/core/file_io.hpp"
 
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/native_ui/export_dialog.hpp"
@@ -227,9 +229,90 @@ StandaloneApplicationController::~StandaloneApplicationController() {
   autosave_.shutdown();
 }
 
+namespace {
+
+constexpr std::string_view kRelinkedRootsFormat = "com.project-seam.relinked-voicebank-roots";
+constexpr std::size_t kMaximumRelinkedRoots = 32U;
+
+std::string relinkPathText(const std::filesystem::path& path) {
+  const auto bytes = path.generic_u8string();
+  return std::string{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+std::filesystem::path relinkPathFromText(std::string_view text) {
+  return std::filesystem::path{std::u8string{text.begin(), text.end()}};
+}
+
+// The remembered folders, oldest first. A missing, oversized or malformed file reads as none: the
+// creator relinks again, which is what happened before anything was remembered.
+std::vector<std::filesystem::path> readRelinkedRoots(const std::filesystem::path& file) {
+  std::vector<std::filesystem::path> roots;
+  std::error_code error;
+  if (file.empty() || !std::filesystem::is_regular_file(file, error)) return roots;
+  const auto text = core::readTextFileLimited(file, 256U * 1024U);
+  if (!text) return roots;
+  const auto parsed = formats::parseJson(text.value());
+  if (!parsed || !parsed.value().isObject()) return roots;
+  const auto* format = parsed.value().find("format");
+  const auto* entries = parsed.value().find("roots");
+  if (format == nullptr || !format->isString() || format->asString() != kRelinkedRootsFormat ||
+      entries == nullptr || !entries->isArray())
+    return roots;
+  for (const auto& entry : entries->asArray()) {
+    if (!entry.isString() || entry.asString().empty()) continue;
+    auto path = relinkPathFromText(entry.asString());
+    if (path.is_absolute() && std::find(roots.begin(), roots.end(), path) == roots.end())
+      roots.push_back(std::move(path));
+    if (roots.size() == kMaximumRelinkedRoots) break;
+  }
+  return roots;
+}
+
+}  // namespace
+
+voicebank::VoicebankRootKind StandaloneApplicationController::relinkRootKind() const noexcept {
+  return config_.allowDevelopmentVoicebanks ? voicebank::VoicebankRootKind::Development
+                                            : voicebank::VoicebankRootKind::Installed;
+}
+
+void StandaloneApplicationController::loadRelinkedVoicebankRoots() {
+  for (const auto& root : readRelinkedRoots(config_.relinkedVoicebankRootsPath)) {
+    std::error_code error;
+    // A folder that has since been removed or unmounted is skipped, not forgotten: it may return.
+    if (!std::filesystem::is_directory(root, error)) continue;
+    static_cast<void>(session_.runtime().voicebanks().addSearchRoot(
+        voicebank::VoicebankSearchRoot{.path = root, .kind = relinkRootKind()}));
+  }
+}
+
+void StandaloneApplicationController::rememberRelinkedVoicebankRoot(
+    const std::filesystem::path& root) {
+  if (config_.relinkedVoicebankRootsPath.empty() || !root.is_absolute()) return;
+  auto roots = readRelinkedRoots(config_.relinkedVoicebankRootsPath);
+  const auto normal = root.lexically_normal();
+  std::erase(roots, normal);
+  roots.push_back(normal);
+  while (roots.size() > kMaximumRelinkedRoots) roots.erase(roots.begin());
+  formats::JsonValue::Array entries;
+  for (const auto& path : roots) entries.emplace_back(formats::JsonValue{relinkPathText(path)});
+  const auto text = formats::stringifyJson(
+      formats::JsonValue{formats::JsonValue::Object{
+          {"format", formats::JsonValue{std::string{kRelinkedRootsFormat}}},
+          {"schemaVersion", formats::JsonValue{std::int64_t{1}}},
+          {"roots", formats::JsonValue{std::move(entries)}},
+      }},
+      true);
+  std::error_code error;
+  std::filesystem::create_directories(config_.relinkedVoicebankRootsPath.parent_path(), error);
+  // The relink itself already succeeded; failing to remember it only means relinking again after
+  // a relaunch, so it does not turn the relink into an error.
+  static_cast<void>(core::durableAtomicWriteText(config_.relinkedVoicebankRootsPath, text));
+}
+
 core::Result<void> StandaloneApplicationController::initialize() {
   auto recent = recentProjects_.load();
   if (!recent) return recent;
+  loadRelinkedVoicebankRoots();
   if (config_.neuralSelection.has_value()) {
     auto service = authoring::NeuralSelectionService::create(*config_.neuralSelection);
     if (!service) return core::Result<void>{service.error()};
@@ -2184,10 +2267,13 @@ StandaloneApplicationController::installProceduralSinger(
 core::Result<voicebank::VoicebankResolution>
 StandaloneApplicationController::relinkVoicebank(
     domain::TrackId trackId, voicebank::VoicebankSearchRoot root) {
+  const auto chosen = root.path;
   auto result = session_.runtime().voicebanks().relinkTrack(
       session_.runtime().document(), trackId,
       std::move(root));
   if (!result) return result;
+  // Remember the folder only when it really holds the track's bank, so a wrong pick is not kept.
+  if (result.value().resolved()) rememberRelinkedVoicebankRoot(chosen);
   auto refreshed = refreshVoicebankBrowser();
   if (!refreshed) {
     return core::Result<voicebank::VoicebankResolution>{refreshed.error()};
@@ -2515,12 +2601,7 @@ core::Result<void> StandaloneApplicationController::relinkVoicebankFromDialog() 
   if (!selected.value().has_value()) return core::success();
   const auto relinked = relinkVoicebank(
       track->id,
-      voicebank::VoicebankSearchRoot{
-          .path = *selected.value(),
-          .kind = config_.allowDevelopmentVoicebanks
-                      ? voicebank::VoicebankRootKind::Development
-                      : voicebank::VoicebankRootKind::Installed,
-      });
+      voicebank::VoicebankSearchRoot{.path = *selected.value(), .kind = relinkRootKind()});
   if (!relinked) return core::Result<void>{relinked.error()};
   return core::success();
 }
