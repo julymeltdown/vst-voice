@@ -272,12 +272,23 @@ int seam_editor_native_main(int argc, char** argv) {
       developmentTrustRoot(*commandLine, developmentKeyValid);
   if (!developmentKeyValid) return 3;
 
-  const auto paths = seam::platform::applicationPaths(
+  auto paths = seam::platform::applicationPaths(
       std::filesystem::path{argv[0]});
   if (!paths) {
     std::cerr << "Unable to resolve application paths: "
               << paths.error().message << '\n';
     return 3;
+  }
+  // An overridden support root replaces every per-user location, the installed voicebank folder
+  // included, so a test root cannot see the banks installed for the real user. The bundle's
+  // install and resources folders stay where the executable is.
+  if (commandLine->applicationSupportRoot.has_value()) {
+    auto overridden = seam::platform::ApplicationPaths::forTestRoot(
+        *commandLine->applicationSupportRoot);
+    overridden.installRoot = paths.value().installRoot;
+    overridden.resourcesRoot = paths.value().resourcesRoot;
+    overridden.manualsRoot = paths.value().manualsRoot;
+    paths = seam::core::success(std::move(overridden));
   }
   std::vector<seam::voicebank::VoicebankSearchRoot> requestedRoots;
   requestedRoots.reserve(commandLine->voicebankRoots.size());
