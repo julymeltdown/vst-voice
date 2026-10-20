@@ -1586,6 +1586,30 @@ TEST_CASE("authoring runtime settles a render in flight when an edit is made wit
   CHECK(runtime.transport().state().publishedRevision == revision);
 }
 
+TEST_CASE("authoring runtime labels the units a render chose with the bank's alias and root note") {
+  // Rehearsal 2026-10-20: the unit lane printed ids that share the bank's long prefix, so every
+  // card read "ja.pjs...." The runtime names each chosen unit from the resolved bank instead.
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-unit-labels"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto view = runtime.technicalEdits().renderView();
+  CHECK(!view.units.empty());
+  for (const auto& unit : view.units) {
+    CHECK(!unit.label.empty());
+    CHECK(unit.label != unit.entry.unitId);
+    // The alias (which may hold spaces, "k o"), the root note name such as G4, then the take
+    // when it is not the first.
+    const auto name = unit.label.substr(0U, unit.label.find(" take "));
+    const auto space = name.rfind(' ');
+    CHECK(space != std::string::npos && space > 0U);
+    if (space != std::string::npos && space + 1U < name.size())
+      CHECK(name[space + 1U] >= 'A' && name[space + 1U] <= 'G');
+  }
+}
+
 TEST_CASE("authoring runtime reports the performance of the region on screen, and none for an empty one") {
   // The renderer renders every region that has notes and reports the performance of one of them:
   // the region on screen. An empty region has none to report, and the score's other regions are not

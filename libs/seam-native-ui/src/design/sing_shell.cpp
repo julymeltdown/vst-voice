@@ -3044,9 +3044,10 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
       c.fill(Path::roundedRect(card, 3.0), withAlpha(t.color.surfaceSunken, 0.9));
       c.stroke(Path::roundedRect(card, 3.0), withAlpha(t.color.border, 0.6), StrokeStyle{1.0});
       const ui::Rect textBox{card.x + 4.0, card.y, std::max(0.0, card.width - 8.0), card.height};
+      const auto& name = unit.label.empty() ? unit.unitId : unit.label;
       if (textBox.width >= 12.0)
-        c.text(textBox, unit.unitId,
-               fittedToTen(c, unit.unitId, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+        c.text(textBox, name,
+               fittedToTen(c, name, style(FontRole::Mono, t.type.smallLabel), textBox.width),
                t.color.textSecondary);
     }
     for (const auto& unit : state.unitOverrides) {
@@ -3063,7 +3064,12 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
       c.fill(Path::roundedRect(card, 3.0), withAlpha(t.color.noteFillAlt, 0.9));
       c.stroke(Path::roundedRect(card, 3.0), unit.locked ? t.color.accent : withAlpha(t.color.border, 0.95),
                StrokeStyle{1.0});
-      const auto text = unit.unitId + "  " + unitRendererLabel(unit.renderer);
+      // An override names a unit the latest render may also have chosen; its label is the same.
+      const auto rendered = std::find_if(state.renderedUnits.begin(), state.renderedUnits.end(),
+                                         [&unit](const auto& r) { return r.unitId == unit.unitId; });
+      const auto& name = rendered != state.renderedUnits.end() && !rendered->label.empty()
+                             ? rendered->label : unit.unitId;
+      const auto text = name + "  " + unitRendererLabel(unit.renderer);
       const ui::Rect textBox{card.x + 4.0, card.y, std::max(0.0, card.width - 8.0), card.height};
       if (textBox.width >= 12.0)
         c.text(textBox, text, fittedToTen(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),

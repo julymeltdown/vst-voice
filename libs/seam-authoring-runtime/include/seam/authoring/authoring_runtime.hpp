@@ -238,6 +238,7 @@ private:
   void submitPreview(PreviewRequest request, bool immediate);
   void previewWorkerLoop(std::stop_token stopToken);
   [[nodiscard]] TechnicalRenderView currentTechnicalRenderView() const;
+  void labelTechnicalUnits(std::vector<TechnicalUnitView>& units) const;
   [[nodiscard]] std::pair<domain::TrackId, domain::RegionId>
   firstRenderableSelection(const domain::Project& project,
                            const std::vector<TrackVoicebankState>& states) const;

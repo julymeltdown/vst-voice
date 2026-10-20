@@ -17,6 +17,10 @@ struct TechnicalUnitView final {
   synthesis::UnitPlanEntry entry;
   bool usedFallback{false};
   std::string diagnostic;
+  // What the unit lane prints: the bank's alias and root note, with the take when there is more
+  // than one ("ka B2", "ka B2 take 2"). Bank unit ids share a long prefix ("ja.pjs.m47.ka.01"), so a
+  // fitted id read "ja.pjs...." on every card. Empty when the bank cannot be read.
+  std::string label;
 };
 
 struct TechnicalRenderView final {

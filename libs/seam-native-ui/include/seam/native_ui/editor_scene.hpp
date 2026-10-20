@@ -37,6 +37,7 @@ struct RenderedUnitSpan final {
   std::uint16_t tokenCount{1U};
   std::string unitId;
   domain::UnitRendererKind renderer{domain::UnitRendererKind::Inherit};
+  std::string label;  // the bank's alias and root note; empty when the host cannot read the bank
 };
 inline constexpr std::array<const char*, 6U> kReplacementReviewActions{
     "Previous", "Next", "Lyrics / dependencies", "Apply replacement", "Cancel / close", "Refresh review"};

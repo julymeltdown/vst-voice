@@ -480,6 +480,7 @@ EditorSceneState NativeEditorController::sceneState() const {
             .tokenCount = static_cast<std::uint16_t>(std::clamp<std::size_t>(count, 1U, 0xffffU)),
             .unitId = unit.entry.unitId,
             .renderer = unit.entry.renderer,
+            .label = unit.label,
         });
       }
     }

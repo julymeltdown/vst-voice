@@ -6102,7 +6102,7 @@ TEST_CASE("native scene publishes the latest render's unit plan for the unit lan
   seam::synthesis::UnitPlanEntry outside = consonant;
   outside.unitId = "past-the-region";
   outside.tokenStart = 99U;
-  view.units.push_back({.entry = consonant, .usedFallback = false, .diagnostic = {}});
+  view.units.push_back({.entry = consonant, .usedFallback = false, .diagnostic = {}, .label = "ko C4"});
   view.units.push_back({.entry = outside, .usedFallback = false, .diagnostic = {}});
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId,
@@ -6112,6 +6112,7 @@ TEST_CASE("native scene publishes the latest render's unit plan for the unit lan
   CHECK(state.phonemes.tokens.size() >= 2U);
   CHECK(state.renderedUnits.size() == 1U);
   CHECK(state.renderedUnits.front().unitId == "ko_C4");
+  CHECK(state.renderedUnits.front().label == "ko C4");
   CHECK(state.renderedUnits.front().startKey == state.phonemes.tokens.front().key);
   CHECK(state.renderedUnits.front().tokenCount == 2U);
   CHECK(state.renderedUnits.front().renderer == seam::domain::UnitRendererKind::ClassicPsola);

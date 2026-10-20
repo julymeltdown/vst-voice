@@ -1,5 +1,8 @@
 #include "seam/authoring/authoring_runtime.hpp"
 
+#include <array>
+#include <string_view>
+#include <unordered_map>
 #include <algorithm>
 #include <filesystem>
 #include <utility>
@@ -865,6 +868,31 @@ void AuthoringRuntime::previewWorkerLoop(std::stop_token stopToken) {
   }
 }
 
+void AuthoringRuntime::labelTechnicalUnits(std::vector<TechnicalUnitView>& units) const {
+  if (units.empty() || !selectedTrack_.valid()) return;
+  const auto& project = document().session().project();
+  if (project.findVocalTrack(selectedTrack_) == nullptr) return;
+  const auto bank = voicebanks_.resolveTrackSnapshot(project, selectedTrack_);
+  if (!bank) return;
+  const auto& resolved = bank->resolution();
+  if (!resolved.resolved()) return;
+  std::unordered_map<std::string_view, const voicebank::Unit*> wanted;
+  for (const auto& unit : units) wanted.emplace(unit.entry.unitId, nullptr);
+  for (const auto& unit : resolved.candidate->manifest.units)
+    if (const auto found = wanted.find(unit.id); found != wanted.end()) found->second = &unit;
+  static constexpr std::array<const char*, 12U> kNames{"C", "C#", "D", "D#", "E", "F",
+                                                       "F#", "G", "G#", "A", "A#", "B"};
+  for (auto& unit : units) {
+    const auto found = wanted.find(unit.entry.unitId);
+    if (found == wanted.end() || found->second == nullptr) continue;
+    const auto& source = *found->second;
+    const auto root = std::clamp(source.rootMidi, 0, 127);
+    unit.label = (source.alias.empty() ? source.id : source.alias) + " " +
+                 kNames[static_cast<std::size_t>(root % 12)] + std::to_string(root / 12 - 1);
+    if (source.take > 1) unit.label += " take " + std::to_string(source.take);
+  }
+}
+
 TechnicalRenderView AuthoringRuntime::currentTechnicalRenderView() const {
   TechnicalRenderView view;
   const auto audio = renderer_.latest();
@@ -877,6 +905,7 @@ TechnicalRenderView AuthoringRuntime::currentTechnicalRenderView() const {
           .diagnostic = {},
       });
     }
+    labelTechnicalUnits(view.units);
     // A procedural or neural carrier produces no unit plan at all. Saying so here is what keeps the
     // editor from reporting a phoneme problem when the phoneme was never the issue.
     if (view.units.empty()) {
