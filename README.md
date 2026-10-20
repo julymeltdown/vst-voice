@@ -59,6 +59,21 @@ Verification hygiene this repository has paid for:
 - Sanitizer runs use `ASAN_OPTIONS=detect_leaks=0:abort_on_error=1:strict_string_checks=1` and `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
 - A passing module test, a `*_CONTRACT=PASS` line or a source-ready gate is engineering evidence only. It never establishes human listening, DAW, VoiceOver, signing, Windows or reviewer acceptance.
 
+### Giving the editor a singer
+
+A fresh build ships no singer, so a new project shows *No singer selected* and cannot play. Two working routes exist today; neither is a released voicebank.
+
+- **Japanese sample bank for engineering (recorded human voice, male, CC BY-SA 4.0, never bundle it).** Build it from the PJS 1.1 corpus with [pjs_engineering_bank.py](tools/voicebank_source_intake/README.md#engineering-only-japanese-bank-from-pjs-11), then sign and install it with a local key. A command-line install records a signer-trusted receipt, so the bank is selectable when the app is launched from Finder. The in-app installer only accepts banks signed by a key passed with `--trusted-voicebank-key`, which a Finder launch never does.
+
+  ```sh
+  build/release/seam_bank_tool keygen KEYS/private.json KEYS/public.json
+  build/release/seam_bank_tool pack BANK_DIR BANK.seambank KEYS/private.json
+  build/release/seam_bank_tool install BANK.seambank "$HOME/Library/Application Support/ProjectSEAM/Voicebanks" --public-key KEYS/public.json
+  ```
+
+  `seam_voicebank_cli export-installed-bank-project PROJECT.seam OUT.wav VOICEBANK_ROOT` renders a project pinned to an installed bank without the GUI.
+- **Procedural singer from Voicebank Studio.** Design a voice in Studio, publish it and choose *Install published singer* (Command-Option-I). It sings, but its quality is unqualified, and Usable Alpha requires a sample-concatenative bank.
+
 ## What you get after a build
 
 | Product | CMake target | Role |
