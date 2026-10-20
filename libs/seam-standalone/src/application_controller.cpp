@@ -2665,17 +2665,41 @@ core::Result<void> StandaloneApplicationController::openRecentProject(
   return openRecent(path);
 }
 
+std::string recoveryMenuLabel(const authoring::RecoveryCandidate& candidate) {
+  std::ostringstream label;
+  if (candidate.originalProjectPath.has_value() && !candidate.originalProjectPath->empty())
+    label << candidate.originalProjectPath->stem().string();
+  else
+    label << "Unsaved project";
+  if (candidate.createdAtUnixMs > 0) {
+    const auto seconds = static_cast<std::time_t>(candidate.createdAtUnixMs / 1000);
+    std::tm local{};
+#if defined(_WIN32)
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+    label << " — " << std::put_time(&local, "%Y-%m-%d %H:%M");
+  }
+  label << " (revision " << candidate.revision << ")";
+  return label.str();
+}
+
 std::vector<platform::RecoveryMenuItem>
 StandaloneApplicationController::recoveryItems() const {
   std::vector<platform::RecoveryMenuItem> result;
   auto candidates = recoveryCandidates();
   if (!candidates) return result;
-  for (const auto& candidate : candidates.value()) {
+  // Newest first: after a crash the autosave a creator wants is the one just written.
+  auto ordered = candidates.value();
+  std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+    return left.createdAtUnixMs > right.createdAtUnixMs;
+  });
+  for (const auto& candidate : ordered) {
     if (!candidate.recoverable) continue;
     result.push_back(platform::RecoveryMenuItem{
         .metadataPath = candidate.metadataPath,
-        .displayName = "Project " + candidate.projectId + " — revision " +
-                       std::to_string(candidate.revision),
+        .displayName = recoveryMenuLabel(candidate),
     });
   }
   return result;

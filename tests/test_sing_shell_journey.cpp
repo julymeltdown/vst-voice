@@ -12,6 +12,7 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/audio_device_catalog.hpp"
 #include "seam/platform/file_dialog.hpp"
+#include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/native_editor_app.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -375,6 +376,23 @@ TEST_CASE("sing shell journey: focused bank controls show failure on Enter and S
     CHECK(focused->role == seam::native_ui::SemanticRole::Button);
     CHECK(f.app->authoring().controller().documentRevision() == revision);
   }
+}
+
+TEST_CASE("recovery menu labels name the project file and time, never the internal id") {
+  // Rehearsal 2026-10-20: Recover Autosave listed fourteen "Project 00000000000003eb — revision N"
+  // rows; new projects share that id, so the creator could not tell which autosave was theirs.
+  seam::authoring::RecoveryCandidate saved;
+  saved.originalProjectPath = std::filesystem::path{"/tmp/songs/My Song.seam"};
+  saved.projectId = "00000000000003eb";
+  saved.revision = 4U;
+  saved.createdAtUnixMs = 1792494827348;
+  const auto label = seam::standalone::recoveryMenuLabel(saved);
+  CHECK(label.rfind("My Song — 20", 0U) == 0U);
+  CHECK(label.find("(revision 4)") != std::string::npos);
+  CHECK(label.find("3eb") == std::string::npos);
+  seam::authoring::RecoveryCandidate unsaved;
+  unsaved.revision = 1U;
+  CHECK(seam::standalone::recoveryMenuLabel(unsaved) == "Unsaved project (revision 1)");
 }
 
 TEST_CASE("sing shell journey: a replaced project keeps the voicebank cards and resolves its singer") {

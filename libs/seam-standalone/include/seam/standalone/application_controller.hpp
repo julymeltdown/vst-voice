@@ -25,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <stop_token>
 #include <thread>
@@ -132,6 +133,11 @@ struct StandaloneApplicationControllerConfig final {
   // Diagnostic interruption seam, empty in the shipping application. Cannot bypass verification.
   std::function<core::Result<void>(distribution::InstallStage)> installFaultInjector;
 };
+
+// The File > Recover Autosave label: the project's file name (or "Unsaved project"), when the
+// autosave was written in local time, and its revision. Never the internal project id, which is not
+// unique across new projects and told a creator nothing.
+[[nodiscard]] std::string recoveryMenuLabel(const authoring::RecoveryCandidate& candidate);
 
 class StandaloneApplicationController final
     : public platform::IApplicationCommandDispatcher {
