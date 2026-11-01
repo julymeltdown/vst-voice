@@ -385,16 +385,35 @@ core::Result<void> NativeEditorApp::initialize() {
   updatePolicyPath_ = config_.updatePolicyPath;
   updateManifestPath_ = config_.updateManifestPath;
   trustedUpdateRoot_ = config_.trustedUpdateRoot;
-  audioSettingsStore_ = std::make_unique<authoring::AudioSettingsStore>(
-      config_.applicationSupportRoot / "Settings" / "audio-settings.json");
-  const auto persistedSettings = audioSettingsStore_->load();
-  if (persistedSettings) {
-    config_.authoring.sampleRate = persistedSettings.value().sampleRate;
-    config_.authoring.outputChannels = persistedSettings.value().outputChannels;
-    config_.audioBlockFrames = persistedSettings.value().blockFrames;
-    startupDeviceId_ = persistedSettings.value().deviceId;
-  } else if (persistedSettings.error().code != core::ErrorCode::NotFound) {
-    lastError_ = persistedSettings.error().message;
+  const auto audioSettingsPath = paths.value().settingsRoot / "audio-settings.json";
+  const auto legacyAudioSettingsPath =
+      paths.value().userDataRoot / "Settings" / "audio-settings.json";
+  audioSettingsStore_ = std::make_unique<authoring::AudioSettingsStore>(audioSettingsPath);
+  std::error_code settingsError;
+  auto settingsPath = audioSettingsPath;
+  bool hasSettings = std::filesystem::exists(settingsPath, settingsError);
+  if (!hasSettings && !settingsError && legacyAudioSettingsPath != audioSettingsPath) {
+    settingsPath = legacyAudioSettingsPath;
+    hasSettings = std::filesystem::exists(settingsPath, settingsError);
+  }
+  if (settingsError) {
+    lastError_ = "Unable to locate audio settings: " + settingsError.message();
+  } else if (hasSettings) {
+    // A missing store returns defaults. Only a real saved file may override this launch's
+    // configuration, and an invalid current file must not resurrect stale legacy settings.
+    const auto persistedSettings = authoring::AudioSettingsStore{settingsPath}.load();
+    if (persistedSettings) {
+      config_.authoring.sampleRate = persistedSettings.value().sampleRate;
+      config_.authoring.outputChannels = persistedSettings.value().outputChannels;
+      config_.audioBlockFrames = persistedSettings.value().blockFrames;
+      startupDeviceId_ = persistedSettings.value().deviceId;
+      if (settingsPath != audioSettingsPath) {
+        const auto migrated = audioSettingsStore_->save(persistedSettings.value());
+        if (!migrated) lastError_ = migrated.error().message;
+      }
+    } else {
+      lastError_ = persistedSettings.error().message;
+    }
   }
 
   if (config_.designPreferences)

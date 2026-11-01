@@ -398,16 +398,105 @@ TEST_CASE("native editor audio settings restart the live deterministic transport
   CHECK(app.value()->authoring().runtime().transport().sampleRate() == 44100U);
   CHECK(app.value()->authoring().runtime().transport().outputChannels() == 1U);
   seam::authoring::AudioSettingsStore store{
-      root / "Data" / "Settings" / "audio-settings.json"};
+      root / "Settings" / "audio-settings.json"};
   const auto persisted = store.load();
   CHECK(persisted);
   CHECK(persisted.value().sampleRate == 44100U);
+  CHECK(persisted.value().blockFrames == 128U);
 
   requested.sampleRate = 88200U;
   CHECK(!app.value()->applyAudioSettings(requested));
   const auto afterFailure = app.value()->audioSettings();
   CHECK(afterFailure);
   CHECK(afterFailure.value().sampleRate == 44100U);
+  app.value().reset();
+
+  // The next launch on the same support root starts with the saved settings, beside the EULA
+  // acceptance in the settings folder.
+  seam::standalone::NativeEditorAppConfig again;
+  again.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  again.applicationSupportRoot = root;
+  again.forceThreadedAudio = true;
+  again.authoring.sampleRate = 48000U;
+  again.authoring.outputChannels = 2U;
+  again.audioBlockFrames = 256U;
+  auto relaunched = seam::standalone::NativeEditorApp::create(std::move(again));
+  CHECK(relaunched);
+  const auto restored = relaunched.value()->audioSettings();
+  CHECK(restored);
+  CHECK(restored.value().sampleRate == 44100U);
+  CHECK(restored.value().blockFrames == 128U);
+  CHECK(restored.value().outputChannels == 1U);
+}
+
+TEST_CASE("native editor startup preserves explicit audio configuration without a saved file") {
+  const auto root = seam::test::support::temporaryDirectory("native-audio-explicit-startup");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  config.authoring.sampleRate = 44100U;
+  config.authoring.outputChannels = 1U;
+  config.audioBlockFrames = 128U;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  const auto settings = app.value()->audioSettings();
+  CHECK(settings);
+  CHECK(settings.value().sampleRate == 44100U);
+  CHECK(settings.value().outputChannels == 1U);
+  CHECK(settings.value().blockFrames == 128U);
+  CHECK(!std::filesystem::exists(root / "Settings" / "audio-settings.json"));
+}
+
+TEST_CASE("native editor migrates legacy audio settings without overriding the current store") {
+  for (const auto currentState : {0, 1, 2}) {
+    const auto root = seam::test::support::temporaryDirectory("native-audio-migration");
+    const auto currentPath = root / "Settings" / "audio-settings.json";
+    const auto legacyPath = root / "Data" / "Settings" / "audio-settings.json";
+    const seam::authoring::AudioSettings legacy{
+        .deviceId = "threaded-callback-clock",
+        .sampleRate = 44100U,
+        .blockFrames = 128U,
+        .outputChannels = 1U,
+        .revision = 7U,
+    };
+    CHECK(seam::authoring::AudioSettingsStore{legacyPath}.save(legacy));
+    auto current = legacy;
+    current.sampleRate = 48000U;
+    current.blockFrames = 512U;
+    current.outputChannels = 2U;
+    current.revision = 8U;
+    if (currentState == 1) {
+      CHECK(seam::authoring::AudioSettingsStore{currentPath}.save(current));
+    } else if (currentState == 2) {
+      CHECK(seam::core::durableAtomicWriteText(currentPath, "invalid settings"));
+    }
+
+    seam::standalone::NativeEditorAppConfig config;
+    config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+    config.applicationSupportRoot = root;
+    config.forceThreadedAudio = true;
+    auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+    CHECK(app);
+    const auto settings = app.value()->audioSettings();
+    CHECK(settings);
+    const auto expected = currentState == 0 ? legacy : currentState == 1
+                                                     ? current : seam::authoring::AudioSettings{};
+    CHECK(settings.value().sampleRate == expected.sampleRate);
+    CHECK(settings.value().blockFrames == expected.blockFrames);
+    CHECK(settings.value().outputChannels == expected.outputChannels);
+    const auto stored = seam::authoring::AudioSettingsStore{currentPath}.load();
+    if (currentState == 2) {
+      CHECK(!stored);
+    } else {
+      CHECK(stored);
+      CHECK(stored.value() == expected);
+    }
+    // Migration copies rather than moves: a failed later startup cannot lose the old settings.
+    const auto retained = seam::authoring::AudioSettingsStore{legacyPath}.load();
+    CHECK(retained);
+    CHECK(retained.value() == legacy);
+  }
 }
 
 TEST_CASE("production audio failure never creates a callback clock fallback") {
