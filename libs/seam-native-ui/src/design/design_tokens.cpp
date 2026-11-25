@@ -173,15 +173,74 @@ DesignTokens makeScene(Contrast contrast) noexcept {
   return t;
 }
 
+DesignTokens makeCerulean(Contrast contrast) noexcept {
+  DesignTokens t;
+  t.mode = DesignMode::Cerulean;
+  t.contrast = contrast;
+  t.shape = {1.0, 2.0, 1.0, 1.0, 1.0};
+  t.light = {};
+  t.light.textureAlpha = contrast == Contrast::High ? 0.0 : 0.8;
+  t.light.highlightAlpha = t.light.glowAlphaActive = t.light.glowAlphaRest = 0.0;
+  t.type.heading = paint::FontRole::UiBold;
+  auto& c = t.color;
+  const auto ink = hex(0x18232B);
+  const auto blue = hex(0x125880);
+  const auto red = hex(0xA12F38);
+  c.canvas = hex(0xF4F0E6);
+  c.surface = c.surfaceRaised = hex(0xFAF8F0);
+  c.surfaceSunken = hex(0xE8E8DD);
+  c.border = contrast == Contrast::High ? ink : hex(0x727975);
+  c.borderStrong = c.textPrimary = ink;
+  c.textSecondary = hex(0x434F55);
+  c.textDisabled = hex(0x545A5D);
+  c.textOnAccent = hex(0xFFFFFF);
+  c.accent = blue;
+  c.accentDeep = hex(0x163F57);
+  c.accentTime = c.accentCurve = red;
+  c.accentAlt1 = blue;
+  c.accentAlt2 = red;
+  c.gridWeak = hex(0xCEE1E6);
+  c.gridStrong = hex(0x9BB9C4);
+  c.gridBar = hex(0x738F9C);
+  c.keyWhite = hex(0xFFFCF3);
+  c.keyBlack = c.keyLabel = ink;
+  c.noteFill = hex(0xA9D8EA);
+  c.noteFillAlt = hex(0xBFDDE7);
+  c.noteStroke = c.noteSelectedA = blue;
+  c.noteSelectedB = c.noteSelectedStroke = c.accentDeep;
+  c.noteText = c.phonemeText = ink;
+  c.waveInNote = blue;
+  c.pitchCurve = c.pitchGlow = red;
+  c.laneFillTop = blue;
+  c.laneFillBottom = c.surfaceSunken;
+  c.knobTrack = c.border;
+  c.knobBodyInner = c.knobBodyOuter = c.surface;
+  c.knobPointer = ink;
+  c.meterLow = blue;
+  c.meterMid = c.accentDeep;
+  c.meterHigh = c.focusRing = red;
+  c.selectionFill = withAlpha(blue, 0.22);
+  c.warning = hex(0x824312);
+  c.error = red;
+  c.success = hex(0x2C5949);
+  c.info = blue;
+  c.texturePrimary = hex(0x008FCE);
+  c.textureSecondary = hex(0xEECECA);
+  t.trackColors = {blue, red, ink, c.success, c.warning};
+  return t;
+}
+
 }  // namespace
 
 std::string_view designModeName(DesignMode mode) noexcept {
+  if (mode == DesignMode::Cerulean) return "cerulean";
   return mode == DesignMode::Scene ? "scene" : "emo";
 }
 
 DesignMode parseDesignMode(std::string_view value, DesignMode fallback) noexcept {
   if (value == "emo" || value == "EMO") return DesignMode::Emo;
   if (value == "scene" || value == "SCENE") return DesignMode::Scene;
+  if (value == "cerulean" || value == "CERULEAN") return DesignMode::Cerulean;
   return fallback;
 }
 
@@ -190,10 +249,11 @@ DesignMode otherDesignMode(DesignMode mode) noexcept {
 }
 
 const DesignTokens& tokensFor(DesignMode mode, Contrast contrast) noexcept {
-  static const std::array<DesignTokens, 4U> table{
+  static const std::array<DesignTokens, 6U> table{
       makeEmo(Contrast::Standard), makeEmo(Contrast::High),
-      makeScene(Contrast::Standard), makeScene(Contrast::High)};
-  const auto index = (mode == DesignMode::Scene ? 2U : 0U) +
+      makeScene(Contrast::Standard), makeScene(Contrast::High),
+      makeCerulean(Contrast::Standard), makeCerulean(Contrast::High)};
+  const auto index = static_cast<std::size_t>(mode) * 2U +
                      (contrast == Contrast::High ? 1U : 0U);
   return table[index];
 }

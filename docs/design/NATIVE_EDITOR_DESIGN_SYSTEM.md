@@ -14,6 +14,12 @@ in MIX and Edit, bundled OFL fonts, tooltips, Korean localization, Character Pac
 measured frame pipeline, the consolidated Settings sheet, and plan §9 shell motion. The true
 first-paint frame currently misses its §10 budget in both looks (§11 below).
 
+## Cerulean instrument faceplate, November 2026
+
+A fresh macOS appearance preference opens Cerulean. Settings → Appearance selects Cerulean, EMO or SCENE and both native editor entry points read that preference. Cerulean reserves a separate masthead for the wordmark and blue halftone. Five workspace keys, transport and settings share a lower row. The compact layout keeps the workspace menu. SING opens with phonemes, units and seams below the score. The full singer rack shows the selected region's published waveform when available, and the renderer determines which timbre controls appear. The faceplate uses a character-free presentation. Existing project character choices still apply in the other looks.
+
+For an isolated capture use `SEAM_UI_CAPTURE_PROFILE=1 SEAM_UI_DESIGN=cerulean`. The shared token table now covers three looks in standard and high contrast. The following sections document the earlier EMO and SCENE implementation.
+
 ## 1. What the shell is
 
 The SING shell is the only editor surface in the standalone app and the CLAP plug-in. The classic

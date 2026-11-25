@@ -121,6 +121,30 @@ TEST_CASE("CLAP lyric native bounds follow the painted composition without new b
   runtime.setTextInputCallbacks({}, {});
 }
 
+TEST_CASE("Cerulean embeds one score and exposes just the active singer controls") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.activateDesignShell({.mode = native_ui::design::DesignMode::Cerulean,
+                               .reduceMotion = true});
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  const auto snapshot = runtime.accessibilitySnapshot();
+  CHECK(snapshot.virtualizedNoteCount > 0U);
+  CHECK(childById(snapshot.children, "shell.lane.band.unit") != nullptr);
+  CHECK(childById(snapshot.children, "shell.mode.emo") == nullptr);
+  CHECK(childById(snapshot.children, "shell.knob.gender") == nullptr);
+  CHECK(childById(snapshot.children, "toolbar.transport") != nullptr);
+  const auto revision = runtime.revision();
+  CHECK(runtime.dispatchAccessibility("shell.workspace.mix", SemanticAction::Activate));
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility("shell.workspace.sing", SemanticAction::Activate));
+  paintFrame(runtime);
+  CHECK(runtime.revision() == revision);
+}
+
 TEST_CASE("CLAP shell: EXPORT refuses retained score elements and editing keys") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   clap_editor::EditorRuntime runtime{

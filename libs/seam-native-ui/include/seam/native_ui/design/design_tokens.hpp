@@ -11,7 +11,7 @@ namespace seam::native_ui::design {
 
 // The owner-approved visual modes. Mode is an application preference: it never enters a project
 // file, a render request or a cache key, so switching it can never change audio.
-enum class DesignMode : std::uint8_t { Emo, Scene };
+enum class DesignMode : std::uint8_t { Emo, Scene, Cerulean };
 enum class Contrast : std::uint8_t { Standard, High };
 
 [[nodiscard]] std::string_view designModeName(DesignMode mode) noexcept;

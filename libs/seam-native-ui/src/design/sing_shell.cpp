@@ -360,6 +360,7 @@ struct KnobModel final {
   double value{0.0};
   std::string refusal;
   std::size_t storedPoints{0U};
+  bool supported{false};
 };
 
 std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
@@ -374,6 +375,7 @@ std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
     knobs[i].refusal = state.inspector.valid ? "" : tr(Str::NoVocalTrackIsSelected);
     for (const auto& row : state.inspector.expressionCapabilities) {
       if (row.channel != channel) continue;
+      knobs[i].supported = row.refusal.empty();
       knobs[i].value = row.valueAtPlayhead;
       knobs[i].refusal = row.refusal;
       knobs[i].storedPoints = row.storedPoints;
@@ -542,6 +544,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
 
 void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferences preferences) {
   preferences_ = preferences;
+  technicalLane_ = preferences.mode == DesignMode::Cerulean;
   active_ = true;
   persist_ = false;
   ++artGeneration_;
@@ -562,7 +565,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   if (assetRoot.empty() || !available()) return;
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto folder = assetRoot / std::string{designModeName(mode)};
-    auto& slot = assets_[mode == DesignMode::Scene ? 1U : 0U];
+    auto& slot = assets_[static_cast<std::size_t>(mode)];
     slot.portrait = paint::loadImage(folder / "portrait.png");
     slot.stage = paint::loadImage(folder / "stage.png");
     slot.wordmark = paint::loadImage(folder / "wordmark.png");
@@ -756,6 +759,7 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   if (preferences_.mode != mode) {
+    if (mode == DesignMode::Cerulean) technicalLane_ = true;
     modePrevious_ = !preferences_.reduceMotion && layers_.contentSnapshot() != nullptr
                         ? paint::imageFromPixels(*layers_.contentSnapshot()) : nullptr;
     modeTween_.start(uiNow(), std::chrono::milliseconds{200},
@@ -877,12 +881,12 @@ void SingShell::cycleLanguage(int direction, bool persist) {
 }
 
 bool SingShell::assetsLoaded(DesignMode mode) const noexcept {
-  const auto& a = assets_[mode == DesignMode::Scene ? 1U : 0U];
+  const auto& a = assets_[static_cast<std::size_t>(mode)];
   return a.portrait && a.stage && a.wordmark;
 }
 
 const ModeAssets& SingShell::assets() const noexcept {
-  return assets_[preferences_.mode == DesignMode::Scene ? 1U : 0U];
+  return assets_[static_cast<std::size_t>(preferences_.mode)];
 }
 
 ui::Rect SingShell::fromLegacy(ui::Rect rect) const noexcept {
@@ -1158,7 +1162,8 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   // the stacked bands' extra height.
   if (controller.expressionLaneOpen()) technicalLane_ = false;
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_,
-                              technicalLane_ && workspace_ == Workspace::Sing);
+                              technicalLane_ && workspace_ == Workspace::Sing,
+                            mode() == DesignMode::Cerulean);
   if (next.rack == RackPresentation::Full) inspectorWanted_ = false;
   if (next.workspaceMenuButton.width < 24.0) workspaceMenuOpen_ = false;
   // The singer menu is anchored to its button: a resize closes it, and focus returns to the button
@@ -1245,7 +1250,8 @@ void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) 
     lyricInputActive_ = false;
   }
   layout_ = solveSingLayout(layout_.width, layout_.height, open,
-                            technicalLane_ && workspace_ == Workspace::Sing);
+                            technicalLane_ && workspace_ == Workspace::Sing,
+                            mode() == DesignMode::Cerulean);
   if (open || focusInside) {
     // Every way of opening it (pointer, keyboard, accessibility) gives the inspector the keyboard,
     // so no key reaches the score it covers; closing returns focus that was inside to the button.
@@ -1405,8 +1411,51 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
   // The panels' translucent fills are painted in software with the wash, under this chrome; the
   // vector reference draws the wash and the fills here instead.
   const auto vectorReference = std::getenv("SEAM_WASH_VECTOR_REFERENCE") != nullptr;
-  if (vectorReference) paintVectorWash(c, t);
   const auto& l = layout_;
+  if (t.mode == DesignMode::Cerulean) {
+    const auto& band = l.masthead;
+    c.fill(Path::rect({0, 0, l.width, l.height}), t.color.canvas);
+    c.stroke(Path::rect({5, 5, l.width - 10, l.height - 10}), t.color.textPrimary, StrokeStyle{1});
+    c.fill(Path::rect(band), t.color.surface);
+    const auto rule = [&](ui::Rect box) {
+      if (box.width > 0 && box.height > 0) {
+        c.fill(Path::rect(box), t.color.surface);
+        c.stroke(Path::rect(box), t.color.borderStrong, StrokeStyle{1});
+      }
+    };
+    rule(l.header);
+    rule(l.editor);
+    rule(l.lane);
+    rule(l.rackArea);
+    rule(l.status);
+    if (l.rack == RackPresentation::Full) {
+      rule(l.expression);
+      rule(l.style);
+    }
+    // An irregular dot screen is printed into the masthead only. Its cloud edges
+    // stay in logical coordinates when the host changes the backing scale.
+    if (t.contrast == Contrast::Standard) {
+      Path dots;
+      const double left = band.x + (band.width > 620 ? 320.0 : 136.0);
+      for (double y = band.y + 4; y < band.bottom() - 3; y += 5) {
+        for (double x = left; x < band.right() - 3; x += 5) {
+          const double u = (x - left) / std::max(1.0, band.right() - left);
+          const double cloud = std::sin(x * 0.023 + y * 0.09) + 0.6 * std::sin(x * 0.053 - y * 0.17);
+          const double radius = std::clamp(1.2 + cloud + u * 1.5, 0.15, 3.0);
+          appendSubpaths(dots, Path::circle({x, y}, radius));
+        }
+      }
+      c.fill(dots, t.color.texturePrimary);
+    }
+    c.text(l.wordmark, tr(Str::SEAM),
+           style(FontRole::UiBold, std::min(36.0, band.height - 3), 0.8), t.color.textPrimary);
+    if (band.width > 620)
+      c.text({l.wordmark.right() + 4, band.y, 186, band.height}, tr(Str::SingingVoiceSynthesizer),
+             style(FontRole::Mono, 12, 0, TextAlign::Left, true), t.color.textSecondary);
+    rule(l.transport);
+    return;
+  }
+  if (vectorReference) paintVectorWash(c, t);
   const auto panel = [&](ui::Rect r, double radius, double alpha = 0.90) {
     if (vectorReference) glassPanel(c, t, r, radius, alpha);
     else glassPanelEdges(c, t, r, radius);
@@ -1512,7 +1561,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       artGeneration_};
   // High Contrast paints without glow (the recorder drops it as GlowlessCanvas would), and every
   // painter below draws through this one canvas.
-  frame.setGlowless(t.contrast == Contrast::High);
+  frame.setGlowless(t.contrast == Contrast::High || t.mode == DesignMode::Cerulean);
   auto* c = &frame;
   // The raster front carries the character package's state or QOI ring artwork into the same frame the vector
   // canvas paints; both fronts live only for this call.
@@ -1532,7 +1581,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   // One state for the whole frame, from the read models the state already carries. The animation phase
   // is resolved once too, so the ring, the avatar and the VOICE hero agree within a frame.
   characterState_ = resolveCharacterState(characterSurfaceInput(state, auditionLevel_));
-  characterDisplay_ = state.characterMode;
+  characterDisplay_ = t.mode == DesignMode::Cerulean ? domain::CharacterDisplayMode::Off : state.characterMode;
   const auto reduceMotion = preferences_.reduceMotion;
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
   if (previousRenderState_ != RenderStatusState::Ready &&
@@ -1560,7 +1609,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   motion_ = animator_.motion();
   motionShown_ = false;
   const auto knobs = knobModels(state);
-  for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
+  for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty() ||
+                       (t.mode == DesignMode::Cerulean && !knobs[i].supported);
   paintHeader(*c, t, state, playhead);
   exportRunning_ = exportBusy(controller);
   waveform_ = hostActions_.regionWaveform
@@ -1689,7 +1739,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       shownTooltip_ = ShownTooltip{tip->id, tip->text, tip->target, placed.box};
     }
   }
-  const auto softwareWash = std::getenv("SEAM_WASH_VECTOR_REFERENCE") == nullptr;
+  const auto softwareWash = t.mode != DesignMode::Cerulean && std::getenv("SEAM_WASH_VECTOR_REFERENCE") == nullptr;
   const auto panels = backgroundGlassPanels(layout_, t);
   const auto composed = layers_.compose(
       canvas,
@@ -1780,6 +1830,19 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     const auto tab = l.workspaceTab[i];
     if (tab.width < 24.0) continue;
     const auto active = tabSelected(i);
+    if (t.mode == DesignMode::Cerulean) {
+      const ui::Rect key{tab.x + 2, tab.y + 5, tab.width - 4, tab.height - 10};
+      c.fill(Path::rect(key), active ? t.color.textPrimary : t.color.surfaceSunken);
+      c.stroke(Path::rect(key), t.color.borderStrong, StrokeStyle{1});
+      if (tab.width >= 54)
+        c.text(key, tr(kNames[i]), fittedToTen(c, tr(kNames[i]),
+               style(FontRole::Mono, 13, 0.4, TextAlign::Center, true), key.width - 4),
+               active ? t.color.textOnAccent : t.color.textPrimary);
+      else
+        icon(c, kIcons[i], {key.x + key.width / 2, key.y + key.height / 2}, 18,
+             active ? t.color.textOnAccent : t.color.textPrimary);
+      continue;
+    }
     const auto color = active ? t.color.accent : t.color.textSecondary;
     const auto iconCenter = ui::Point{tab.x + tab.width * 0.5,
                                       tab.y + (l.workspaceLabelsVisible ? tab.height * 0.36
@@ -2156,7 +2219,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // by a whole pitch row, so their coverage cannot overlap when replayed in one path.
     if (black || midi % 12 == 0) flushWeakRows();
     if (black) c.fill(Path::rect({l.grid.x, y, l.grid.width, pitch.rowHeight()}),
-                      withAlpha(kBlack, 0.22));
+                      withAlpha(kBlack, t.mode == DesignMode::Cerulean ? 0.045 : 0.22));
     if (midi % 12 == 0) {
       Path row;
       row.moveTo({l.grid.x, y}).lineTo({l.grid.right(), y});
@@ -2291,7 +2354,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   stageInput.fullRack = l.rack == RackPresentation::Full && l.grid.width > 520.0;
   stageInput.highContrast = preferences_.contrast == Contrast::High;
   stageInput.laneExpanded = laneExpanded(state);
-  stageInput.displayFull = state.characterMode == domain::CharacterDisplayMode::Full;
+  stageInput.displayFull = characterDisplay_ == domain::CharacterDisplayMode::Full;
   stageInput.grid = l.grid;
   stageInput.splashShown = notes.empty() && model.noteCount() == 0U &&
                            emptyProjectSplashBounds(l.grid, assets().splash.get()).has_value();
@@ -2418,9 +2481,12 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       wave();
       c.stroke(p, t.color.noteSelectedStroke, StrokeStyle{1.2});
     } else {
-      c.fill(p, LinearGradient{{b.x, b.y}, {b.x, b.bottom()},
-                               {{0.0, note.midiKey % 2U == 0U ? t.color.noteFillAlt : t.color.noteFill},
-                                {1.0, t.color.surfaceSunken}}});
+      const auto fill = note.midiKey % 2U == 0U ? t.color.noteFillAlt : t.color.noteFill;
+      if (t.mode == DesignMode::Cerulean)
+        c.fill(p, fill);
+      else
+        c.fill(p, LinearGradient{{b.x, b.y}, {b.x, b.bottom()},
+                                 {{0.0, fill}, {1.0, t.color.surfaceSunken}}});
       if (note.overlapMemberCount > 1U) {
         // The old inset and halo consumed most of a compressed band's height. A filled body
         // separates the members without changing any note's musical duration or pitch.
@@ -2535,8 +2601,9 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
           ui::Rect{b.x + 4.0, b.y, width, b.height},
           ui::Rect{b.x - 2.0, b.y - 19.0, width, 18.0}};
       for (std::size_t s = 0U; s < slots.size(); ++s) {
-        const auto slot = slots[s];
-        const auto inside = s == 0U;
+        const auto slotIndex = t.mode == DesignMode::Cerulean ? (s + 1) % slots.size() : s;
+        const auto slot = slots[slotIndex];
+        const auto inside = slotIndex == 0U;
         if (inside && (b.height < 15.0 || width > b.width - 6.0)) continue;
         if (!inside && (slot.y < l.grid.y || slot.right() > l.grid.right())) continue;
         bool free = std::none_of(placed.begin(), placed.end(),
@@ -3124,74 +3191,10 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
   c.restore();
 }
 
-void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
-  const auto& l = layout_;
-  const auto& identity = state.voiceIdentity;
-  const auto voiceReady = identity.state == VoiceIdentityState::Ready ||
-                          identity.state == VoiceIdentityState::Complete ||
-                          identity.state == VoiceIdentityState::Rendering;
-  if (l.rack != RackPresentation::Full) {
-    // The rail or drawer portrait is the inspector's button; it lights while the inspector is open.
-    const auto ring = l.inspectorButton;
-    const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
-    const auto inner = ring.width * 0.5 - 3.0;
-    if (l.inspectorOpen) {
-      c.save();
-      c.setGlow(withAlpha(t.color.accent, 0.9), 10.0);
-      c.fill(Path::circle(center, inner + 3.0), withAlpha(t.color.accent, 0.35));
-      c.restore();
-    }
-    c.fill(Path::circle(center, inner), t.color.surfaceSunken);
-    const auto railColor = identity.state == VoiceIdentityState::Missing ||
-                                   identity.state == VoiceIdentityState::Error
-                               ? t.color.error
-                               : identity.state == VoiceIdentityState::Warning ||
-                                         identity.state == VoiceIdentityState::NoSinger
-                                     ? t.color.warning
-                                     : t.color.accent;
-    {
-      const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
-      const auto* package = characterPortrait(characterState_);
-      const auto* look = lookPortrait();
-      const auto opacity = voiceReady ? 1.0 : 0.55;
-      const auto hash = paint::ContentHash{}
-                            .add(std::string_view{"rail-portrait"}).add(box)
-                            .add(static_cast<const void*>(package))
-                            .add(static_cast<const void*>(look)).add(opacity).value();
-      characterArt(c, box, hash, [box, package, look, opacity](CharacterCanvas art) {
-        static_cast<void>(paintCharacterPortrait(art, box, true, package, look, opacity));
-      });
-    }
-    c.save();
-    c.setGlow(withAlpha(railColor, 0.9), 6.0);
-    c.stroke(Path::circle(center, inner + 1.0), railColor, StrokeStyle{1.6});
-    c.restore();
-    c.fill(Path::circle({ring.right() - 4.0, ring.bottom() - 4.0}, 4.5), railColor);
-    if (l.inspectorOpen) {
-      // The drawer covers the score, so it stays above the playhead: a dynamic item while open.
-      const paint::LayerScope inspectorLayer{c, paint::Layer::Dynamic, "inspector"};
-      paintInspector(c, t, state);
-    }
-    return;
-  }
-  cardHeader(c, t, l.singer, tr(Str::Singer), voiceReady);
-  // Voice state chip.
-  const std::string stateName{voiceIdentityStateName(identity.state)};
-  const auto stateColor = identity.state == VoiceIdentityState::Missing ||
-                                  identity.state == VoiceIdentityState::Error
-                              ? t.color.error
-                              : identity.state == VoiceIdentityState::Warning ||
-                                        identity.state == VoiceIdentityState::NoSinger
-                                    ? t.color.warning
-                                    : t.color.success;
-  const auto chipWidth = c.measure(stateName, style(FontRole::UiBold, 10.5, 1.2)) + 20.0;
-  const ui::Rect chip{l.singer.right() - 16.0 - chipWidth, l.singer.y + 10.0, chipWidth, 20.0};
-  c.fill(Path::capsule(chip), withAlpha(stateColor, 0.16));
-  c.stroke(Path::capsule(chip), withAlpha(stateColor, 0.8), StrokeStyle{1.0});
-  c.text(chip, stateName, style(FontRole::UiBold, 10.5, 1.2, TextAlign::Center, true), stateColor);
-
+void SingShell::paintSingerRing(Canvas2D& c, const DesignTokens& t,
+                               const EditorSceneState& state, bool voiceReady) const {
   // Portrait inside the ring meter.
-  const auto ring = l.portraitRing;
+  const auto ring = layout_.portraitRing;
   // Ring: lit ticks follow the real render progress or the singer's measured energy, 64 of them, with
   // the state's own portrait inside.
   double lit = 0.0;
@@ -3264,6 +3267,103 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
                                            portraitDraws(ring, spec.packagePortrait,
                                                          spec.lookPortrait),
                                            true);
+  }
+}
+
+void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
+  const auto& l = layout_;
+  const auto& identity = state.voiceIdentity;
+  const auto voiceReady = identity.state == VoiceIdentityState::Ready ||
+                          identity.state == VoiceIdentityState::Complete ||
+                          identity.state == VoiceIdentityState::Rendering;
+  if (l.rack != RackPresentation::Full) {
+    // The rail or drawer portrait is the inspector's button; it lights while the inspector is open.
+    const auto ring = l.inspectorButton;
+    const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
+    const auto inner = ring.width * 0.5 - 3.0;
+    if (l.inspectorOpen) {
+      c.save();
+      c.setGlow(withAlpha(t.color.accent, 0.9), 10.0);
+      c.fill(Path::circle(center, inner + 3.0), withAlpha(t.color.accent, 0.35));
+      c.restore();
+    }
+    c.fill(Path::circle(center, inner), t.color.surfaceSunken);
+    if (t.mode == DesignMode::Cerulean) icon(c, Icon::Sing, center, 20.0, t.color.textPrimary);
+    const auto railColor = identity.state == VoiceIdentityState::Missing ||
+                                   identity.state == VoiceIdentityState::Error
+                               ? t.color.error
+                               : identity.state == VoiceIdentityState::Warning ||
+                                         identity.state == VoiceIdentityState::NoSinger
+                                     ? t.color.warning
+                                     : t.color.accent;
+    {
+      const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
+      const auto* package = characterPortrait(characterState_);
+      const auto* look = lookPortrait();
+      const auto opacity = voiceReady ? 1.0 : 0.55;
+      const auto hash = paint::ContentHash{}
+                            .add(std::string_view{"rail-portrait"}).add(box)
+                            .add(static_cast<const void*>(package))
+                            .add(static_cast<const void*>(look)).add(opacity).value();
+      characterArt(c, box, hash, [box, package, look, opacity](CharacterCanvas art) {
+        static_cast<void>(paintCharacterPortrait(art, box, true, package, look, opacity));
+      });
+    }
+    c.save();
+    c.setGlow(withAlpha(railColor, 0.9), 6.0);
+    c.stroke(Path::circle(center, inner + 1.0), railColor, StrokeStyle{1.6});
+    c.restore();
+    c.fill(Path::circle({ring.right() - 4.0, ring.bottom() - 4.0}, 4.5), railColor);
+    if (l.inspectorOpen) {
+      // The drawer covers the score, so it stays above the playhead: a dynamic item while open.
+      const paint::LayerScope inspectorLayer{c, paint::Layer::Dynamic, "inspector"};
+      paintInspector(c, t, state);
+    }
+    return;
+  }
+  cardHeader(c, t, l.singer, tr(Str::Singer), voiceReady);
+  // Voice state chip.
+  const std::string stateName{voiceIdentityStateName(identity.state)};
+  const auto stateColor = identity.state == VoiceIdentityState::Missing ||
+                                  identity.state == VoiceIdentityState::Error
+                              ? t.color.error
+                              : identity.state == VoiceIdentityState::Warning ||
+                                        identity.state == VoiceIdentityState::NoSinger
+                                    ? t.color.warning
+                                    : t.color.success;
+  const auto chipWidth = c.measure(stateName, style(FontRole::UiBold, 10.5, 1.2)) + 20.0;
+  const ui::Rect chip{l.singer.right() - 16.0 - chipWidth, l.singer.y + 10.0, chipWidth, 20.0};
+  c.fill(Path::capsule(chip), withAlpha(stateColor, 0.16));
+  c.stroke(Path::capsule(chip), withAlpha(stateColor, 0.8), StrokeStyle{1.0});
+  c.text(chip, stateName, style(FontRole::UiBold, 10.5, 1.2, TextAlign::Center, true), stateColor);
+
+  if (t.mode == DesignMode::Cerulean) {
+    const ui::Rect lcd{l.singer.x + 16, l.singer.y + 48, l.singer.width - 32,
+                       l.singerChange.y - l.singer.y - 62};
+    c.fill(Path::rect(lcd), t.contrast == Contrast::High ? t.color.surface : t.color.textureSecondary);
+    c.stroke(Path::rect(lcd), t.color.borderStrong, StrokeStyle{1});
+    const auto mid = lcd.y + lcd.height / 2;
+    Path trace;
+    trace.moveTo({lcd.x + 6, mid}).lineTo({lcd.right() - 6, mid});
+    if (waveform_.shown() && waveform_.view->envelope) {
+      const auto& envelope = *waveform_.view->envelope;
+      const int columns = static_cast<int>((lcd.width - 16) / 3);
+      const auto frames = static_cast<std::int64_t>(envelope.sampleCount());
+      const auto heightScale = (lcd.height - 12) * 0.5 / std::max(0.001F, envelope.peak());
+      for (int i = 0; i < columns; ++i) {
+        const auto pair = envelope.range(frames * i / columns, frames * (i + 1) / columns);
+        if (!pair) continue;
+        const auto x = lcd.x + 8 + 3 * i;
+        trace.moveTo({x, mid - pair->maximum * heightScale})
+             .lineTo({x, mid - pair->minimum * heightScale});
+      }
+    } else {
+      c.text({lcd.x + 8, lcd.y + 3, lcd.width - 16, 18}, waveform_.caption,
+             style(FontRole::Mono, t.type.smallLabel), t.color.textSecondary);
+    }
+    c.stroke(trace, t.color.textPrimary, StrokeStyle{1.4});
+  } else {
+    paintSingerRing(c, t, state, voiceReady);
   }
 
   // Footer: the real voice identity and the way to change it.
@@ -3392,11 +3492,19 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
 void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
   const auto& l = layout_;
   const auto knobs = knobModels(state);
+  if (t.mode == DesignMode::Cerulean &&
+      std::none_of(knobs.begin(), knobs.end(), [](const auto& k) { return k.supported; })) {
+    const auto& r = l.expression;
+    c.text({r.x + 16, r.y + 49, r.width - 32, 28}, tr(Str::VoiceHasNoTimbreControls),
+           style(FontRole::Ui, t.type.label), t.color.textSecondary);
+    return;
+  }
   const auto selectedChannel = state.expressionLabelVisible()
                                    ? ui::expressionChannelIndex(state.expression.channel)
                                    : 99U;
   for (std::size_t i = 0U; i < knobs.size(); ++i) {
     const auto& k = knobs[i];
+    if (t.mode == DesignMode::Cerulean && !k.supported) continue;
     const auto cell = l.knob[i];
     const auto refused = !k.refusal.empty();
     const auto selectedKnob = i == selectedChannel;
@@ -3568,12 +3676,16 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     const auto w = meter.width / kBeads;
     for (int i = 0; i < kBeads; ++i) {
       const auto on = static_cast<double>(i) < fraction * kBeads;
-      const auto color = t.trackColors[static_cast<std::size_t>(i) % 4U];
-      c.save();
-      if (on) c.setGlow(withAlpha(color, 0.8), 4.0);
-      c.fill(Path::capsule({meter.x + i * w + 1.0, meter.y + 3.0, w - 2.0, meter.height - 6.0}),
-             withAlpha(color, on ? 1.0 : 0.15));
-      c.restore();
+      const ui::Rect segment{meter.x + i * w + 1, meter.y + 3, w - 2, meter.height - 6};
+      if (t.mode == DesignMode::Cerulean) {
+        c.fill(Path::rect(segment), on ? t.color.accent : t.color.gridWeak);
+      } else {
+        const auto color = t.trackColors[static_cast<std::size_t>(i) % 4U];
+        c.save();
+        if (on) c.setGlow(withAlpha(color, 0.8), 4.0);
+        c.fill(Path::capsule(segment), withAlpha(color, on ? 1.0 : 0.15));
+        c.restore();
+      }
     }
   }
   // Left: audio device and the most important diagnostic.
@@ -5243,8 +5355,8 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     auto half = l.modeSwitch;
     half.width *= 0.5;
     if (!emo) half.x += half.width;
-    if (half.width <= 0.0 && !workspaceMenuOpen_) continue;
-    if (half.width <= 0.0) half = l.modeMenuRow[emo ? 0U : 1U];
+    if (half.width <= 0.0 && workspaceMenuOpen_) half = l.modeMenuRow[emo ? 0U : 1U];
+    if (half.width <= 0.0) continue;
     add(SemanticNode{.id = emo ? "shell.mode.emo" : "shell.mode.scene",
                      .role = SemanticRole::RadioButton,
                      .name = emo ? tr(Str::EMOLook) : tr(Str::SCENELook),
@@ -5484,6 +5596,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     const auto knobs = knobModels(state);
     for (std::size_t i = 0U; i < knobs.size(); ++i) {
       const auto& k = knobs[i];
+      if (mode() == DesignMode::Cerulean && !k.supported) continue;
       const auto percent = k.descriptor.unit != "semitones";
       const auto scale = percent ? 100.0 : 1.0;
       const auto [number, unit] = displayValue(k);

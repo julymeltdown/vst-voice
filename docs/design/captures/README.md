@@ -1,5 +1,9 @@
 # Native SING shell captures
 
+[Cerulean embedded editor](cerulean-embedded-1100x720.png) shows the Cocoa view loaded by the first-party CLAP host on 25 November 2026. The host set a logical size of 1100 × 720 and loaded the development bank `demo.public-domain.human.production` 0.12.0. The PNG is the host-captured bitmap downsampled to logical size. Reproduce with `SEAM_UI_CAPTURE_PROFILE=1 SEAM_UI_DESIGN=cerulean` and the `seam_phase11_clap_editor_host_smoke` CTest entry.
+
+## Earlier standalone captures
+
 Software-raster frames from `Project SEAM.app --screenshot` at build `b11daf7e` (Release, macOS
 arm64, device scale 2). Each PNG is the @2x frame downsampled to logical size. They show what the
 native code paints. They are **not** FL Studio host captures, and they are not a pixel-match

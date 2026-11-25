@@ -17,7 +17,7 @@ NSUserDefaults* suite() {
 }  // namespace
 
 DesignPreferences loadDesignPreferences() {
-  DesignPreferences preferences;
+  DesignPreferences preferences{.mode = DesignMode::Cerulean};
   @autoreleasepool {
     NSUserDefaults* defaults = suite();
     if (defaults == nil) return preferences;

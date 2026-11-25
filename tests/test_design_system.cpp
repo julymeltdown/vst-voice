@@ -245,8 +245,22 @@ TEST_CASE("short and narrow SING layouts keep every control inside its parent wi
   }
 }
 
-TEST_CASE("EMO and SCENE text roles meet contrast floors in both contrast settings") {
-  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+TEST_CASE("Cerulean reserves one masthead above the host controls") {
+  for (const auto width : {480.0, 720.0, 1100.0, 1280.0, 1600.0}) {
+    const auto layout = solveSingLayout(width, 720.0, false, true, true);
+    CHECK(layout.wordmark.width > 0.0);
+    CHECK(layout.wordmark.bottom() <= layout.header.y);
+    CHECK(layout.modeSwitch.width == 0.0);
+    CHECK(layout.workspaceTabs.right() <= layout.transport.x);
+    CHECK(layout.workspaceTabs.width >= 180.0 || layout.workspaceMenuButton.width >= 24.0);
+    CHECK(layout.header.bottom() <= layout.editor.y);
+    if (width >= 1100.0) CHECK(layout.rack == RackPresentation::Full);
+  }
+  CHECK(parseDesignMode(designModeName(DesignMode::Cerulean)) == DesignMode::Cerulean);
+}
+
+TEST_CASE("All three looks meet contrast floors in both contrast settings") {
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene, DesignMode::Cerulean}) {
     for (const auto contrast : {Contrast::Standard, Contrast::High}) {
       const auto& t = tokensFor(mode, contrast);
       CHECK(contrastRatio(t.color.textPrimary, t.color.canvas) >= 7.0);
@@ -316,13 +330,13 @@ std::vector<TokenPair> tokenPairs(const DesignTokens& t) {
 
 }  // namespace
 
-TEST_CASE("High Contrast meets WCAG AA for every text and non-text token pair in both looks") {
+TEST_CASE("High Contrast meets WCAG AA for every text and non-text token pair in every look") {
   // Standard is the owner-approved palette; the pairs it misses AA on are named here so a change
   // either way is noticed. EMO's blood red reads 3.2-3.7:1 as small text on the dark surfaces.
   const std::vector<std::string> standardExceptions{
       "emo accent/canvas", "emo accent/surface", "emo accent/surfaceRaised",
       "emo accent/surfaceSunken"};
-  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene, DesignMode::Cerulean}) {
     for (const auto contrast : {Contrast::Standard, Contrast::High}) {
       const auto& t = tokensFor(mode, contrast);
       const auto high = contrast == Contrast::High;

@@ -106,8 +106,8 @@ bool HostWindow::capture(const std::filesystem::path& path) const {
          << representation.pixelsHigh << "\n255\n";
   const auto bytesPerPixel = representation.bitsPerPixel / 8U;
   for (NSInteger y = 0; y < representation.pixelsHigh; ++y) {
-    const auto sourceRow = representation.pixelsHigh - 1 - y;
-    const auto* row = pixels + sourceRow * representation.bytesPerRow;
+    // The cached bitmap and PPM both store their first scanline at the top.
+    const auto* row = pixels + y * representation.bytesPerRow;
     for (NSInteger x = 0; x < representation.pixelsWide; ++x) {
       const auto* pixel = row + x * bytesPerPixel;
       const std::array<char, 3> rgb{static_cast<char>(pixel[0]),

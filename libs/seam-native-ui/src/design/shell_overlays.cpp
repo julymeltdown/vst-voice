@@ -2169,7 +2169,8 @@ public:
       return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
     if (section_ == 0U) return audio_.perform(controller, id, action);
     if (!activate) return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
-    if (id == "shell.overlay.settings.look.emo") shell_.setMode(DesignMode::Emo);
+    if (id == "shell.overlay.settings.look.cerulean") shell_.setMode(DesignMode::Cerulean);
+    else if (id == "shell.overlay.settings.look.emo") shell_.setMode(DesignMode::Emo);
     else if (id == "shell.overlay.settings.look.scene") shell_.setMode(DesignMode::Scene);
     else if (id == "shell.overlay.settings.contrast.system") shell_.followSystemContrast();
     else if (id == "shell.overlay.settings.contrast.standard") shell_.setContrast(Contrast::Standard);
@@ -2231,6 +2232,7 @@ private:
         rows.push_back(std::move(row));
       }
     } else if (section_ == 1U) {
+      add("shell.overlay.settings.look.cerulean", Str::Cerulean, {}, shell_.mode() == DesignMode::Cerulean);
       add("shell.overlay.settings.look.emo", Str::EMOLook, {}, shell_.mode() == DesignMode::Emo);
       add("shell.overlay.settings.look.scene", Str::SCENELook, {}, shell_.mode() == DesignMode::Scene);
       add("shell.overlay.settings.contrast.system", Str::ContrastSystem, {}, shell_.contrastFollowsSystem());

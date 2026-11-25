@@ -11,10 +11,6 @@ formats::JsonValue rect(const ui::Rect& r) {
   return formats::JsonValue::Array{r.x, r.y, r.width, r.height};
 }
 
-std::string modeName(DesignMode mode) {
-  return mode == DesignMode::Scene ? "scene" : "emo";
-}
-
 std::string workspaceName(Workspace workspace) {
   switch (workspace) {
     case Workspace::Voice: return "voice";
@@ -90,7 +86,7 @@ formats::JsonValue singLayoutEvidence(const SingShell& shell, double deviceScale
       {"schema", "seam-ui-geometry-evidence-v1"},
       {"source", "SingShell::layout() of the presented frame"},
       {"presented", shell.presentedLastFrame()},
-      {"mode", modeName(shell.mode())},
+      {"mode", std::string{designModeName(shell.mode())}},
       {"contrast", shell.contrast() == Contrast::High ? "high" : "standard"},
       {"language", shell.language()},
       {"reduceMotion", shell.motionReduced()},

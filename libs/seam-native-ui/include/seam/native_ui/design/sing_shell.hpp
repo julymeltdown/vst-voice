@@ -531,6 +531,8 @@ private:
                            const ui::PianoRollModel& model, const EditorSceneState& state) const;
   // Reads the project's lane presentation, which decides which technical bands are collapsed.
   void syncTechnicalBands(const NativeEditorController& controller);
+  void paintSingerRing(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
+                       bool voiceReady) const;
   void paintRack(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintKnobs(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintInspector(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
@@ -612,7 +614,7 @@ private:
   DesignPreferences preferences_;
   bool active_{false};
   bool persist_{true};
-  std::array<ModeAssets, 2U> assets_{};
+  std::array<ModeAssets, 3U> assets_{};
   SingLayout layout_;
   double legacyContentTop_{EditorSceneLayout{}.contentTop()};
   std::int64_t ppq_{960};

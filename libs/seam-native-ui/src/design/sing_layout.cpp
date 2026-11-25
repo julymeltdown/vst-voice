@@ -59,16 +59,18 @@ void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
 }  // namespace
 
 SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
-                           bool technicalLanes) noexcept {
+                           bool technicalLanes, bool cerulean) noexcept {
   SingLayout l;
   const auto W = std::isfinite(width) ? std::max(width, 480.0) : 1600.0;
   const auto H = std::isfinite(height) ? std::max(height, 320.0) : 900.0;
   l.width = W;
   l.height = H;
   l.compactHeader = H < 720.0;
-  const auto headerHeight = l.compactHeader ? 64.0 : 80.0;
+  const auto headerHeight = cerulean || l.compactHeader ? 64.0 : 80.0;
+  const auto mastheadHeight = cerulean ? (l.compactHeader ? 30.0 : 48.0) : 0.0;
+  l.masthead = {kSingEdge, kSingEdge, W - 2.0 * kSingEdge, mastheadHeight};
 
-  l.header = {kSingEdge, kSingEdge, W - 2.0 * kSingEdge, headerHeight};
+  l.header = {kSingEdge, l.masthead.bottom(), W - 2.0 * kSingEdge, headerHeight};
   l.status = {kSingEdge, H - kSingEdge - kSingStatusHeight, W - 2.0 * kSingEdge,
               kSingStatusHeight};
   const auto bodyTop = l.header.bottom() + kSingGap;
@@ -87,7 +89,8 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
 
   // The full rack needs its three cards at their minimum heights; anything shorter or narrower
   // collapses to the portrait rail rather than clipping cards under the status bar.
-  const auto fullRackHeight = 180.0 + 248.0 + 104.0 + 2.0 * kSingGap;
+  const auto minimumSingerHeight = cerulean ? 148.0 : 180.0;
+  const auto fullRackHeight = minimumSingerHeight + 248.0 + 104.0 + 2.0 * kSingGap;
   const auto fullRack = singRackWidth(W) >= 320.0 && bodyHeight >= fullRackHeight;
   const auto drawer = W < kSingDrawerWidth;
   const auto rackWidth = fullRack ? singRackWidth(W) : drawer ? 44.0 : 56.0;
@@ -132,7 +135,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
     const auto expressionHeight = 248.0;
     const auto styleHeight = 104.0;
     const auto singerHeight = std::max(
-        180.0, l.rackArea.height - expressionHeight - styleHeight - 2.0 * kSingGap);
+        minimumSingerHeight, l.rackArea.height - expressionHeight - styleHeight - 2.0 * kSingGap);
     l.singer = {l.rackArea.x, l.rackArea.y, l.rackArea.width, singerHeight};
     l.expression = {l.rackArea.x, l.singer.bottom() + kSingGap, l.rackArea.width,
                     expressionHeight};
@@ -188,7 +191,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
   l.transport = {meterLeft - transportWidth, l.outputMeter.y, transportWidth, 44.0};
   const auto switchWidth = W >= 900.0 ? 132.0 : 120.0;
   const auto switchGap = W >= 900.0 ? 28.0 : 16.0;
-  if (W >= 720.0)
+  if (!cerulean && W >= 720.0)
     l.modeSwitch = {l.transport.x - switchGap - switchWidth,
                     l.header.y + (headerHeight - 28.0) * 0.5, switchWidth, 28.0};
   else
@@ -196,7 +199,10 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
   if (l.modeSwitch.x < l.wordmark.right() + 12.0)
     l.wordmark.width = std::max(0.0, l.modeSwitch.x - 12.0 - l.wordmark.x);
   auto tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
-  auto tabsWidth = std::clamp(l.modeSwitch.x - 24.0 - tabsLeft, 0.0, 400.0);
+  const auto tabsRight = cerulean ? l.transport.x : l.modeSwitch.x;
+  auto tabsWidth = std::clamp(tabsRight - 24.0 - tabsLeft, 0.0, cerulean ? 480.0 : 400.0);
+  if (cerulean)
+    l.wordmark = {l.masthead.x + 10.0, l.masthead.y, 106.0, mastheadHeight};
   if (tabsWidth < 5.0 * 36.0) tabsWidth = 0.0;
   if (tabsWidth == 0.0) {
     const auto right = l.modeSwitch.width > 0.0 ? l.modeSwitch.x - 12.0 : l.transport.x - 12.0;
@@ -206,7 +212,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen,
     const auto buttonWidth = std::clamp(right - tabsLeft, 0.0, W < 720.0 ? 92.0 : 120.0);
     l.workspaceMenuButton = {tabsLeft, l.header.y + (headerHeight - 32.0) * 0.5,
                              buttonWidth, 32.0};
-    const auto includeModes = l.modeSwitch.width <= 0.0;
+    const auto includeModes = !cerulean && l.modeSwitch.width <= 0.0;
     constexpr double kRow = 28.0;
     const auto workspaceRows = static_cast<double>(l.workspaceMenuRow.size());
     const auto rows = workspaceRows + (includeModes ? 1.0 : 0.0);
