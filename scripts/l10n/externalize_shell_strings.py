@@ -31,6 +31,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = ROOT / "libs/seam-native-ui/src/design"
 DESIGN_HEADERS = ROOT / "libs/seam-native-ui/include/seam/native_ui/design"
 SOURCES = [
+    "cerulean_faceplate.cpp",
     "expression_controls.cpp",
     "expression_controls.hpp",
     "sing_shell.cpp",
