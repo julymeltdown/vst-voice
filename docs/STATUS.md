@@ -1,14 +1,10 @@
 # Project SEAM — current status
 
-**As of 2026-10-18 (Asia/Seoul), `master`.** This page replaces the dated status, remaining-task and release-readiness pages retired on that day (see the [retired documents index](history/RETIRED_DOCUMENTS.md)). Update it when a gate changes state; do not add dated copies.
-
-## One-line summary
-
-Project SEAM is a working engineering prototype with no passed product gate. Usable Alpha, External Beta and public release are all `BLOCKED`. The code paths a user needs mostly exist; what is missing is a rights-cleared production voicebank, the owner's listening and workflow judgment, and executed user, host, platform and release evidence.
+Reviewed 25 November 2026 against `38238dad` on macOS arm64. The development app can sing the observation score with the installed Japanese engineering bank. A fresh install ships without a singer. The owner wants a more feminine timbre. The two audition routes still need a listening decision. [Voice and plug-in review](reviews/PRODUCT_VOICE_AND_PLUGIN_REVIEW_2026-11-25.md)
 
 ## Gates
 
-Every row below was re-run or re-read from its source on 2026-10-18 unless marked otherwise. "Recorded" means a hash-bound evidence record accepted by the gate's own verifier.
+The Alpha verifier, voicebank gate and G2–G5 checks were run on 25 November. The other rows summarize the linked records. "Recorded" means a hash-bound evidence record accepted by the gate's own verifier.
 
 | Gate | Source of truth | State | What the state rests on |
 |---|---|---|---|
@@ -24,12 +20,12 @@ Every row below was re-run or re-read from its source on 2026-10-18 unless marke
 
 These paths exist in code and are exercised by automated tests on macOS arm64. None of them is user, listening, host or release acceptance.
 
-- **Editing:** the SING shell (EMO/SCENE) with notes, lyrics, phoneme/unit/seam lanes, pitch points, expression curves, vibrato, undo/redo and accessibility tree generation (`libs/seam-native-ui`).
+- **Editing:** the shared SING shell (Cerulean, EMO and SCENE) with notes, lyrics, phoneme/unit/seam lanes, pitch points, expression curves, vibrato, undo/redo and accessibility tree generation (`libs/seam-native-ui`).
 - **Project lifecycle:** save, Save As, reopen, autosave recovery and exact voicebank relink without substitution (`libs/seam-authoring-runtime`). Project format writer v21; readers 1–21.
 - **Rendering:** sample-concatenative and procedural singer rendering through the shared `ProductionProjectRenderer`; installed-singer song journeys, PCM cache and snapshot continuity; an admitted neural protocol-3 path that only runs arithmetic fixtures.
 - **Voicebanks:** signed `.seambank` packaging, verification and transactional installation; installed-singer selection; Studio producer workspace with take review, prepared-donor intake and exact pointer recovery.
 - **Export and interchange:** transactional master and stem export with receipts; USTX and Standard MIDI import/export, with an optional external-reader oracle in `tools/openutau_oracle/` (not part of CTest).
-- **Plug-ins:** CLAP render player and embedded editor, exercised by the first-party `seam_clap_host` test host, which loads pinned installed projects. VST3/AUv2 builds come from the Phase 13A pipeline; no validator or commercial host has run them.
+- **Plug-ins:** CLAP render player and embedded editor, exercised by the first-party hosts. The Cocoa `seam_clap_editor_host` displayed the editor, received note input and restored 12,239 matching state bytes on 25 November. VST3/AUv2 builds come from the Phase 13A pipeline; no validator or commercial host has run them.
 
 ## What blocks the next gate
 
@@ -45,15 +41,7 @@ In priority order. The [completion plan](plans/2026-10-18-project-completion-pla
 
 Every CTest entry has one kind label, `unit`, `journey` or `contract`, and may also carry the tags `gui`, `slow` (5 s or more) and `process-lifetime`. [cmake/SeamTestLabels.cmake](../cmake/SeamTestLabels.cmake) defines the labels, and `seam_ctest_label_coverage` fails when an entry has no kind, two kinds or an unknown label. CTest also runs the fixture setups that a selected entry requires, so a tier can include an entry from outside its label.
 
-Measured on 2026-10-18 in `build/release` on the development Mac (Apple M3 Max, 48 GB). Each command ran once, serially, on `60287dda` with the labels added:
-
-| Command | Entries | Time |
-|---|---|---|
-| `ctest --preset release -L '^unit$'` | 148 | 385 s |
-| `ctest --preset release -L '^journey$'` | 55 | 140 s |
-| `ctest --preset release -L '^contract$'` | 39: the 38 contracts plus the Phase 12C matrix setup | 206 s |
-| `ctest --preset release -LE '^slow$'` | 209 | 128 s |
-| `ctest --preset release` | 241 | 727 s, run on 2026-10-19 at `0bbf3997` (the three kind tiers above add up to 731 s) |
+On 25 November the full Release rebuild and `ctest --test-dir build/release -j6 --output-on-failure` passed **241/241** in 252.50 seconds in the integrating checkout with local CoreAudio edits. The dedicated scan clone disables native GUI tests and has a different optional SDK configuration. Its latest count and exact filters are on the readiness page. [Integration evidence](implementation/FULL_SCOPE_BETA_EXECUTION.md) · [Scan results](plans/FUNCTIONAL_READINESS.md)
 
 ## How to refresh this page
 

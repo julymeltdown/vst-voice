@@ -2,7 +2,7 @@
 
 Project SEAM is a native C++20 singing-voice editor for Apple Silicon Macs. It sings scores through three source families — recorded sample banks, authored procedural singer recipes, and an admitted neural execution path — and treats phoneme boundaries, source-unit choices, pitch-shift artifacts and sample seams as editable musical material rather than defects to hide.
 
-**Status on 2026-10-18: a working engineering prototype, not yet a usable or releasable product.** The SING editor, the sample and procedural renderers, project save/reopen/recovery, signed voicebank packaging and installation, and transactional export are implemented and exercised by automated tests. No product gate has passed: [Usable Alpha](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is 0/20 (all `NOT_RUN`), External Beta is `BLOCKED`, and no voicebank has been released. The binding blockers are a rights-cleared production voicebank, the owner's own listening and workflow judgment, and the unaided user journey. [Current status](docs/STATUS.md) gives the evidence; the [completion plan](docs/plans/2026-10-18-project-completion-plan.md) gives the order of work.
+**The macOS editor runs as a standalone app and inside the first-party CLAP host. A fresh installation needs a singer.** On 25 November 2026 the Cerulean editor displayed the installed engineering bank’s rendered waveform and the embedded editor restored its saved state. The main checkout passed 241 Release tests. Usable Alpha has 0/20 recorded journeys and External Beta has 0/9 recorded requirements. The next owner decisions are which voice to pursue and who can supply and review its source. [Status and gate records](docs/STATUS.md) · [Voice auditions and product review](docs/reviews/PRODUCT_VOICE_AND_PLUGIN_REVIEW_2026-11-25.md)
 
 ## Start here
 
@@ -48,7 +48,7 @@ open "build/release/Project SEAM.app"
 ctest --preset release
 ```
 
-`ctest --preset release -L '^unit$'` runs one tier (`unit`, `journey` or `contract`), and `-LE '^slow$'` skips the entries that take 5 s or more. [STATUS](docs/STATUS.md#test-tiers) lists the measured time of each tier.
+`ctest --preset release -L '^unit$'` runs one tier (`unit`, `journey` or `contract`), and `-LE '^slow$'` skips the entries that take 5 s or more. [STATUS](docs/STATUS.md#test-tiers) records the latest full-suite run and how to select a tier.
 
 The `dev` (Debug), `sanitize` (ASan + UBSan) and `thread-sanitize` presets use the same pattern and build into `build/<preset>`. All presets treat warnings as errors.
 
@@ -78,7 +78,7 @@ A fresh build ships no singer, so a new project shows *No singer selected* and c
 
 | Product | CMake target | Role |
 |---|---|---|
-| `Project SEAM.app` | `seam_editor_native` | The standalone SING editor (EMO and SCENE looks): notes, lyrics, phoneme/unit/seam lanes, pitch and expression curves, transport, save/reopen/autosave recovery, voicebank selection and relink, master and stem export. |
+| `Project SEAM.app` | `seam_editor_native` | The standalone SING editor (Cerulean by default, with EMO and SCENE appearances): notes, lyrics, phoneme/unit/seam lanes, pitch and expression curves, transport, save/reopen/autosave recovery, voicebank selection and relink, master and stem export. |
 | `SEAM Voicebank Studio.app` | `seam_voicebank_studio_native` | Producer workspace: recording and import, take review, prepared-donor intake, candidate packaging. |
 | `ProjectSEAM.clap`, `ProjectSEAMEditor.clap` | `seam_clap_plugin`, `seam_clap_editor_plugin` | CLAP render player and DAW-embedded editor. VST3/AUv2 projections come from the Phase 13A pipeline. |
 | `seam_voicebank_cli`, `seam_bank_tool` | same | Bank validation, packaging, signing, installation, score import/export (USTX, SMF) and engineering operations. |

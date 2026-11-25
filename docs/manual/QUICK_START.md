@@ -2,9 +2,7 @@
 
 Document version: `external-beta-quick-start-1.0`
 
-This is a ten-minute first-run path for the closed External Beta. It uses the
-rights-cleared evaluation bank and does not claim Official Voicebank 01 or
-commercial content rights.
+Use this walkthrough on macOS after installing a singer. A fresh development build opens the Cerulean editor with no singer selected. For a closed Beta session, the coordinator must provide the approved evaluation bank and matching receipt before the playback steps.
 
 ## 1. Launch and configure audio
 

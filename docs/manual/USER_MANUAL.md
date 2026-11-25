@@ -4,14 +4,9 @@ Document version: `external-beta-manual-1.0`
 
 ## Supported surface
 
-The closed Beta targets Apple Silicon macOS and Windows x64. The standalone
-authoring application is the primary surface. Canonical CLAP and projected
-VST3 are supported on the named Beta host matrix; AUv2 is macOS-only. Linux is
-a regression surface and is not a public Beta target.
+The current engineering build runs on Apple Silicon macOS. It opens the Cerulean editor in the standalone application and the first-party CLAP editor host. Saved EMO and SCENE preferences are supported. The closed Beta contract also requires named commercial hosts, projected VST3, macOS AUv2 and Windows x64. Those qualification sessions remain open.
 
-The included Beta Voicebank is a rights-cleared evaluation bank and is not an
-official voicebank or character release. Its displayed identity and version
-must match the installed receipt.
+A fresh development installation includes no singer. For a Beta evaluation, obtain the approved bank and check that its identity and version match the installed receipt before opening the evaluation song.
 
 ## First launch
 

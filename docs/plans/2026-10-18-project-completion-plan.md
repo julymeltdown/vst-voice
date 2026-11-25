@@ -1,99 +1,14 @@
 # Project SEAM completion plan
 
-**Date:** 2026-10-18 (Asia/Seoul). **Branch:** `master`. **Supersedes:** every earlier root-level and `docs/plans/` plan as the guide for *what to do next*. It does not change any contract. The 2026-09-05 full-scope plan still defines units U1–U48, and the canonical contracts in `docs/product/` remain the definition of done.
+Updated 25 November 2026. This is the working milestone plan. The original full-scope plan defines U1–U48. The Alpha, External Beta and full-product records define their own pass conditions. [Full-scope plan](2026-09-05-1718-feat-full-scope-beta-go-plan.md) · [Gate status](../STATUS.md)
 
-**How to use this document.** Section 1 states where the project stands, with the checks run today. Section 2 explains why it is not finished. Section 3 sets the rules that decide what gets worked on. Section 4 lists the owner decisions that gate everything else, with a recommendation for each. Sections 5–7 are the work: milestones with code-level work packages, the engineering backlog, and the verification tiers. Sections 8–10 cover documentation, risks and progress reporting. Appendix A records the 2026-10-18 cleanup.
+## 1. Engineering baseline
 
----
+The standalone and first-party CLAP editor share the Cerulean faceplate. The PJS engineering bank renders the Japanese observation song. Save, restore and export have engineering coverage. The integrating checkout passed 241/241 Release tests. A new installation still needs an installed singer. [Latest engineering evidence](../implementation/FULL_SCOPE_BETA_EXECUTION.md)
 
-## 1. Starting point, verified 2026-10-18
+## 2. Critical path
 
-### 1.1 Repository
-
-| Measure | Value | How it was obtained |
-|---|---|---|
-| Product C++ (libs, apps, phase12c) | 194,568 lines | `git ls-files` + `wc -l`, before cleanup |
-| Test code (C++ and Python under `tests/`) | 157,995 lines | same |
-| Python tools and scripts | 76,525 lines | same |
-| Tracked Markdown | 98,419 lines before cleanup | same |
-| Static libraries / CLAP modules / test executables | 28 / 2 / 141 | `cmake --graphviz` on the release configuration |
-| CTest entries | 240 | `ctest -N` |
-| Near-full Release rebuild after a top-level CMake edit | 6 min 39 s, 1,101 steps, `-j6`, M3 Max | measured during cleanup unit 1 |
-| Incremental rebuild after removing targets | 41 s, 146 steps | measured during cleanup unit 2 |
-| Full serial Release CTest | 14 min 44 s (884 s) for 240 entries | measured during cleanup unit 2 |
-
-The library graph is acyclic and layered (see [architecture overview](../architecture/OVERVIEW.md)). Tests exercise real journeys: installed-singer selection, editing, undo, save/reopen, export and decoding (`tests/test_sing_shell_journey.cpp`, `test_original_singer_song_journey.cpp`, `test_procedural_install_journey.cpp`, `test_studio_generation_bank_journey.cpp`). Nothing in this plan proposes a rewrite.
-
-### 1.2 Gates
-
-| Gate | State | Evidence |
-|---|---|---|
-| Usable Alpha UA-001–020 | `BLOCKED`, 0/20 | All `NOT_RUN`; `USABLE_ALPHA_CONTRACT=PASS` means only that the record is valid |
-| Beta voicebank 01 | fails, 52 errors | `voicebank_gate` exit 3; all 12 categories blocked |
-| External Beta EB-001–009 | `BLOCKED`, 0/9 | No candidate, no records; target platforms are macOS arm64 **and Windows x86_64** |
-| Full product contract | `NOT_RUN` | 20 requirements, 18 work packages, 83 cases; `releasedResources: []`; matrix `UNRESOLVED` |
-| Phase 13A G2–G5 | `passed: false` | No validator, signing, installer, soak or host execution |
-| Public release | `BLOCKED` | PW-001–020 all `NOT_RUN` |
-
-[STATUS.md](../STATUS.md) carries this table forward; update it, not this plan, when a gate changes.
-
-### 1.3 What the code can already do
-
-The SING shell edits notes, lyrics, phoneme boundaries, unit choices, seams, pitch points and expression curves with undo/redo. `AuthoringSession` and `ProductionProjectRenderer` render sample and procedural singers. Projects save, reopen and recover from autosave, and a missing bank relinks to its exact ID, version and hash. Export is transactional, with master, stems and receipts. Voicebank Studio and `seam_voicebank_cli` implement the full producer chain: workspace, source registration, takes, inspection, draft manifest, independent review, candidate publication, signing and installation. CLAP plug-ins build and load in a first-party test host.
-
-### 1.4 What is missing
-
-There is no production voicebank and no listening verdict on any song. No user has run the journey unaided. No signed or notarized artifact exists, nothing has run in a commercial host, and there is no Windows run. Every one of these needs a person, an account, a license or a machine; none can be closed by more engineering alone.
-
----
-
-## 2. Diagnosis: why the project is not finished
-
-### 2.1 The critical path runs through decisions and material, while engineering has been working off it
-
-Usable Alpha's own text says: "The contract remains blocked until a rights-cleared production bank, target Apple Silicon runtime evidence, reopen/recovery/export listening evidence, and the real-song stability session are recorded through the UI" ([contract](../product/USABLE_ALPHA_ACCEPTANCE.md)). UA-004 requires Japanese lyrics and UA-010 sample-concatenative audio. The first user milestone therefore waits on the same voicebank question as Beta.
-
-Engineering since 2026-10-12 has gone into producer-intake machinery for internet sources: prepared phone donors, source-assessment publication identity, pointer recovery and receipt boundaries. Those sources cannot become a Japanese bank. VocalSet f1 is sung vowel exercises (scales, arpeggios, long tones) plus three short lyric excerpts in English, Italian and Latin. CMU ARCTIC SLT is 16 kHz read English. Karoryfer Merry Orks is metal growls. None contains Japanese consonant–vowel syllables, so none can satisfy UA-004/UA-010 in Japanese, whatever their licenses allow. The machinery is sound and will be reused, but it did not move a gate.
-
-### 2.2 The contracted scope is a multi-team program
-
-The full Beta contract covers three languages (ja, en, ko), two platforms, nine host tuples (four on Windows), six resource kinds and four backends. It has 83 cases and requires 60 phrases per language, three songs, five independent creators, native-language reviewers, and rights, security and release reviewers. External Beta also lists Windows x86_64 as a target platform. With Windows deferred, Beta GO is unreachable by definition, and the macOS-only parts alone need an Apple Developer ID, three commercial DAWs and several independent people.
-
-This is not an argument for lowering the bar. It is an argument for **sequencing**: a smaller, honest first Beta, then the full contract.
-
-### 2.3 Process overhead is now larger than capability work
-
-Commit counts run from 2026-10-12 00:00 KST through `6036ae19`, the last commit before this cleanup. "Docs-only" means every changed file is under `docs/` or ends in `.md`.
-
-| Signal | Value |
-|---|---|
-| Commits since 2026-10-12 | 154: 64 docs-only, 90 mixed, **0 code-only** |
-| Commits titled "Record…" or "Retain…" (review and approval bookkeeping) since 2026-10-12 | 41 |
-| Lines added in the week of 2026-10-12 | 23,693 in docs/evidence vs 15,888 in code |
-| Root ledger `FULL_SCOPE_BETA_EXECUTION.md` | 9,642 lines |
-| `docs/implementation/` | 481 files (254 reports, 142 evidence JSON, 79 logs) |
-| Contract and schema JSON under `docs/product/` | 44 files |
-
-Each small unit now produces a report, an evidence JSON, a ledger entry, an independent review request and a "record the review" commit. The [2026-10-10 economics diagnosis](../reviews/DEVELOPMENT_ECONOMICS_DIAGNOSIS_2026-10-10_KO.md) reached the same conclusion: verification and integrity work keeps being chosen as the next task because it is always available, while the product question waits on people.
-
-### 2.4 Six gate systems overlap
-
-Usable Alpha (UA), the Beta bank gate, External Beta (EB), the full product contract (R/V/cases), Phase 13A G1–G5 and public release (`PUBLIC_ACTIVE`, PW) each have their own vocabulary and verifier. Their host lists disagree. Phase 13A still names Ableton Live, Cubase, FL Studio, GarageBand and Linux targets, none of which is among the full contract's nine mandatory tuples. Every gate change must be explained in several places, and a reader cannot tell which list governs.
-
-### 2.5 Structural code costs (measured from the target graph)
-
-1. `seam_platform` links `seam_voicebank` only to reach `seam/voicebank/wav.hpp` from `recording_session`. That lifts the platform library from layer 3 to layer 4 and makes every platform consumer link `seam_voicebank` and `seam_phonemizer`. `seam_formats` and `seam_domain` stay below the platform layer either way: `crash_capture.cpp` uses the JSON codec and the audio devices include `seam/domain/routing.hpp`.
-2. `seam_native_ui` (about 55k lines) links the authoring runtime, the producer packaging stack and character packages at once.
-3. 141 test executables each statically link large parts of the tree, so link time dominates many rebuilds. The libraries with the highest fan-in are `seam_core` (27), `seam_domain` (17), `seam_formats` (15) and `seam_voicebank` (13).
-4. Current code lives under historical names (`phase12c/`, `phase13a/`, `phase13b/`, and the `seam_phaseN_demo` programs until M0-3). Until M0-1, two C++ test files also read project fixtures from `docs/phase2/evidence` and `docs/phase3/evidence`.
-
-These raise change cost. None of them blocks a gate.
-
-### 2.6 What is not the problem
-
-The architecture is not wrong. The admission, snapshot and cache boundaries are deliberate and tested, and the 2026-10-11 staleness audit (RS-01–RS-11) found no case for a rewrite. Sound quality is still **unknown** rather than known to be bad: nobody has judged a rendered song.
-
----
+Compare the two voice auditions on the same phrase, record the preferred take or reject both, and run the owner observation. Use that evidence to choose the performer, Japanese source inventory, rights scope, producer and independent reviewer. Then test the same song with the selected production bank from clean install through edit, reopen and export. The release gates still require independent target-host, platform and signing evidence. [Audition guide](../reviews/PRODUCT_VOICE_AND_PLUGIN_REVIEW_2026-11-25.md) · [Ranked next actions](FUNCTIONAL_READINESS.md)
 
 ## 3. Rules for the remaining work
 
@@ -120,8 +35,9 @@ Each decision lists a recommendation, the realistic alternatives, what changes i
 |---|---|
 | **A. Song-scoped self/acquaintance recording (recommended)** | Fastest lawful route. The rights are simple because the performer is present and signs. Quality is good enough to judge the editor and renderer, and the session also tests the real producer chain end to end. |
 | B. Wait for the contract singer of D3 | Correct for Beta, but it puts Usable Alpha behind contracting and scheduling. |
-| C. Public-license internet recordings (VocalSet f1, CMU ARCTIC SLT, Karoryfer) | **Not viable for Japanese.** None contains Japanese CV syllables (see §2.1). Keep them as engineering fixtures only. |
+| C. Public-license internet recordings (VocalSet f1, CMU ARCTIC SLT, Karoryfer) | **Not viable for Japanese.** None contains Japanese CV syllables (see the source intake records). Keep them as engineering fixtures only. |
 | D. An existing third-party Japanese voicebank whose terms allow internal use in other software | Possible for internal evaluation only. Terms vary bank by bank and usually forbid redistribution, so it can never become the Beta bank. |
+| E. Installed PJS engineering bank | Available for the listening and workflow rehearsal. It has a male timbre and no production admission. A more feminine product voice still needs a suitable source and rights review. |
 
 **Owner supplies:** the performer, a signed internal-use permission (start from `docs/legal/templates/VOICE_PROVIDER_CONTRACT_EVIDENCE_TEMPLATE.md`), the song (lyrics in kana plus melody, typed in the editor or as MIDI), a microphone on the existing audio interface, and the recording time.
 
@@ -202,51 +118,7 @@ Durations below are **estimates** for one developer working with coding agents. 
 
 ### M0 — Repository reset
 
-Already done on 2026-10-18: see Appendix A. Remaining work packages:
-
-**M0-1 Move test fixtures out of `docs/`.**
-
-**Done on 2026-10-18.** The tests now read `tests/fixtures/projects/schema-2-phase2-demo.seam` and `schema-3-phase3-demo.seam`, byte-identical copies whose origin commits and SHA-256 are listed in `tests/fixtures/projects/generators/README.md`. No test, tool or script reads `docs/phase2/` or `docs/phase3/` any more.
-
-- `tests/test_performance_contracts.cpp` (lines 72 and 174–175) and `tests/test_schema8_performance.cpp` (lines 234–235) read `docs/phase2/evidence/phase2-demo.seam.json` and `docs/phase3/evidence/phase3-demo.seam.json`. Copy both files into `tests/fixtures/projects/`, point the tests there, and leave the historical evidence untouched.
-- Verify with the affected CTest entries.
-
-**Gate link:** a cost item; it decouples evidence history from test inputs.
-
-**M0-2 Audit the phase-era verifiers.**
-
-**Done on 2026-10-18.** All 13 phase verifiers and the two tests that duplicated parts of them were classified. Every check that locked history was retired; every check that guards current code or contract data was kept.
-
-| Verifier | Kept: guards current code or contract | Retired: locked history | Result |
-|---|---|---|---|
-| `verify_phase8_platform_sources.py` | Platform adapter markers and CMake platform selection | — | `verify_platform_adapter_sources.py`, CTest `seam_platform_adapter_source_contract` |
-| `verify_phase11_contracts.py` and `verify_phase11_sources.py` | CLAP embedded views, plug-in entry, test host and packaging scripts | Presence of `docs/phase11/HOST_CERTIFICATION_MATRIX.md`; the duplicate script, which CTest never ran | `verify_clap_editor_sources.py`, CTest `seam_clap_editor_source_contract`; the demo provenance checks moved to the next row |
-| `verify_phase12a_contracts.py` | Production pipeline markers; demo production bank identity, flags, hashes and renderers | — | `verify_production_pipeline_contract.py`, CTest `seam_production_pipeline_contract` |
-| `verify_phase12b_contracts.py` | Routing, host timeline, technical-lane editing, interchange, SING shell routing, CLAP channels | Five `docs/phase12b/*.md` presence checks; `remaining-tasks.json` task states; the project version and phase-named target names in `CMakeLists.txt` | `verify_routing_and_editing_sources.py`, CTest `seam_routing_and_editing_source_contract` |
-| Five `verify_phase12c_*` scripts | Canonical CLAP identity and live bounds; evidence packet validation | — | Unchanged; their names follow `phase12c/` and change with E-13 |
-| `verify_phase13a_contracts.py`, `verify_phase13a_vst3_packet.py` | Dependency pins, packaging and signing scripts, release-gate matrix, documentation manifest | Korean wording of `MANDATORY_VALIDATION_KO.md` and `MANDATORY_FUTURE_VALIDATION_KO.md`, also locked by two test cases in `tests/phase13a/` | Same names until E-13 |
-| `verify_phase13b_contracts.py` | Blocked Official Voicebank 01 and Character 01 dossiers, product dossier, 13B matrix, asset manifest | Seven `docs/phase13b/*.md` presence checks; `remaining-tasks.json` task states, both repeated in `tests/phase13b/test_source_contract.py` | Same name until E-13 |
-
-`docs/remaining-tasks.json` and `scripts/verify_phase11_sources.py` are retired and listed in the retirement index. The required-path test now covers the CLAP editor and platform adapter verifiers.
-
-- For each of `scripts/verify_phase11_contracts.py`, `verify_phase11_sources.py`, `verify_phase12a_contracts.py`, `verify_phase12b_contracts.py`, `verify_phase12c_*`, `verify_phase13a_contracts.py` and `verify_phase13b_contracts.py`, list every assertion and classify it as *guards current code or contract* or *guards the wording of a historical document*.
-- Retire the second kind along with `docs/remaining-tasks.json` once nothing reads it. Keep the first kind, renamed by what it guards.
-
-Expected result: fewer contract tests that fail when history is tidied, with no loss of product guarding.
-
-**M0-3 Rename fixture producers and declare fixtures.**
-
-**Done on 2026-10-18.** Two of the eleven demos were fixture producers and became `seam_fixture_synthetic_bank` (phase 2) and `seam_fixture_clap_state_wav` (phase 10); their CTest entries `seam_fixture_*_setup` are `FIXTURES_SETUP`. The other nine had no consumer and became `seam_smoke_*` journeys named by what they run: `psola_render` (3), `editing_render_cache` (4), `native_editor_capture` (5), `four_channel_routing` (6), `signed_bank_install` (7), `platform_capabilities` (8), `cjk_text_raster` (9), `production_preview` (12A) and `multitrack_routing` (12B). Their `apps/` directories and build output directories follow the new names; output file names inside them are unchanged. Every test-ordering `DEPENDS` became a fixture: the synthetic bank (`seam_voicebank_cli_validate`, the Studio platform and X11 smokes), the CLAP state chain (WAV, then pack, then inspect, extract and plugin host) and the Phase 12C matrix record. The one exception is the Linux-only `seam_phase13a_linux_install_smoke`, which cannot be configured on macOS and waits for E-05.
-
-- Rename `seam_phase2_demo` … `seam_phase12b_demo` to `seam_fixture_*` by what they produce, for example `seam_fixture_synthetic_bank` for phase 2 and `seam_fixture_clap_state_wav` for phase 10.
-- Replace CTest `DEPENDS` ordering with `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so that `ctest -R <consumer>` runs its producer automatically. Today `ctest -R seam_voicebank_cli_validate` on its own either fails in a fresh build directory or silently reuses an earlier run's output.
-
-**M0-4 Label the tests.**
-
-**Done on 2026-10-18.** Every CTest entry has exactly one kind label: `unit` (148 entries), `journey` (55) or `contract` (38). The tags `gui` (5), `slow` (32) and `process-lifetime` (8) are added where they apply. `cmake/SeamTestLabels.cmake` holds the vocabulary and two helpers. Each of the four CMake files labels its own tests in a block at its end. `seam_ctest_label_coverage` (`tests/test_ctest_labels.py`) fails when an entry has no kind, two kinds or an unknown label. The measured tier times are in [STATUS.md](../STATUS.md#test-tiers). The first contract-tier run found that M0-3 had left `tests/test_macos_source_contract.py` reading the old `apps/` paths; `166a8e48` fixed that.
-
-- The top-level `CMakeLists.txt` has only ten `LABELS` uses today, and the subdirectories have none. Add `unit`, `journey`, `contract`, `gui`, `slow` and `process-lifetime` labels in `CMakeLists.txt` and the three subdirectory files, so the tiers in §7 can be run with `ctest -L`.
-- Record the measured duration of each tier in [STATUS.md](../STATUS.md).
+M0-1 through M0-4 are complete. Historical project fixtures now live under `tests/fixtures/projects/`, the phase verifiers check active contracts, and CTest distinguishes fixture producers, smoke journeys and test tiers. D6 and D7 still govern the two policy changes below.
 
 **M0-5 One gate vocabulary (after D6).**
 
@@ -433,39 +305,9 @@ Report counts against each gate's own denominator: UA *x*/20, bank-gate categori
 
 ---
 
-## Appendix A — Cleanup performed on 2026-10-18
+## Historical revisions
 
-Each unit was verified before commit and pushed to `origin/master`. Local `HEAD`, `origin/master` and `git ls-remote` agreed after every push. Every removed file is listed with its last containing commit in [RETIRED_DOCUMENTS.md](../history/RETIRED_DOCUMENTS.md); restore any of them with `git show <commit>:<path>`.
-
-| Commit | Unit | Verification |
-|---|---|---|
-| `fd0893da` | Removed four never-included public headers (`seam/core/hash.hpp`, `seam/distribution/signer_provider.hpp`, `seam/live_voice/expression.hpp`, `seam/platform/desktop_backend.hpp`), the inert `SEAM_ENABLE_IPLUG2_SKIA` option and its architecture note | Reconfigure; full Release build, 1,101 planned steps, no errors; source-closure and neural-direction CTest 3/3 |
-| `c52517f9`, `41dc63fd` | Retired nine `scripts/generate_phaseN_evidence.py` generators and their `seam_phaseN_evidence` targets (they overwrote tracked historical evidence), the Phase 1 demo, six benchmarks used only by those generators, and `SvgEditorRenderer`, which only the Phase 1 demo used | Reconfigure; Release build; full serial CTest 239/240; the one failure was the signer-provider presence check, fixed in `c52517f9` and passing on rerun |
-| `bdb04d82` | Retired 82 files: an unrelated project's guide committed by mistake, 21 root phase reports, 23 root dated plans, reviews and logs, 6 stale status/backlog/readiness pages, 17 superseded plans and agent planning files, 8 dated product reports, and 4 superseded architecture/UX notes and placeholders; untracked 2 agent artifacts (local copies kept). Rewrote README, STATUS and the architecture overview from the target graph; added the documentation map, the retirement index and this plan; updated product principles 1 and 7 to the three resource families | Documentation, link and contract checks listed in the commit |
-| `9baf8d23` | Root ledger entry for the cleanup and this table | Link and diff checks |
-| `5c51a302` | Corrected this plan's `seam_platform` layering claim (§2.5, E-07) and E-01's lock site, and the same layering claim in the architecture overview | Diff and link checks |
-| The ADR commit after `5c51a302` | Renumbered the later ADR 0020 to 0023, fixed file 0010's heading, and added dated status notes to ADRs 0003, 0005, 0018, 0021 and 0023 where the code or the working practice has moved past the decision | Link check; tracked-source closure after staging the rename |
-
-One slip is recorded here rather than hidden: `c52517f9` was meant to carry only the test fix, but the already-staged deletions of the generator unit went with it while that unit's `CMakeLists.txt` edit stayed unstaged. `c52517f9` alone therefore does not configure. `41dc63fd` followed immediately and restored the verified tree; history was not rewritten. Bisecting across this range should skip `c52517f9`.
-
-The `bdb04d82` commit message also opens with "47 dated plans, phase reports, reviews and logs". Its own list (21 + 23) and the tree diff give 44, plus the unrelated guide, for 45 retired root files. The retirement index is correct.
-
-Not changed: `.github`, the Windows TODO, the U45 hold, every contract JSON, every gate verifier's semantics, `stash@{0}` and all untracked local evidence under `out/`.
-
-## Appendix B — Retained although stale, and why
-
-| Item | Why it stays | Exit |
-|---|---|---|
-| Phase-named test executables (`seam_phase11_tests`, `seam_phase12a_tests`, `seam_phase12b_tests`, `seam_phase12c_*`) | They test current code under phase names | E-13 |
-| `docs/phase1`–`docs/phase13b` | Phase records; code still reads the machine-readable gate data listed in the documentation map, §6 | Records; E-13 moves the gate data with the phase directories |
-| `docs/beta/*` stubs | Required entry points in the External Beta source contract | E-12 |
-| `BETA_READINESS_ISSUES.md` (last substantive update 2026-10-08) | `tools/external_beta/release_status.py` and `tests/external_beta/test_readiness_register_citations.py` read it | Fold its open items into this plan's backlog, then move it with its two consumers |
-| `VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md` | Named as `origin` by the full product contract | Stays as long as that contract revision |
-| `docs/plans/2026-09-05-…`, `2026-10-08-…` | U1–U48 definitions and the previous goal record | Records |
-| `docs/implementation/`, `docs/reviews/` | Dated records; many are hash-bound in evidence JSON | Records |
-| Phase 13A Linux and extra-host rows; `scripts/package_linux_development.sh` (no consumer) | Linux is not a contract platform, but G2 still names Linux validation | E-05 |
-| `runNeuralWorker` | Legacy protocol-1 probes still call it | E-11 |
-| DESIGN.md "retained raster" section | Voicebank Studio and raster utilities still use those tokens | Until Studio moves to the SING design system |
+Git retains the October diagnosis, completed M0 work and earlier schedules. Current gate counts and verification commands live in the status page. [Status](../STATUS.md)
 
 ## Appendix C — Owner decision form
 

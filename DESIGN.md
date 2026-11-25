@@ -1,8 +1,8 @@
 # Project SEAM Design System
 
-## Current main-editor authority — 2026-10-11
+## Main editor
 
-The standalone and CLAP main editor is the SING shell with EMO and SCENE looks. Its design authority is [the UI fidelity contract](docs/design/ui-fidelity-contract-v1.json) and [September 25 fidelity review](docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md). The contract describes the canonical 1600×900 logical layout, 1×/2× device scales, shared time axis, typography and region ownership; it is a specification, not visual or human acceptance.
+A fresh macOS preference opens Cerulean. The standalone and CLAP editors share one instrument panel with transport, score, singer waveform and expression controls. The rack shows the selected renderer’s supported controls. Saved EMO and SCENE preferences still select those appearances. Their geometry and reference art are covered by the versioned fidelity contract. [Embedded Cerulean capture](docs/design/captures/cerulean-embedded-1100x720.png) · [Native design system](docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md) · [EMO and SCENE contract](docs/design/ui-fidelity-contract-v1.json)
 
 Implementation starts at [SingShell](libs/seam-native-ui/src/design/sing_shell.cpp), shared [tokens](libs/seam-native-ui/include/seam/native_ui/design/design_tokens.hpp) and the macOS CoreGraphics/CoreText paint backend. `prepareFrame` establishes hosted controller geometry before scene derivation. Native field placement and the shell accessibility tree must use the same presented logical coordinates; backing-scale conversion belongs at the platform boundary. Preserve composition ownership, focus, resize/hide gesture cancellation and undo behavior.
 

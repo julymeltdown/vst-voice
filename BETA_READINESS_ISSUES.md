@@ -15,16 +15,7 @@ bundle-bound vocoder training overlap. Retain all five regression songs; qualify
 on a separate frozen cohort checked against both models' entire training ancestry.
 Details and exact evidence: `docs/implementation/SINGER_VALIDATION_CAMPAIGN_2026-09-20.md`.
 
-- **Snapshot date:** 2026-08-30
-- **Branch:** `codex/external-beta-completion`
-- **Source commit:** `970d159d06a2daa11932a9dbc22a337ecf9dbe25`
-- **Current decision:** `HOLD / NO-GO` for an open/public beta
-- **Estimated practical readiness:** approximately 42% (engineering estimate, +/-5 percentage points)
-- **Formal promotion readiness:** 0% because the canonical Usable Alpha matrix is 0/20 PASS and no External Beta candidate evidence has been accepted
-
-This file is the root-level issue register requested after the repository-wide beta-readiness review. It is intentionally shorter and more operational than the full analysis in [docs/reviews/PROJECT_SEAM_OPEN_BETA_READINESS_2026-08-30.md](docs/reviews/PROJECT_SEAM_OPEN_BETA_READINESS_2026-08-30.md).
-
-The register distinguishes implementation from release proof. A source contract, validator, unit test, or schema can be complete while the corresponding installed-product gate remains open.
+The issue IDs below track engineering defects and open acceptance work. The current release decision is HOLD. On 25 November Usable Alpha had zero recorded passes across 20 requirements and External Beta had zero evidence records across nine requirements. The independent gate records and latest development priorities are maintained separately. [Gate status](docs/STATUS.md) · [Development priorities](docs/plans/FUNCTIONAL_READINESS.md)
 
 ## Severity and status
 

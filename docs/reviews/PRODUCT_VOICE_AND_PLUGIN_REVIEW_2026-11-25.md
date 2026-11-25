@@ -1,6 +1,6 @@
 # Project SEAM product, voice and plug-in review
 
-25 November 2026. Baseline `72cda3a5` on macOS arm64. The reference task is to insert one instrument, enter Japanese lyrics against notes, audition a voice the owner wants to use, adjust a join and reopen the song with the same sound.
+25 November 2026. Voice and competitive review baseline `72cda3a5` on macOS arm64. Implementation follow-up verified at `38238dad`. The reference task is to insert one instrument, enter Japanese lyrics against notes, audition a voice the owner wants to use, adjust a join and reopen the song with the same sound.
 
 ## How far the project has come
 
@@ -41,7 +41,7 @@ The owner's correction sets the hierarchy. The host owns the window. SEAM gets o
 | Graphic score and ASCII sequences | Align unit blocks, boundary ticks and phonemes to real score time. Show note names and control values in legible type. | Zoom, scroll, edit and undo preserve the link between the displayed join and its source event. |
 | Zine and metallic portable-player references | Use type hierarchy and an inset singer display. Keep decoration outside data and avoid animation over lyrics. | At 1280 × 800 a creator can identify the singer, start playback and read the lyrics without opening a second surface. |
 
-The [concept image](../design/concepts/concept-cerulean-plugin-2026-11-23.png) sets composition and print character. Its example lyrics, pitches, controls and status text are illustrative. Runtime labels must come from project and renderer state. Implement in the shared native shell so the plug-in and standalone use the same controls and semantic bounds. Inspect the native frame at host size, then verify compact layout, keyboard activation, saved appearance and high contrast. Keep host qualification separate from shell captures. [Native shell](../../libs/seam-native-ui/src/design/sing_shell.cpp) · [Layout](../../libs/seam-native-ui/src/design/sing_layout.cpp)
+The [concept image](../design/concepts/concept-cerulean-plugin-2026-11-23.png) sets composition and print character. Its example lyrics, pitches, controls and status text are illustrative. Runtime labels must come from project and renderer state. The shared shell now implements the faceplate. The native CLAP fixture produced a 2200 × 1440 pixel capture and restored the same saved state bytes. The populated standalone capture showed the current region render. The early concept, engineering captures and target-host qualification serve different purposes. [Native capture](../design/captures/cerulean-embedded-1100x720.png) · [Verification record](../implementation/FULL_SCOPE_BETA_EXECUTION.md)
 
 ## What the voice audition can decide
 
@@ -58,7 +58,7 @@ These measurements identify changed signals. The owner decides whether the sound
 
 ## Development order and exit evidence
 
-1. **Land one recognizable instrument surface.** Use real transport, note, singer and expression state. Exercise the embedded editor, compare a populated and an empty project, and preserve existing appearance preferences.
+1. **Instrument faceplate implemented.** The default appearance, compact layout, supported expression controls and Korean focus/edit regression have engineering coverage. Target-host and human accessibility sessions remain open.
 2. **Choose the sound with the same phrase.** Start with 1b and 2b against their references. Record preference, timestamp and whether a change of key is acceptable. A preference for neither justifies trying a different source singer before extending DSP.
 3. **Prove the preferred direction in the actual project renderer.** Bind a distinct bank or recipe identity. Render the same project twice, save and reopen, confirm the score's original key and compare phoneme intelligibility at low and high notes. A post-processed WAV alone cannot establish this behavior.
 4. **Admit a real product voice.** Choose a performer and record permission for source use, transformation, bank distribution and end-user output. Assign a producer and a distinct reviewer. Establish Japanese CV coverage, joins, pitch range and a reference-song verdict before bundling a bank. D3 remains an owner choice.

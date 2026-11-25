@@ -1,18 +1,6 @@
 # Native Editor Design System
 
-Status: describes the EMO/SCENE design shell at master `caabbaf5` (2026-09-28). It is
-the document §16 of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) asks for. Where
-this text and a plan disagree, this text says what the code does and the plan says what was
-intended. Anything the plans describe that the code does not do is marked **Not shipped**.
-
-This is a description of source, not an acceptance claim. Native visual acceptance, FL Studio
-host rows, VoiceOver, the owner rubric and release readiness remain as recorded in
-[the fidelity review](SEAM_UI_FIDELITY_REVIEW_2026-09-25.md) and its evidence packets.
-
-This snapshot includes the Full new-project default, the SINGER Full/Minimal/Off switch, Add Region
-in MIX and Edit, bundled OFL fonts, tooltips, Korean localization, Character Package v4 and the
-measured frame pipeline, the consolidated Settings sheet, and plan §9 shell motion. The true
-first-paint frame currently misses its §10 budget in both looks (§11 below).
+The native shell has three appearances. Cerulean is the current default on macOS. The EMO and SCENE measurements below describe those appearances at the stated revisions. The shipping design and its acceptance checks have separate records. [Design authority](../../DESIGN.md) · [Native captures](captures/README.md) · [EMO and SCENE fidelity review](SEAM_UI_FIDELITY_REVIEW_2026-09-25.md)
 
 ## Cerulean instrument faceplate, November 2026
 

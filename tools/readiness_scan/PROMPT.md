@@ -25,8 +25,8 @@ Keep `docs/plans/FUNCTIONAL_READINESS.md` true, and nudge the development direct
    - Rewrite sections 1–8 only where the evidence changed. Keep the structure, tone and length. Keep every claim tied to a command result or a file and symbol.
    - Change the ranking in section 5 by at most one move per scan (promote, demote, add or retire one item), and say why in the log entry. Retire an item only when its "Done when" condition is met with evidence.
    - Update the "Last full scan" line.
-   - Append exactly one entry to section 10: date and time in KST, the short HEAD hash, what changed in evidence, and the direction adjustment or "no change".
-   - If nothing changed since the last entry, append a one-line "no change" entry and leave the rest alone.
+   - Replace the previous entry in section 10 with the latest scan: date and time in KST, the short HEAD hash, what changed in evidence, and the direction adjustment or "no change".
+   - If nothing changed since the last entry, replace the previous entry with a one-line "no change" entry and leave the rest alone.
 8. Commit only that file. Before committing, run `git diff --check`, stage the file, and run `ctest --test-dir build/release -R '^(seam_tracked_source_closure|seam_tracked_source_closure_unit)$'`. Subject: `Readiness scan <YYYY-MM-DD HH:MM> at <hash>`. The body lists the checks run and ends with the line `Local only; .github untouched.`
 9. Push with `git push origin HEAD:master`. If it is rejected because master moved, run `git fetch origin`, `git rebase origin/master` (only your one commit), rerun the source-closure check and push once more. If it still fails, stop and report; never force-push.
 10. Verify that `git rev-parse HEAD`, `git rev-parse origin/master` and `git ls-remote origin refs/heads/master` agree.
