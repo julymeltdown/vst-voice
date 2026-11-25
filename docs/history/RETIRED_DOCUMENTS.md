@@ -1,10 +1,22 @@
 # Retired documents and tools
 
-Files removed from the tree during the 2026-10-18 cleanup and the M0 repository reset that followed it. Git history keeps every one of them. To read one, run `git show <commit>:<path>` with the commit named in its group. Links to these paths from dated records are expected to dangle. Earlier unavailable attachments are listed separately in the [historical evidence availability index](../reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md).
+This index covers the October cleanup, the M0 repository reset and the November documentation consolidation. To recover an original file, run `git show <commit>:<path>` with the commit named in its group. Earlier unavailable attachments are listed separately in the [historical evidence availability index](../reviews/HISTORICAL_EVIDENCE_AVAILABILITY_2026-10-11.md).
 
 When a document stops being true, delete it and add it here instead of leaving it in place with a historical banner.
 
-**107 files in 11 groups.**
+The October inventory below covers 107 files in 11 groups.
+
+## November 2026 consolidation
+
+This pass retired 537 tracked files, including 284 Markdown documents. The last tree before this retirement is `9b5da0c744de9b70889c88cc604f24afc17abe9a`. It contains the original issue reproductions, unit-by-unit execution ledger, phase reports, test transcripts, previous plans and generated independent review packages. The probe and report-builder source remains tracked. Reproducing the September reports requires their original inputs and checkout. Older scheduled scans remain in the history of `docs/plans/FUNCTIONAL_READINESS.md`. Current contracts, compatibility formats, legal texts, test inputs, required evidence and current design guides are indexed in the [documentation map](../README.md).
+
+To list retired paths or read a specific file with its original content:
+
+```sh
+git show --format= --name-only --diff-filter=D ':/^Retire superseded documentation and preserve referenced evidence$' -- docs
+git show 9b5da0c7:docs/implementation/FULL_SCOPE_BETA_EXECUTION.md
+git log -p -- docs/plans/FUNCTIONAL_READINESS.md
+```
 
 ## Dead code and inert build option
 

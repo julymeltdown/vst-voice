@@ -45,7 +45,7 @@ The first preparation incorrectly assumed 480 PPQ. Its actual native WAV was 15 
 
 The -42.7 dBFS native meter value was one instant during preview. The final file's measured peak is -19.84 dBFS and RMS -36.53 dBFS. Record the monitoring level and any volume adjustment with your listening notes. No gain or sound-quality tuning was applied before observation.
 
-Full Release rebuild passed. Three focused CTest entries passed in 28.74 seconds: original singer song journey, procedural install journey and singer-pilot CLI. Raw build/test logs and agent-transcribed native observations are bound by the manifest. The original full-product obligations remain in [the reassessment](../reviews/OVERALL_PRODUCT_BETA_REASSESSMENT_2026-10-12.md) and [execution ledger](FULL_SCOPE_BETA_EXECUTION.md).
+Full Release rebuild passed. Three focused CTest entries passed in 28.74 seconds: original singer song journey, procedural install journey and singer-pilot CLI. Raw build/test logs and agent-transcribed native observations are bound by the manifest. The original full-product obligations remain in [the reassessment](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/reviews/OVERALL_PRODUCT_BETA_REASSESSMENT_2026-10-12.md) and [execution ledger](FULL_SCOPE_BETA_EXECUTION.md).
 
 ## Help only if stuck
 

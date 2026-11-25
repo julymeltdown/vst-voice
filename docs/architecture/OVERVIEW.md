@@ -1,10 +1,10 @@
 # Architecture overview
 
-Regenerated on 2026-10-18 from the configured CMake target graph (`cmake --graphviz` on the `release` configuration, macOS arm64). It replaces the Phase 1–3 overview and `MODULE_BOUNDARIES.md`, whose dependency maps no longer matched the build. When a `target_link_libraries` line changes, regenerate the tables below instead of editing them by hand.
+Checked 25 November 2026 against the integrating macOS arm64 Release build. The layer and link tables use the dependency closure in the configured Ninja graph. Recheck them after changing a library dependency or adding a target.
 
 ## Style
 
-Project SEAM is a local-first modular monolith: 28 static libraries, two CLAP module libraries and 26 non-test executables, plus 141 test executables, all built from one top-level `CMakeLists.txt` and three subdirectories (`phase12c/`, `phase13a/`, `phase13b/`). Score state, reversible editing, unit selection, phrase rendering, caching and playback handoff need deterministic in-process coordination; nothing here is a network service. The library graph is acyclic, and `cmake/NeuralDependencyDirection.cmake` checks that rendering-independent neural preparation never links upward.
+Project SEAM is a local-first modular monolith: 28 static libraries, two CLAP modules and 173 executable targets including tests, all built from one top-level `CMakeLists.txt` and three subdirectories (`phase12c/`, `phase13a/`, `phase13b/`). Score state, reversible editing, unit selection, phrase rendering, caching and playback handoff need deterministic in-process coordination; nothing here is a network service. The library graph is acyclic, and `cmake/NeuralDependencyDirection.cmake` checks that rendering-independent neural preparation never links upward.
 
 ## Layers
 
@@ -67,7 +67,7 @@ Fan-in is highest for `seam_core` (27 libraries), `seam_domain` (17), `seam_form
 | Test hosts and harnesses | `seam_clap_host`, `seam_clap_editor_host`, `seam_phase12c_*` (matrix, soak, cancellation storm, live demo; the X11 GUI lifecycle runner and live CLAP host build only on Linux) |
 | Fixture producers | `seam_fixture_synthetic_bank` and `seam_fixture_clap_state_wav`; their CTest setup entries are `FIXTURES_SETUP` for the tests that read the synthetic voicebank and the CLAP state WAV |
 | Smoke journeys | Nine `seam_smoke_*` programs, each running one pipeline end to end under CTest |
-| Benchmark | `seam_phase5_benchmark`, checked by `tests/design/test_phase5_benchmark_contract.py` |
+| Benchmarks | `seam_phase5_benchmark` exercises the render path. `seam_voicebank_scan_benchmark` measures repeated bank discovery and validation. |
 
 ## Data flow for one edit
 
@@ -96,5 +96,5 @@ These are recorded here because they shape build time and change cost. The [comp
 
 1. `seam_platform` links `seam_voicebank` only to reach `seam/voicebank/wav.hpp` from `recording_session`. That lifts the platform library from layer 3 to layer 4 and makes every platform consumer link `seam_voicebank` and `seam_phonemizer`. `seam_formats` and `seam_domain` stay below the platform layer either way: `crash_capture.cpp` uses the JSON codec and the audio devices include `seam/domain/routing.hpp`.
 2. `seam_native_ui` (about 55k lines, the largest library) links the authoring runtime, the producer packaging stack and character packages at once, so a UI change relinks most products, and a producer header change recompiles the Studio parts of the UI library: seven of its files include producer or candidate headers directly, `voicebank_studio.hpp` among them.
-3. There are 141 separate test executables, each statically linking large parts of the tree, so link time dominates many focused rebuilds.
+3. Many test executables link the same libraries statically. Changes to shared libraries can require a broad relink before previously built tests exercise the new code.
 4. Active code still lives under historical directory names (`phase12c/`, `phase13a/`, `phase13b/`) and the phase-named test executables built from them.

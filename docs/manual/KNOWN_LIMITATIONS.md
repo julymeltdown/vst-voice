@@ -2,11 +2,12 @@
 
 Document version: `external-beta-limitations-1.0`
 
-- This is a closed External Beta, not a commercial release. Storefront,
-  billing, public auto-update, and the full commercial host matrix are outside
-  this evaluation.
-- The Beta Voicebank is evaluation content and is not Official Voicebank 01 or
-  a final character/IP release.
+- External Beta is blocked. The current engineering build runs on Apple Silicon
+  macOS. Windows x64 and the commercial host matrix require candidate-specific
+  testing. Storefront, billing and public updates belong to commercial release
+  planning and are outside this evaluation.
+- A fresh installation ships without a singer. The evaluation bank needs rights
+  clearance, a signed package and independent review before distribution.
 - Supported claims are limited to exact OS, architecture, host, format, and
   application versions with retained PASS evidence. A nearby version is not an
   implicit support claim.

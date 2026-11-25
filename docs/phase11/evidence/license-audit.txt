@@ -1,5 +1,0 @@
-[license-audit] distributedDependencies=2
-[license-audit] branchPolicy=master-only
-[license-audit] characterDirections=3
-[license-audit] publicDomainHumanFixture=verified-nonofficial
-[license-audit] status=PASS

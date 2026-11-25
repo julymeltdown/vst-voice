@@ -82,11 +82,11 @@ What a yes changes, measured on 2026-10-19. This is engineering work beyond the 
 
 ### D7 — Working protocol (affects every milestone)
 
-**Recommendation:** adopt the rules in §3. One independent review per milestone exit and for the high-risk areas; no per-unit dated report; ledger entries of at most six lines; evidence JSON only for gate rows. This replaces the per-commit review-and-record cycle used since September (§2.3). AGENTS.md does not require that cycle, so no repository rule has to be overridden, but it is the owner's working practice and the owner should confirm the change.
+The proposed review protocol in §3 calls for independent review at milestone exits and for high-risk changes. It reserves evidence JSON for acceptance rows and keeps routine verification in commits and short ledger entries. Adoption remains an owner decision.
 
-D7 also settles the branch policy. [ADR 0005](../adr/0005-master-only.md) forbids every branch except `master`, while AGENTS.md sends isolated work to `codex/*` worktree branches; the main checkout has 45 other local branches. The hooks that would enforce ADR 0005 are not installed, so nothing blocks those branches. But `scripts/verify_master_branch.py` fails on them, and a default `seam_license_audit` run fails with that branch check as its only error, so a real license finding would be reported behind a policy error. **Recommendation:** amend ADR 0005 so that `master` is the only integration and release branch and short-lived `codex/*` branches are allowed, then implement E-15.
+[ADR 0005](../adr/0005-master-only.md) and `scripts/verify_master_branch.py` permit only the local `master` branch. [AGENTS.md](../../AGENTS.md) also provides for isolated `codex/*` worktrees. The license audit calls the branch verifier by default, so a worktree branch can cause the audit to fail independently of license findings.
 
-Prepared on 2026-10-19: the E-15 change for this recommendation is commit `7d10b021` on the local branch `codex/d7-branch-policy` in the integrating checkout, unmerged. It amends ADR 0005, lets `scripts/verify_master_branch.py` accept `master` and `codex/*` (with `--require-master` for integration and release), and drops the branch check from the license audit, which then passes. A yes merges it. Afterwards the only local branch outside the policy is `optimize/native-paint-p95`, which you can delete or rename to `codex/…`.
+The proposed E-15 change in commit `7d10b021` reserves `master` for integration and release, permits short-lived `codex/*` branches, and separates branch verification from the license audit. D7 remains open pending the owner's decision.
 
 ### D8 — Accounts, licenses and machines (blocks parts of M2)
 
@@ -126,10 +126,7 @@ M0-1 through M0-4 are complete. Historical project fixtures now live under `test
 - Reclassify the Phase 13A matrix rows that are outside the full contract's nine tuples as optional by emptying their `mandatoryFor`: the Cubase, Ableton Live, Studio One, FL Studio and GarageBand rows, and the four Linux rows (CLAP validator, 7,200-second soak, VST3 build and VST3 validator). The REAPER and Bitwig Studio rows stay, with Linux dropped from their `platform`. This edits `docs/phase13a/mandatory-validation-matrix.json` and the matching `tests/phase13a/` expectations; `tools/phase13a/release_gate.py` already treats a row as required only for the gates in its `mandatoryFor`.
 - Treat G1–G5 as an implementation checklist that feeds EB-004/EB-006, not as a separate release status.
 
-**M0-6 Ledger format (after D7).**
-
-- Close the current body of `docs/implementation/FULL_SCOPE_BETA_EXECUTION.md` with a dated marker, and move the 9,600 historical lines in one mechanical commit to `docs/implementation/archive/FULL_SCOPE_BETA_EXECUTION_2026-08-10_to_2026-10-18.md`.
-- Continue the ledger with six-line entries: *change, gate row or cost, verification, commit, open item*.
+**M0-6 Ledger.** The integrating developer records the change, checks, commit and open gate in the current ledger. Prior per-unit evidence is pinned there to its Git revision.
 
 ### M1 — Usable Alpha on the target Mac
 
@@ -295,7 +292,7 @@ Keep the hygiene rules in [AGENTS.md](../../AGENTS.md): a full dependent rebuild
 | R4 Windows stays unavailable | No Windows host by M2 exit | D6 keeps External Beta 1 moving; full Beta GO waits, explicitly |
 | R5 Owner availability | Decisions or sessions slip | Prepare packets in advance; batch owner sessions (observation, recording, review, UA run) |
 | R6 Locked or unattended Mac blocks GUI checks | AppKit automation unavailable | Schedule GUI evidence during owner sessions; headless journeys cover engineering regressions |
-| R7 Hidden coupling exposed by cleanup | A test fails after a retirement | Retirements are git-recoverable (Appendix A); restore the one file and fix its consumer |
+| R7 Hidden coupling exposed by cleanup | A test fails after a retirement | Retirements are git-recoverable via the retirement index; restore the one file and fix its consumer |
 
 ---
 

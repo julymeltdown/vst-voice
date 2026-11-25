@@ -17,7 +17,7 @@ selected states; `python3 scripts/verify_ui_fidelity_contract.py` checks the pac
 reports native visual matching as NOT_RUN. None of those settles the listening, actual FL Studio,
 VoiceOver, or owner/reviewer judgments below. The true cold-frame p95 still misses 14 ms in both
 looks; this checklist cannot turn that performance result into a pass. See
-[the completion report](COMPLETION_REPORT_2026-09-28.md) and [the design system](NATIVE_EDITOR_DESIGN_SYSTEM.md).
+[the completion report](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/design/COMPLETION_REPORT_2026-09-28.md) and [the design system](NATIVE_EDITOR_DESIGN_SYSTEM.md).
 
 Run the rows in order. The “Backing” column points to the implementation or repeatable check,
 not a claim that the manual result has already passed.

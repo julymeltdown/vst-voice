@@ -31,7 +31,7 @@ These paths exist in code and are exercised by automated tests on macOS arm64. N
 
 In priority order. The [completion plan](plans/2026-10-18-project-completion-plan.md) turns these into work, and [functional readiness](plans/FUNCTIONAL_READINESS.md) tracks what a user can actually do today and the next smallest steps.
 
-1. **A production voicebank that is legally usable for its purpose.** No source has passed rights review. The 1,469 downloaded female recordings (VocalSet f1, Karoryfer Merry Orks, CMU ARCTIC SLT; local and untracked under `out/`) are unadmitted and have performer and personality rights `NOT_ESTABLISHED`. None of them contains Japanese consonant–vowel syllables, so none can become the Japanese bank that Usable Alpha requires. Usable Alpha and External Beta both wait on this.
+1. **A production voicebank that is legally usable for its purpose.** No source has passed rights review. The 1,469 female recordings in the October source census (VocalSet f1, Karoryfer Merry Orks, CMU ARCTIC SLT; local and untracked under `out/`) are unadmitted and have performer and personality rights `NOT_ESTABLISHED`. None of them contains Japanese consonant–vowel syllables, so none can become the Japanese bank that Usable Alpha requires. Usable Alpha and External Beta both wait on this.
 2. **Owner decisions:** source route and language; rights approver and EULA policy; named producer and distinct reviewer; whether to scope the first Beta to macOS.
 3. **Musical judgment:** no owner or listener verdict has been recorded on any rendered song. The frozen native observation kit (`tools/observation/open_native_song.py`, 95 files verified) is ready and waiting.
 4. **The unaided Usable Alpha journey** on the target Mac, run after 1–3.

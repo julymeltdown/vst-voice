@@ -9,14 +9,14 @@ release state is changed by this increment.
 
 Current operation checkpoint (2026-10-13): the native installed recipe export
 was implemented in `95d093b1` and repaired/observed on 2026-10-12; see
-[recipe completion](../reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.md).
-The new [signed sample export unit](INSTALLED_SAMPLE_EXPORT_2026-10-13.md)
+[recipe completion](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/reviews/INSTALLED_RECIPE_EXPORT_COMPLETION_2026-10-12.md).
+The new [signed sample export unit](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_SAMPLE_EXPORT_2026-10-13.md)
 connects signed consumed sample bytes to actual Final export artifacts. Older
 reference-only statements below describe their dated increments. The separate
-[local operation replay](INSTALLED_OPERATION_REPLAY_2026-10-13.md) now compares
+[local operation replay](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_OPERATION_REPLAY_2026-10-13.md) now compares
 installed sample/recipe observations and receipt semantics with fresh rendering
 through an externally pinned producer. Historical execution is not authenticated.
-The [installed procedural continuity observer](INSTALLED_PROCEDURAL_CONTINUITY_2026-10-15.md)
+The [installed procedural continuity observer](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_PROCEDURAL_CONTINUITY_2026-10-15.md)
 now retains actual whole, restarted-owned-window and resumed-stream PCM with raw
 float-word differences and derived plan projections. It is a selected procedural
 snapshot API prerequisite, not host or release-case acceptance; classical crops
@@ -24,7 +24,7 @@ and unavailable neural execution cannot substitute for stateful chunk evidence.
 Remaining continuity/measurement semantics, real authority and the canonical
 U45 hold stay open.
 
-The [backing-media export unit](INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md)
+The [backing-media export unit](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md)
 now connects the existing verified media staging path to installed sample/recipe
 export and replay. Version-2 observations bind each source-bearing audio track to
 its copied WAV and geometry; version 1 remains for exports without backing input.
@@ -293,7 +293,7 @@ and actual rendered artifacts; the existing U45 hold remains.
 
 ### Installed procedural continuity replay prerequisite (2026-10-15)
 
-The [closed continuity reader](INSTALLED_CONTINUITY_REPLAY_2026-10-15.md) now
+The [closed continuity reader](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_CONTINUITY_REPLAY_2026-10-15.md) now
 requires zero raw differences and matching derived phone projections, reads the
 held retained outputs and observation, and compares every field with fresh
 caller-pinned native execution. Coordinated PCM and phone-projection forgeries
@@ -311,7 +311,7 @@ requirements still need their own evidence and reviewed semantic integration.
 
 ### Installed scheduler/neighbor API prerequisite (2026-10-15)
 
-The [native scheduler regression](INSTALLED_SCHEDULER_INVALIDATION_2026-10-15.md)
+The [native scheduler regression](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_SCHEDULER_INVALIDATION_2026-10-15.md)
 connects one signed installed fixture to a single adjacent-lyric edit, changed
 pronunciation identity and freshly allocated performance objects, changed chunk
 identities, actual cold and warm scheduling, four submission-time stale refusals
@@ -332,7 +332,7 @@ remain unproven. U45_RECONCILIATION_HOLD/Alpha0of20/BetaBLOCKED remain unchanged
 
 ### Connected runtime sample-rate status repair (2026-10-15)
 
-The [sample-rate dossier](AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) reproduces a
+The [sample-rate dossier](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) reproduces a
 production status defect in both queued coordinator and Rendering runtime paths:
 48 kHz retained audio was not marked stale during a same-revision/quality
 44.1 kHz replacement. Current publication safety already refused it. The
@@ -356,7 +356,7 @@ Ready progress with a cleared stale flag as well as the replacement publication,
 and check both replacement handles before dereference. Full untargeted build
 5.031s and runtime56/coordinator38 =94 cases in9.830s pass. No product/library
 change, new counted case, forced-race reproduction or canonical promotion occurs.
-The [dossier](AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) pins exact review and
+The [dossier](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/AUDIO_FORMAT_STALE_STATUS_2026-10-15.md) pins exact review and
 separate follow-up evidence. Four host-harness files remain uncommitted in
 progress and are excluded from this unit. U45hold/Alpha0of20/BetaBLOCKED remain.
 
@@ -402,7 +402,7 @@ and the full goalACTIVE remain unchanged.
 
 ### Finished-worker publication admission (2026-10-15)
 
-The [publication dossier](PUBLICATION_ADMISSION_2026-10-15.md) closes the late
+The [publication dossier](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/PUBLICATION_ADMISSION_2026-10-15.md) closes the late
 request check-to-physical-publication interval. Same-revision replacement,
 cancel, idle reset and owner/debounce invalidation are forced after the early
 check; all four controlled-baseline cases overwrite retained accepted audio,
@@ -440,17 +440,17 @@ The [review supplement](INSTALLED_CLAP_SONG_REVIEW_2026-10-15.md) retains exact 
 
 ### 2026-10-15 — owned CLAP host-test fixtures, on a19a8dc9
 
-The [fixture dossier](CLAP_FIXTURE_OWNERSHIP_2026-10-15.md) closes the earlier review's temporary-fixture leak and stdout deletion-scope follow-up. Each native fixture gets a launcher-owned private root, injected TMPDIR/TMP/TEMP, pre-registered cleanup, canonical project/name/link admission and recipe containment. Song producer/package deletion stays inside the validated fixture; optional external artifact-output overrides are suppressed only for this disposable launcher. Three mocked ownership regressions produce five parent failures and pass on repair. Actual parent eight-method suite passes but leaves five directories/51files/83912602bytes in its newly created observation root. Intermediate repair and final registered CTest leave zero. Final CTest passes10.210s/11 Python methods (eight existing, three mocked); repeated/child native invocations are not additive. Python-only unit has no native rebuild; four unchanged binaries are retained and rehashed before/after. Read-only audit binds38 artifacts/eight inputs; intermediate source and hash-identical reconstructed initial wrapper are disclosed. Only newly owned disposable roots are cleaned; historical temp dependencies and frozen evidence remain. Durable retained-copy historical audit and exclusive output/semantic integration remain. c27d1d6f review is confirmed live; this/later admission/provenance/pitch units remain unreviewed. No source download/import, rights, human, listening, device, DAW or Windows acceptance is added. Real actors/permissions/coverage/QC, full classical/neural/R9/acoustic criteria and user/DAW/platform/release still remain. Canonical/original/.github/README Windows TODO/stash preservation and Alpha0of20/U45hold/BetaBLOCKED/full goalACTIVE remain.
+The [fixture dossier](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/CLAP_FIXTURE_OWNERSHIP_2026-10-15.md) closes the earlier review's temporary-fixture leak and stdout deletion-scope follow-up. Each native fixture gets a launcher-owned private root, injected TMPDIR/TMP/TEMP, pre-registered cleanup, canonical project/name/link admission and recipe containment. Song producer/package deletion stays inside the validated fixture; optional external artifact-output overrides are suppressed only for this disposable launcher. Three mocked ownership regressions produce five parent failures and pass on repair. Actual parent eight-method suite passes but leaves five directories/51files/83912602bytes in its newly created observation root. Intermediate repair and final registered CTest leave zero. Final CTest passes10.210s/11 Python methods (eight existing, three mocked); repeated/child native invocations are not additive. Python-only unit has no native rebuild; four unchanged binaries are retained and rehashed before/after. Read-only audit binds38 artifacts/eight inputs; intermediate source and hash-identical reconstructed initial wrapper are disclosed. Only newly owned disposable roots are cleaned; historical temp dependencies and frozen evidence remain. Durable retained-copy historical audit and exclusive output/semantic integration remain. c27d1d6f review is confirmed live; this/later admission/provenance/pitch units remain unreviewed. No source download/import, rights, human, listening, device, DAW or Windows acceptance is added. Real actors/permissions/coverage/QC, full classical/neural/R9/acoustic criteria and user/DAW/platform/release still remain. Canonical/original/.github/README Windows TODO/stash preservation and Alpha0of20/U45hold/BetaBLOCKED/full goalACTIVE remain.
 
 
 ### 2026-10-15 — independent publication-admission review, on e3ee6f00
 
-The [review dossier](PUBLICATION_ADMISSION_REVIEW_2026-10-15.md) records exact c27d1d6f APPROVE (engineering only, no required changes, two P3 findings), its full17040-byte verdict and read-only three-artifact/eight-input/three-Git-source audit. The peer independently confirms physical publication/revocation serialization, safe observed lock order, callbacks outside admission and lock-free audio reads. Retained source/build/test ordering is consistent; no new build/native/test execution or authenticated lineage is asserted by this metadata unit. Four late controls pin the currency recheck; a held-reset exclusion regression remains. Counters/outcome reports still run after physical-publication lock release, so cancel/replacement can see older published fields; atomic outcome-report commitment remains pending, while playback rejects revoked identities. No P3 is marked fixed. Original42-artifact publication root/canonical files remain frozen. c111cbac review is dispatched only after this terminal verdict; later bank diagnostic/admission/provenance-supplement/fixture-ownership units remain unreviewed. Internet originals remain unqualified; genuine roles/rights/coverage/QC/listening, classical/neural/R9 resources, acoustic criteria/tolerance and user/DAW/platform/release still remain. .github/README Windows TODO/originals/stash preservation, Alpha0of20/U45hold/BetaBLOCKED/full goalACTIVE remain.
+The [review dossier](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/PUBLICATION_ADMISSION_REVIEW_2026-10-15.md) records exact c27d1d6f APPROVE (engineering only, no required changes, two P3 findings), its full17040-byte verdict and read-only three-artifact/eight-input/three-Git-source audit. The peer independently confirms physical publication/revocation serialization, safe observed lock order, callbacks outside admission and lock-free audio reads. Retained source/build/test ordering is consistent; no new build/native/test execution or authenticated lineage is asserted by this metadata unit. Four late controls pin the currency recheck; a held-reset exclusion regression remains. Counters/outcome reports still run after physical-publication lock release, so cancel/replacement can see older published fields; atomic outcome-report commitment remains pending, while playback rejects revoked identities. No P3 is marked fixed. Original42-artifact publication root/canonical files remain frozen. c111cbac review is dispatched only after this terminal verdict; later bank diagnostic/admission/provenance-supplement/fixture-ownership units remain unreviewed. Internet originals remain unqualified; genuine roles/rights/coverage/QC/listening, classical/neural/R9 resources, acoustic criteria/tolerance and user/DAW/platform/release still remain. .github/README Windows TODO/originals/stash preservation, Alpha0of20/U45hold/BetaBLOCKED/full goalACTIVE remain.
 
 
 ### 2026-10-15 — locally verified publication outcomes, reconciliation hold retained
 
-[Publication outcome admission](PUBLICATION_OUTCOME_ADMISSION_2026-10-15.md) addresses the two c27 review P3s in a separate unit: terminal counters/reports share physical-publication admission, and a held-reset mutation distinguishes mutex exclusion from the final currency recheck. Six new cases, full Release build, eight focused entries (253 native cases/11 Python methods), nine runtime cases and Debug TSan48 pass. Initial child-binding gap is disclosed; a repeated final focused run binds actual editor host/plugin/native entries, without additive counts. The69-artifact/nine-input read-only audit passes. Current follow-up review is pending; exact c111cbac review has become APPROVE with three P3s, separate from this unit. No acoustic criterion, canonical tolerance, source/human/listening/DAW/Windows/resource acceptance is inferred. U45 remains held; Alpha0of20/BetaBLOCKED/full goalACTIVE and canonical/original/evidence/.github/README Windows TODO/stash preservation remain.
+[Publication outcome admission](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/PUBLICATION_OUTCOME_ADMISSION_2026-10-15.md) addresses the two c27 review P3s in a separate unit: terminal counters/reports share physical-publication admission, and a held-reset mutation distinguishes mutex exclusion from the final currency recheck. Six new cases, full Release build, eight focused entries (253 native cases/11 Python methods), nine runtime cases and Debug TSan48 pass. Initial child-binding gap is disclosed; a repeated final focused run binds actual editor host/plugin/native entries, without additive counts. The69-artifact/nine-input read-only audit passes. Current follow-up review is pending; exact c111cbac review has become APPROVE with three P3s, separate from this unit. No acoustic criterion, canonical tolerance, source/human/listening/DAW/Windows/resource acceptance is inferred. U45 remains held; Alpha0of20/BetaBLOCKED/full goalACTIVE and canonical/original/evidence/.github/README Windows TODO/stash preservation remain.
 
 
 ### 2026-10-15 — note-pitch WAV binding, reconciliation hold retained
@@ -594,19 +594,19 @@ Independent APPROVE exact 76896845, engineering only, no findings; prior d5ecc1f
 
 ### 2026-10-15 — Additional original f1 slow-dynamic recordings
 
-[Fresh acquisition and native measurements](FEMALE_F1_SLOW_SOURCE_EXTENSION_2026-10-15.md):40 additional unchanged VocalSet f1 originals,420.386575964s; fresh publisher CC-BY4 metadata, exact HTTP206/member CRC/SHA and40 native reader/40 native analysis checks. Combined1469 distinct originals (65f1 singing,272growls,1132speech); all1429 earlier originals rehash unchanged. Unchanged stability thresholds yield only3 measured intervals/0.708208617s, nearest60/65 and **zero near66**;28 clipped samples in one original. No coverage, source/actor/listening/QC/import/Beta approval.434artifacts/13pins; independent review pending. Alpha0/20; U45HELD; BetaBLOCKED; full goalACTIVE.
+[Fresh acquisition and native measurements](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/FEMALE_F1_SLOW_SOURCE_EXTENSION_2026-10-15.md):40 additional unchanged VocalSet f1 originals,420.386575964s; fresh publisher CC-BY4 metadata, exact HTTP206/member CRC/SHA and40 native reader/40 native analysis checks. Combined1469 distinct originals (65f1 singing,272growls,1132speech); all1429 earlier originals rehash unchanged. Unchanged stability thresholds yield only3 measured intervals/0.708208617s, nearest60/65 and **zero near66**;28 clipped samples in one original. No coverage, source/actor/listening/QC/import/Beta approval.434artifacts/13pins; independent review pending. Alpha0/20; U45HELD; BetaBLOCKED; full goalACTIVE.
 
 
 ### 2026-10-15 — Packet-integrity approval and native execution correction
 
-Exact21c04d3a independently APPROVED for engineering with one evidence P3/no required code change; reviewer independently reconstructed all312 donors from originals/automatic labels. [Correction and controlled repeats](SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.md):historical37/38 Python-method suites did invoke native integration; old no-native wording is superseded, old binary identities UNKNOWN. Separate exact21c37-method/1a38-method repeats PASS with an explicitly retained native executable/hash/embedded1a0cfceb literal.24artifacts/5pins; P3 correction addressed, closure review pending. Other optional notes/durable admissionOPEN; encoding/new acquisition independently unreviewed. No source/human/Beta approval; Alpha0/20,U45HELD,BetaBLOCKED,full goalACTIVE.
+Exact21c04d3a independently APPROVED for engineering with one evidence P3/no required code change; reviewer independently reconstructed all312 donors from originals/automatic labels. [Correction and controlled repeats](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/SOURCE_INTAKE_NATIVE_EVIDENCE_CORRECTION_2026-10-15.md):historical37/38 Python-method suites did invoke native integration; old no-native wording is superseded, old binary identities UNKNOWN. Separate exact21c37-method/1a38-method repeats PASS with an explicitly retained native executable/hash/embedded1a0cfceb literal.24artifacts/5pins; P3 correction addressed, closure review pending. Other optional notes/durable admissionOPEN; encoding/new acquisition independently unreviewed. No source/human/Beta approval; Alpha0/20,U45HELD,BetaBLOCKED,full goalACTIVE.
 
 
 ### 2026-10-15 — Installed export with backing media
 
-[Backing-media export and replay](INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md) replaces the blanket installed sample/recipe refusal with existing verified staging/rendering and closed v2 track-to-WAV bindings. Unchanged production refuses both real family cases; final full build, two focused CTest lanes/68 native cases and10 mocked Python policy methods PASS. Separate synthetic sample export/replay and changed-input/coherent-geometry-forgery refusals retained; original87-artifact/seven-pin fixture unchanged.124artifacts/five pins; independent review pending. No internet audio/source/human acceptance, full-suite or release claim. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.
+[Backing-media export and replay](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_BACKING_MEDIA_EXPORT_2026-10-15.md) replaces the blanket installed sample/recipe refusal with existing verified staging/rendering and closed v2 track-to-WAV bindings. Unchanged production refuses both real family cases; final full build, two focused CTest lanes/68 native cases and10 mocked Python policy methods PASS. Separate synthetic sample export/replay and changed-input/coherent-geometry-forgery refusals retained; original87-artifact/seven-pin fixture unchanged.124artifacts/five pins; independent review pending. No internet audio/source/human acceptance, full-suite or release claim. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.
 
 
 ### 2026-10-15 — Backing-media independent approval and ASan/UBSan
 
-[Verification follow-up](INSTALLED_BACKING_MEDIA_VERIFICATION_2026-10-15.md): exact67e3e68b independently APPROVED for engineering, zero findings/no required changes. Full dependent sanitizer build at code-equivalent6b0acfb5 PASS; focused ASan/UBSan CTest2/2,38+30native cases PASS in180.436s. Initial unsupported leak-runtime abort and evidence-copy path failure retained; leak detection UNAVAILABLE.41artifacts/six pins; original124/five root unchanged. Path-resolution/test-scope wording clarified, other optional notes retained. No full-suite/TSan/source/human/release acceptance. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.
+[Verification follow-up](https://github.com/julymeltdown/vst-voice/blob/9b5da0c744de9b70889c88cc604f24afc17abe9a/docs/implementation/INSTALLED_BACKING_MEDIA_VERIFICATION_2026-10-15.md): exact67e3e68b independently APPROVED for engineering, zero findings/no required changes. Full dependent sanitizer build at code-equivalent6b0acfb5 PASS; focused ASan/UBSan CTest2/2,38+30native cases PASS in180.436s. Initial unsupported leak-runtime abort and evidence-copy path failure retained; leak detection UNAVAILABLE.41artifacts/six pins; original124/five root unchanged. Path-resolution/test-scope wording clarified, other optional notes retained. No full-suite/TSan/source/human/release acceptance. Alpha0/20; U45 HELD; Beta BLOCKED; full goal ACTIVE.

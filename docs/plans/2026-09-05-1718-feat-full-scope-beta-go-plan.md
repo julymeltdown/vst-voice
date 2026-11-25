@@ -108,9 +108,9 @@ No report capability is deferred beyond GO. Japanese-first is implementation ord
 
 The report does not require every cited vendor, universal model compatibility, proprietary voice copying, or an unlimited animation system. Those remain outside this execution scope. Specific DSP/model/dictionary choices are qualification outputs of named units, not excuses to delete their required outcomes.
 
-The earlier [creator plan](2026-09-01-0303-feat-creator-workflow-parity-plan.md) supplies reusable schema, typed-dynamics, style, parser, lifecycle, inspector and accessibility detail. Its Japanese-only scope-ratification authority, MIDI deferral, preservation of defective duplication/slur behavior, restricted expression-selector scope, and prohibition on changing External Beta validators are superseded. Its historical studies remain NOT_RUN unless actually executed.
+The earlier [creator plan](https://github.com/julymeltdown/vst-voice/blob/41dc63fd0b7fd3d5945666b8026248a0b5a304fd/docs/plans/2026-09-01-0303-feat-creator-workflow-parity-plan.md) supplies reusable schema, typed-dynamics, style, parser, lifecycle, inspector and accessibility detail. Its Japanese-only scope-ratification authority, MIDI deferral, preservation of defective duplication/slur behavior, restricted expression-selector scope, and prohibition on changing External Beta validators are superseded. Its historical studies remain NOT_RUN unless actually executed.
 
-The [production-readiness plan](2026-08-30-2246-feat-production-readiness-completion-plan.md) still owns the unfinished U60 acceptance and existing release safety work. New character resources are not permission to ship old demo assets. Beta GO does not require completing its later external-cohort/public-activation events before that cohort can begin.
+The [production-readiness plan](https://github.com/julymeltdown/vst-voice/blob/41dc63fd0b7fd3d5945666b8026248a0b5a304fd/docs/plans/2026-08-30-2246-feat-production-readiness-completion-plan.md) still owns the unfinished U60 acceptance and existing release safety work. New character resources are not permission to ship old demo assets. Beta GO does not require completing its later external-cohort/public-activation events before that cohort can begin.
 
 ---
 
