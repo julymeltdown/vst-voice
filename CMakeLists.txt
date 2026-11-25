@@ -868,6 +868,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   target_sources(seam_native_ui PRIVATE
     libs/seam-native-ui/src/design/background_wash.cpp
     libs/seam-native-ui/src/design/design_tokens.cpp
+    libs/seam-native-ui/src/design/expression_controls.cpp
     libs/seam-native-ui/src/design/shell_strings.cpp
     libs/seam-native-ui/src/design/character_surface.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp

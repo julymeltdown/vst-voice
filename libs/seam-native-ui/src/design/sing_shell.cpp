@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/sing_shell.hpp"
+#include "expression_controls.hpp"
 #include "seam/native_ui/design/background_wash.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/design/text_fit.hpp"
@@ -354,43 +355,19 @@ void icon(Canvas2D& c, Icon kind, ui::Point center, double size, Color color) {
   }
 }
 
-struct KnobModel final {
-  ui::ExpressionChannelDescriptor descriptor;
-  std::string label;
-  double value{0.0};
-  std::string refusal;
-  std::size_t storedPoints{0U};
-  bool supported{false};
-};
+constexpr auto kPhonemeTab = kExpressionControls.size() + 1U;
+constexpr auto kLaneTabCount = kPhonemeTab + 1U;
 
-std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
-  std::array<KnobModel, 6U> knobs;
-  static constexpr std::array<Str, 6U> kLabels{Str::Formant, Str::Breath, Str::Tension,
-                                                       Str::Air, Str::Gender, Str::Growl};
-  for (std::size_t i = 0U; i < knobs.size(); ++i) {
-    const auto channel = ui::expressionChannelAt(i);
-    knobs[i].descriptor = ui::describeExpressionChannel(channel);
-    knobs[i].label = tr(kLabels[i]);
-    knobs[i].value = knobs[i].descriptor.neutral;
-    knobs[i].refusal = state.inspector.valid ? "" : tr(Str::NoVocalTrackIsSelected);
-    for (const auto& row : state.inspector.expressionCapabilities) {
-      if (row.channel != channel) continue;
-      knobs[i].supported = row.refusal.empty();
-      knobs[i].value = row.valueAtPlayhead;
-      knobs[i].refusal = row.refusal;
-      knobs[i].storedPoints = row.storedPoints;
-    }
-    // The knob still reads the region's edge value, but an edit "at the playhead" is refused.
-    if (knobs[i].refusal.empty() && !state.playheadInsideRegion)
-      knobs[i].refusal = tr(Str::ThePlayheadIsOutsideTheSelected);
-  }
-  return knobs;
+ExpressionControl laneTab(std::size_t index) {
+  if (index == 0U) return {"dynamics", Str::Dynamics};
+  if (index == kPhonemeTab) return {"phonemes", Str::Phonemes};
+  return kExpressionControls[index - 1U];
 }
 
 // A persisted value in the unit a musician reads: semitones stay semitones, shares become percent.
-std::pair<std::string, std::string> displayValue(const KnobModel& knob) {
-  if (knob.descriptor.unit == "semitones") return {format("%.1f", knob.value), tr(Str::ST)};
-  return {format("%.1f", knob.value * 100.0), "%"};
+std::pair<std::string, std::string> displayValue(std::string_view unit, double value) {
+  if (unit == "semitones") return {format("%.1f", value), tr(Str::ST)};
+  return {format("%.1f", value * 100.0), "%"};
 }
 
 std::string lowercase(std::string_view text) {
@@ -1608,7 +1585,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   animator_.advance(characterState_, frameNow_, reduceMotion);
   motion_ = animator_.motion();
   motionShown_ = false;
-  const auto knobs = knobModels(state);
+  const auto knobs = expressionKnobs(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty() ||
                        (t.mode == DesignMode::Cerulean && !knobs[i].supported);
   paintHeader(*c, t, state, playhead);
@@ -2632,7 +2609,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   for (const auto& badge : badges) {
     c.fill(Path::capsule(badge.bounds), t.color.surfaceRaised);
     c.stroke(Path::capsule(badge.bounds), t.color.focusRing, StrokeStyle{1.0});
-    c.text(badge.bounds, "\xC3\x97" + std::to_string(badge.members),
+    c.text(badge.bounds, "×" + std::to_string(badge.members),
            style(FontRole::UiBold, t.type.label, 0.0, TextAlign::Center), t.color.focusRing);
   }
   c.restore();
@@ -2754,14 +2731,12 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
 void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
                           const EditorSceneState& state) const {
   const auto& l = layout_;
-  static constexpr std::array<Str, 8U> kTabs{Str::Dynamics, Str::Formant, Str::Breath, Str::Tension,
-                                             Str::Air,      Str::Gender,  Str::Growl,  Str::Phonemes};
   const auto open = state.expressionLabelVisible();
-  const auto selected = technicalLane_ ? 7U
+  const auto selected = technicalLane_ ? kPhonemeTab
                         : open         ? ui::expressionChannelIndex(state.expression.channel) + 1U
                                        : 99U;
   const auto tabWidth = singLaneTabWidth(l);
-  for (std::size_t i = 0U; i < kTabs.size(); ++i) {
+  for (std::size_t i = 0U; i < kLaneTabCount; ++i) {
     const ui::Rect tab{l.laneTabs.x + i * (tabWidth + 4.0), l.laneTabs.y, tabWidth, l.laneTabs.height};
     const auto active = i == selected;
     if (active) {
@@ -2773,16 +2748,16 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     } else {
       c.stroke(Path::roundedRect(tab, 6.0), withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
     }
-    c.text(tab, tr(kTabs[i]),
-           fittedToTen(c, tr(kTabs[i]),
+    c.text(tab, tr(laneTab(i).label),
+           fittedToTen(c, tr(laneTab(i).label),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   tab.width - 8.0),
            active ? t.color.accent : t.color.textSecondary);
   }
-  const ui::Rect info{l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0, l.laneTabs.y,
+  const ui::Rect info{l.laneTabs.x + kLaneTabCount * (tabWidth + 4.0) + 8.0, l.laneTabs.y,
                       std::max(0.0, (l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x - 8.0
                                                                      : l.laneTabs.right()) -
-                                        (l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0)),
+                                        (l.laneTabs.x + kLaneTabCount * (tabWidth + 4.0) + 8.0)),
                       l.laneTabs.height};
   const auto plot = l.laneTimePlot;
   sunken(c, t, l.lanePlot, 6.0);
@@ -3491,7 +3466,7 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
 
 void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
   const auto& l = layout_;
-  const auto knobs = knobModels(state);
+  const auto knobs = expressionKnobs(state);
   if (t.mode == DesignMode::Cerulean &&
       std::none_of(knobs.begin(), knobs.end(), [](const auto& k) { return k.supported; })) {
     const auto& r = l.expression;
@@ -3508,7 +3483,7 @@ void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorScene
     const auto cell = l.knob[i];
     const auto refused = !k.refusal.empty();
     const auto selectedKnob = i == selectedChannel;
-    c.text({cell.x, cell.y, cell.width, 16.0}, k.label,
+    c.text({cell.x, cell.y, cell.width, 16.0}, tr(kExpressionControls[i].label),
            style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Center, true),
            selectedKnob ? t.color.accent : t.color.textSecondary);
     // Label (16) + knob (52) + value caption (12) leave a clear gap before the next row's label.
@@ -3559,9 +3534,7 @@ void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorScene
              t.color.knobPointer);
     }
     c.restore();
-    KnobModel shown = k;
-    shown.value = value;
-    const auto [number, unitText] = displayValue(shown);
+    const auto [number, unitText] = displayValue(k.descriptor.unit, value);
     c.text({kc.x - r + 6.0, kc.y - 11.0, (r - 6.0) * 2.0, 22.0}, refused ? tr(Str::Text2) : number,
            style(FontRole::UiSemibold, number.size() > 5 ? 13.0 : t.type.knobValue, 0.0,
                  TextAlign::Center),
@@ -4550,19 +4523,6 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
 }
 
 
-core::Result<void> SingShell::nudge(NativeEditorController& controller, std::size_t index, int steps) {
-  if (steps == 0) return core::success();
-  switch (ui::expressionChannelAt(index)) {
-    case ui::ExpressionChannel::Formant: return controller.nudgeFormantShift(steps);
-    case ui::ExpressionChannel::Breathiness: return controller.nudgeBreathiness(steps);
-    case ui::ExpressionChannel::Tension: return controller.nudgeTension(steps);
-    case ui::ExpressionChannel::Airiness: return controller.nudgeAiriness(steps);
-    case ui::ExpressionChannel::Gender: return controller.nudgeGender(steps);
-    case ui::ExpressionChannel::Growl: return controller.nudgeGrowl(steps);
-  }
-  return core::success();
-}
-
 core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
                                           const PointerEvent& event) {
   // The shell is the only editor surface: with nothing presented there is nothing under the
@@ -4691,10 +4651,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
                            .revision = controller.documentRevision(),
                            .region = controller.selectedRegion(),
                            .playhead = controller.playheadTick()};
-      static constexpr std::array<const char*, 6U> kKnobIds{
-          "shell.knob.formant", "shell.knob.breath", "shell.knob.tension",
-          "shell.knob.air",     "shell.knob.gender", "shell.knob.growl"};
-      takeSemanticFocus(controller, kKnobIds[i]);
+      takeSemanticFocus(controller, std::string{"shell.knob."} + kExpressionControls[i].id);
       return core::success();
     }
     return std::nullopt;
@@ -4807,12 +4764,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       return opened;
     }
     const auto tabWidth = singLaneTabWidth(l);
-    for (std::size_t i = 0U; i < 8U; ++i) {
+    for (std::size_t i = 0U; i < kLaneTabCount; ++i) {
       const ui::Rect tab{l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0), l.laneTabs.y,
                          tabWidth, l.laneTabs.height};
       if (!contains(tab, p)) continue;
       if (i == 0U) return controller.openDynamicsInspector();
-      if (i == 7U) return showTechnicalLanes(controller);
+      if (i == kPhonemeTab) return showTechnicalLanes(controller);
       technicalLane_ = false;
       applyGeometry(controller);
       return controller.openExpressionLane(ui::expressionChannelAt(i - 1U));
@@ -4922,7 +4879,7 @@ core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
         controller.selectedRegion() != drag.region || controller.playheadTick() != drag.playhead)
       return core::success();
     // One gesture is one command, so one undo step.
-    if (drag.steps != 0) return nudge(controller, drag.index, drag.steps);
+    if (drag.steps != 0) return nudgeExpressionKnob(controller, drag.index, drag.steps);
     const auto opened = controller.openExpressionLane(ui::expressionChannelAt(drag.index));
     return opened;
   }
@@ -4963,7 +4920,7 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
       const auto steps = static_cast<int>(scrollAccumulator_ / 8.0);
       if (steps != 0) {
         scrollAccumulator_ -= steps * 8.0;
-        static_cast<void>(nudge(controller, i, -steps));
+        static_cast<void>(nudgeExpressionKnob(controller, i, -steps));
       }
       return true;
     }
@@ -5504,23 +5461,21 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
 
   // Lane selector and the hosted lane.
-  static constexpr std::array<Str, 8U> kLanes{Str::Dynamics, Str::Formant, Str::Breath, Str::Tension,
-                                              Str::Air,      Str::Gender,  Str::Growl,  Str::Phonemes};
   const auto open = state.expressionLabelVisible();
-  const auto selectedLane = technicalLane_ ? 7U
+  const auto selectedLane = technicalLane_ ? kPhonemeTab
                             : open ? ui::expressionChannelIndex(state.expression.channel) + 1U
                                    : 99U;
   const auto tabWidth = singLaneTabWidth(l);
-  for (std::size_t i = 0U; i < kLanes.size(); ++i) {
-    add(SemanticNode{.id = "shell.lane-tab." + lowercase(englishShellString(kLanes[i])),
+  for (std::size_t i = 0U; i < kLaneTabCount; ++i) {
+    add(SemanticNode{.id = std::string{"shell.lane-tab."} + laneTab(i).id,
                      .role = SemanticRole::Tab,
-                     .name = trf(Str::NamedLane, {tr(kLanes[i])}),
+                     .name = trf(Str::NamedLane, {tr(laneTab(i).label)}),
                      .bounds = {l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0),
                                 l.laneTabs.y, tabWidth, l.laneTabs.height},
                      .selected = i == selectedLane,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
                      .description = i == 0U   ? std::string{tr(Str::OpensTheDynamicsEditor)}
-                                    : i == 7U ? std::string{tr(Str::ShowsThePhonemeUnitAndSeam)}
+                                    : i == kPhonemeTab ? std::string{tr(Str::ShowsThePhonemeUnitAndSeam)}
                                               : std::string{}});
   }
   if (technicalLane_) {
@@ -5593,18 +5548,18 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                        .bounds = l.singerMenu,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
                        .description = tr(Str::OpensTheSingerSReviewsInspectors)});
-    const auto knobs = knobModels(state);
+    const auto knobs = expressionKnobs(state);
     for (std::size_t i = 0U; i < knobs.size(); ++i) {
       const auto& k = knobs[i];
       if (mode() == DesignMode::Cerulean && !k.supported) continue;
       const auto percent = k.descriptor.unit != "semitones";
       const auto scale = percent ? 100.0 : 1.0;
-      const auto [number, unit] = displayValue(k);
+      const auto [number, unit] = displayValue(k.descriptor.unit, k.value);
       const auto refused = !k.refusal.empty();
       add(SemanticNode{
-          .id = "shell.knob." + lowercase(k.label),
+          .id = std::string{"shell.knob."} + kExpressionControls[i].id,
           .role = SemanticRole::Slider,
-          .name = k.label,
+          .name = tr(kExpressionControls[i].label),
           .value = refused ? k.refusal : (percent ? number + "%" : trf(Str::Semitones, {number})),
           .bounds = l.knob[i],
           .enabled = !refused,
@@ -6042,16 +5997,13 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     setInspectorOpen(controller, !layout_.inspectorOpen);
     result = core::success();
   } else if (id.starts_with("shell.lane-tab.") && activate) {
-    static constexpr std::array<std::string_view, 6U> kChannels{"formant", "breath", "tension",
-                                                                "air", "gender", "growl"};
     const auto name = id.substr(std::string_view{"shell.lane-tab."}.size());
     if (name == "dynamics") result = controller.openDynamicsInspector();
     if (name == "phonemes") result = showTechnicalLanes(controller);
-    for (std::size_t i = 0U; i < kChannels.size(); ++i) {
-      if (name != kChannels[i]) continue;
+    if (const auto index = expressionControlIndex(name)) {
       technicalLane_ = false;
       if (presented_) applyGeometry(controller);
-      result = controller.openExpressionLane(ui::expressionChannelAt(i));
+      result = controller.openExpressionLane(ui::expressionChannelAt(*index));
     }
   } else if (id == "shell.export.bounce" && activate) {
     result = controller.toggleBounceTiming();
@@ -6060,20 +6012,17 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     for (std::size_t i = 0U; i < kTechnicalBandIds.size(); ++i)
       if (name == kTechnicalBandIds[i]) result = toggleTechnicalBand(controller, i);
   } else if (id.starts_with("shell.knob.")) {
-    static constexpr std::array<std::string_view, 6U> kKnobs{"formant", "breath", "tension",
-                                                             "air", "gender", "growl"};
     const auto name = id.substr(std::string_view{"shell.knob."}.size());
-    for (std::size_t i = 0U; i < kKnobs.size(); ++i) {
-      if (name != kKnobs[i]) continue;
-      if (knobRefused_[i]) {
+    if (const auto index = expressionControlIndex(name)) {
+      if (knobRefused_[*index]) {
         result = core::failure(core::ErrorCode::Unsupported,
                                tr(Str::TheSelectedSingerCannotApplyThis));
       } else if (action == SemanticAction::Increment) {
-        result = nudge(controller, i, 1);
+        result = nudgeExpressionKnob(controller, *index, 1);
       } else if (action == SemanticAction::Decrement) {
-        result = nudge(controller, i, -1);
+        result = nudgeExpressionKnob(controller, *index, -1);
       } else if (activate) {
-        result = controller.openExpressionLane(ui::expressionChannelAt(i));
+        result = controller.openExpressionLane(ui::expressionChannelAt(*index));
       }
     }
   }

@@ -826,6 +826,34 @@ TEST_CASE("the shell accessibility tree exposes its controls with real roles in 
   CHECK(find("arrangement.panel") == nullptr);
 }
 
+TEST_CASE("localized expression knobs keep their IDs for pointer focus and semantic edits") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.shell.setLanguage("ko", false);
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto& tree = f.shell.accessibilityTree();
+  for (const auto* id : {"formant", "breath", "tension", "air", "gender", "growl"}) {
+    CHECK(tree.publishes(std::string{"shell.knob."} + id));
+    CHECK(tree.publishes(std::string{"shell.lane-tab."} + id));
+  }
+  const auto bounds = f.shell.layout().knob[4];
+  const auto click = press({bounds.x + bounds.width / 2, bounds.y + bounds.height / 2});
+  CHECK(f.shell.pointerDown(f.controller, click).hasValue());
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* focused = tree.focusedNode();
+  CHECK(focused != nullptr);
+  CHECK(focused->id == "shell.knob.gender");
+  CHECK(focused->name == "젠더");
+  CHECK(f.shell.pointerUp(f.controller, click).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::Increment).hasValue());
+  CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().size() == 1U);
+  CHECK(f.session.undo());
+  CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().empty());
+}
+
 TEST_CASE("shell accessibility actions edit through the same commands as pointer input") {
   using native_ui::SemanticAction;
   ShellFixture f;

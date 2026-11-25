@@ -31,6 +31,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = ROOT / "libs/seam-native-ui/src/design"
 DESIGN_HEADERS = ROOT / "libs/seam-native-ui/include/seam/native_ui/design"
 SOURCES = [
+    "expression_controls.cpp",
+    "expression_controls.hpp",
     "sing_shell.cpp",
     "shell_overlays.cpp",
     "tune_workspace.cpp",

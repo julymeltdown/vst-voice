@@ -595,7 +595,6 @@ private:
   // Closes whichever overlay is presented (workspace switch): its own close command, and an open
   // field is cancelled.
   void dismissOverlay(NativeEditorController& controller);
-  core::Result<void> nudge(NativeEditorController& controller, std::size_t index, int steps);
   core::Result<void> shellPointerDown(NativeEditorController& controller, const PointerEvent& event);
   core::Result<void> performSemantic(NativeEditorController& controller, std::string_view id,
                                      SemanticAction action);

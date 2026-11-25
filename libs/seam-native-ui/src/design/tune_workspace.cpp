@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/shell_workspace.hpp"
+#include "expression_controls.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/ui/expression_lane.hpp"
@@ -35,10 +36,6 @@ using paint::TextStyle;
 constexpr double kPi = std::numbers::pi;
 constexpr Color kWhite{255, 255, 255, 255};
 constexpr std::size_t kChannels = ui::kExpressionChannelCount;
-constexpr std::array<Str, kChannels> kLabels{Str::Formant, Str::Breath, Str::Tension,
-                                                     Str::Air,     Str::Gender, Str::Growl};
-constexpr std::array<const char*, kChannels> kIds{"formant", "breath", "tension",
-                                                  "air",     "gender", "growl"};
 // Pixels of vertical travel per knob step, and wheel distance per step, as on the SING rack.
 constexpr double kKnobStepPixels = 12.0;
 constexpr double kScrollStep = 8.0;
@@ -126,50 +123,10 @@ Color channelColor(const DesignTokens& t, std::size_t index) {
 
 // ---- Expression knobs (the same read model and refusals as the SING rack) ----------------------
 
-struct KnobModel final {
-  ui::ExpressionChannelDescriptor descriptor;
-  double value{0.0};
-  std::string refusal;
-  std::size_t storedPoints{0U};
-};
-
-std::array<KnobModel, kChannels> knobModels(const EditorSceneState& state) {
-  std::array<KnobModel, kChannels> knobs;
-  for (std::size_t i = 0U; i < knobs.size(); ++i) {
-    const auto channel = ui::expressionChannelAt(i);
-    knobs[i].descriptor = ui::describeExpressionChannel(channel);
-    knobs[i].value = knobs[i].descriptor.neutral;
-    knobs[i].refusal = state.inspector.valid ? "" : tr(Str::NoVocalTrackIsSelected);
-    for (const auto& row : state.inspector.expressionCapabilities) {
-      if (row.channel != channel) continue;
-      knobs[i].value = row.valueAtPlayhead;
-      knobs[i].refusal = row.refusal;
-      knobs[i].storedPoints = row.storedPoints;
-    }
-    if (knobs[i].refusal.empty() && !state.playheadInsideRegion)
-      knobs[i].refusal = tr(Str::ThePlayheadIsOutsideTheSelected);
-  }
-  return knobs;
-}
-
 bool semitones(const ui::ExpressionChannelDescriptor& d) { return d.unit == "semitones"; }
 
 std::string valueText(const ui::ExpressionChannelDescriptor& d, double value) {
   return semitones(d) ? format("%.1f st", value) : format("%.0f%%", value * 100.0);
-}
-
-// The SING knob path: one channel-specific command per step count, so one gesture is one undo step.
-core::Result<void> nudge(NativeEditorController& controller, std::size_t index, int steps) {
-  if (steps == 0) return core::success();
-  switch (ui::expressionChannelAt(index)) {
-    case ui::ExpressionChannel::Formant: return controller.nudgeFormantShift(steps);
-    case ui::ExpressionChannel::Breathiness: return controller.nudgeBreathiness(steps);
-    case ui::ExpressionChannel::Tension: return controller.nudgeTension(steps);
-    case ui::ExpressionChannel::Airiness: return controller.nudgeAiriness(steps);
-    case ui::ExpressionChannel::Gender: return controller.nudgeGender(steps);
-    case ui::ExpressionChannel::Growl: return controller.nudgeGrowl(steps);
-  }
-  return core::success();
 }
 
 std::optional<std::size_t> activeChannel(const EditorSceneState& state) {
@@ -603,7 +560,7 @@ public:
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
              const EditorSceneState& state, ui::Rect area) const override {
     const auto l = solveTuneLayout(area, view_);
-    const auto knobs = knobModels(state);
+    const auto knobs = expressionKnobs(state);
     // The body covers SING's editor and lane cards completely, as EXPORT does.
     c.fill(Path::roundedRect(area, t.shape.card), t.color.canvas);
     glassPanel(c, t, area, t.shape.card);
@@ -628,13 +585,13 @@ public:
     }
     for (std::size_t i = 0U; i < kChannels; ++i) {
       if (l.compact || !contains(l.chip[i], p)) continue;
-      focusRequest_ = std::string{"shell.tune.channel."} + kIds[i];
+      focusRequest_ = std::string{"shell.tune.channel."} + kExpressionControls[i].id;
       return controller.openExpressionLane(ui::expressionChannelAt(i));
     }
     for (std::size_t i = 0U; i < kChannels; ++i) {
       if (!contains(l.knob[i], p)) continue;
-      focusRequest_ = std::string{"shell.tune.knob."} + kIds[i];
-      if (!knobModels(controller.sceneState())[i].refusal.empty()) return core::success();
+      focusRequest_ = std::string{"shell.tune.knob."} + kExpressionControls[i].id;
+      if (!expressionKnobs(controller.sceneState())[i].refusal.empty()) return core::success();
       knobDrag_ = KnobDrag{.index = i, .startY = p.y, .revision = controller.documentRevision(),
                            .region = controller.selectedRegion(),
                            .playhead = controller.playheadTick()};
@@ -740,7 +697,7 @@ public:
       if (controller.documentRevision() != drag.revision ||
           controller.selectedRegion() != drag.region || controller.playheadTick() != drag.playhead)
         return core::success();
-      if (drag.steps != 0) return nudge(controller, drag.index, drag.steps);
+      if (drag.steps != 0) return nudgeExpressionKnob(controller, drag.index, drag.steps);
       return controller.openExpressionLane(ui::expressionChannelAt(drag.index));
     }
     if (fieldDrag_) {
@@ -769,12 +726,12 @@ public:
     const auto l = solveTuneLayout(area, view_);
     for (std::size_t i = 0U; i < kChannels; ++i) {
       if (!contains(l.knob[i], anchor)) continue;
-      if (gestureActive() || !knobModels(controller.sceneState())[i].refusal.empty()) return true;
+      if (gestureActive() || !expressionKnobs(controller.sceneState())[i].refusal.empty()) return true;
       scrollAccumulator_ += deltaY;
       const auto steps = static_cast<int>(scrollAccumulator_ / kScrollStep);
       if (steps != 0) {
         scrollAccumulator_ -= steps * kScrollStep;
-        static_cast<void>(nudge(controller, i, -steps));
+        static_cast<void>(nudgeExpressionKnob(controller, i, -steps));
       }
       return true;
     }
@@ -896,13 +853,13 @@ private:
                    const TuneLayout& l) const;
   void paintGraph(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
                   const EditorSceneState& state, const TuneLayout& l,
-                  const std::array<KnobModel, kChannels>& knobs) const;
+                  const std::array<ExpressionKnob, kChannels>& knobs) const;
   void paintPitch(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
                   const EditorSceneState& state, const TuneLayout& l) const;
   void paintVibrato(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
                     const TuneLayout& l) const;
   void paintMacro(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
-                  const TuneLayout& l, const std::array<KnobModel, kChannels>& knobs) const;
+                  const TuneLayout& l, const std::array<ExpressionKnob, kChannels>& knobs) const;
 
   View view_{View::Curves};
   std::optional<KnobDrag> knobDrag_;
@@ -947,11 +904,11 @@ void TuneWorkspace::paintHeader(Canvas2D& c, const DesignTokens& t, const Editor
       tab(c, t, l.view[i], tr(kViewLabels[i]), view_ == static_cast<View>(i), std::nullopt);
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
-      tab(c, t, l.chip[i], tr(kLabels[i]), active == i, channelColor(t, i));
+      tab(c, t, l.chip[i], tr(kExpressionControls[i].label), active == i, channelColor(t, i));
   }
   std::string caption = active ? tr(Str::DragToDrawShiftClickRemoves)
                                : tr(Str::ChooseAChannelToEditIts);
-  if (l.compact) caption = active ? trf(Str::NamedSelected, {tr(kLabels[*active])}) : tr(Str::PickAKnob);
+  if (l.compact) caption = active ? trf(Str::NamedSelected, {tr(kExpressionControls[*active].label)}) : tr(Str::PickAKnob);
   c.text(l.caption, caption, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          t.color.textSecondary);
 }
@@ -959,7 +916,7 @@ void TuneWorkspace::paintHeader(Canvas2D& c, const DesignTokens& t, const Editor
 void TuneWorkspace::paintGraph(Canvas2D& c, const DesignTokens& t,
                                const NativeEditorController& controller,
                                const EditorSceneState& state, const TuneLayout& l,
-                               const std::array<KnobModel, kChannels>& knobs) const {
+                               const std::array<ExpressionKnob, kChannels>& knobs) const {
   glassPanel(c, t, l.graph, t.shape.card);
   const auto active = activeChannel(state);
   const auto plot = l.graphPlot;
@@ -973,10 +930,10 @@ void TuneWorkspace::paintGraph(Canvas2D& c, const DesignTokens& t,
   } else if (active) {
     const auto& k = knobs[*active];
     caption = trf(state.expression.draftChanged ? Str::CurveCaptionEditing : Str::CurveCaption,
-                  {tr(kLabels[*active]), valueText(k.descriptor, state.expression.valueAtPlayhead),
+                  {tr(kExpressionControls[*active].label), valueText(k.descriptor, state.expression.valueAtPlayhead),
                    std::to_string(state.expression.points.size())});
     if (!state.expression.refusal.empty()) {
-      caption = trf(Str::NamedRefusal, {tr(kLabels[*active]), state.expression.refusal});
+      caption = trf(Str::NamedRefusal, {tr(kExpressionControls[*active].label), state.expression.refusal});
       captionColor = t.color.warning;
     }
   } else {
@@ -1320,7 +1277,7 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
 
 void TuneWorkspace::paintMacro(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                                const TuneLayout& l,
-                               const std::array<KnobModel, kChannels>& knobs) const {
+                               const std::array<ExpressionKnob, kChannels>& knobs) const {
   glassPanel(c, t, l.macro, t.shape.control * 1.5);
   const auto active = activeChannel(state);
   for (std::size_t i = 0U; i < kChannels; ++i) {
@@ -1356,8 +1313,8 @@ void TuneWorkspace::paintMacro(Canvas2D& c, const DesignTokens& t, const EditorS
       const auto x = center.x + radius + 5.0;
       valueRect = {x, center.y - 7.0, std::max(0.0, cell.right() - 3.0 - x), 14.0};
     }
-    c.text(labelRect, tr(kLabels[i]),
-           fitted(c, tr(kLabels[i]),
+    c.text(labelRect, tr(kExpressionControls[i].label),
+           fitted(c, tr(kExpressionControls[i].label),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
                         wide ? TextAlign::Left : TextAlign::Center, true),
                   labelRect.width),
@@ -1406,7 +1363,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                               const EditorSceneState& state, ui::Rect area,
                               std::vector<SemanticNode>& out) const {
   const auto l = solveTuneLayout(area, view_);
-  const auto knobs = knobModels(state);
+  const auto knobs = expressionKnobs(state);
   const auto active = activeChannel(state);
   const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
   if (l.compact) {
@@ -1422,9 +1379,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
           .description = tr(kViewDescriptions[i])});
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
-      out.push_back(SemanticNode{.id = std::string{"shell.tune.channel."} + kIds[i],
+      out.push_back(SemanticNode{.id = std::string{"shell.tune.channel."} + kExpressionControls[i].id,
                                  .role = SemanticRole::Tab,
-                                 .name = trf(Str::NamedChannel, {tr(kLabels[i])}),
+                                 .name = trf(Str::NamedChannel, {tr(kExpressionControls[i].label)}),
                                  .bounds = l.chip[i],
                                  .selected = active == i,
                                  .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
@@ -1435,7 +1392,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     SemanticNode graph{
         .id = "shell.tune.graph",
         .role = SemanticRole::Lane,
-        .name = active ? trf(Str::NamedCurve, {tr(kLabels[*active])}) : std::string{tr(Str::ExpressionCurves)},
+        .name = active ? trf(Str::NamedCurve, {tr(kExpressionControls[*active].label)}) : std::string{tr(Str::ExpressionCurves)},
         .value = !active ? tr(Str::NoChannelSelected)
                  : !state.expression.refusal.empty()
                      ? state.expression.refusal
@@ -1457,9 +1414,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                          : region != nullptr ? ui::readExpressionPoints(*region, channel).size()
                                              : 0U;
       graph.children.push_back(SemanticNode{
-          .id = std::string{"shell.tune.curve."} + kIds[i],
+          .id = std::string{"shell.tune.curve."} + kExpressionControls[i].id,
           .role = SemanticRole::Lane,
-          .name = trf(Str::NamedCurve, {tr(kLabels[i])}),
+          .name = trf(Str::NamedCurve, {tr(kExpressionControls[i].label)}),
           .value = count == 0U ? std::string{tr(Str::NoCurveStored)}
                                : trf(count == 1U ? Str::PointCountOne : Str::PointCount, {std::to_string(count)}),
           .bounds = l.graphPlot,
@@ -1568,9 +1525,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     const auto scale = semitones(k.descriptor) ? 1.0 : 100.0;
     const auto refused = !k.refusal.empty();
     out.push_back(SemanticNode{
-        .id = std::string{"shell.tune.knob."} + kIds[i],
+        .id = std::string{"shell.tune.knob."} + kExpressionControls[i].id,
         .role = SemanticRole::Slider,
-        .name = tr(kLabels[i]),
+        .name = tr(kExpressionControls[i].label),
         .value = refused ? k.refusal : valueText(k.descriptor, k.value),
         .bounds = l.knob[i],
         .enabled = !refused,
@@ -1598,11 +1555,6 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
                     : action == SemanticAction::Decrement ? -1
                                                           : 0;
   const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
-  const auto channelNamed = [](std::string_view name) -> std::optional<std::size_t> {
-    for (std::size_t i = 0U; i < kChannels; ++i)
-      if (name == kIds[i]) return i;
-    return std::nullopt;
-  };
   for (std::size_t i = 0U; i < kViews; ++i) {
     if (id != kViewIds[i]) continue;
     if (!activate) return unsupported();
@@ -1610,17 +1562,17 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
     return core::success();
   }
   if (id.starts_with("shell.tune.channel.")) {
-    const auto index = channelNamed(id.substr(std::string_view{"shell.tune.channel."}.size()));
+    const auto index = expressionControlIndex(id.substr(std::string_view{"shell.tune.channel."}.size()));
     if (!index || !activate) return unsupported();
     return controller.openExpressionLane(ui::expressionChannelAt(*index));
   }
   if (id.starts_with("shell.tune.knob.")) {
-    const auto index = channelNamed(id.substr(std::string_view{"shell.tune.knob."}.size()));
+    const auto index = expressionControlIndex(id.substr(std::string_view{"shell.tune.knob."}.size()));
     if (!index) return unsupported();
-    if (!knobModels(controller.sceneState())[*index].refusal.empty())
+    if (!expressionKnobs(controller.sceneState())[*index].refusal.empty())
       return core::failure(core::ErrorCode::Unsupported,
                            tr(Str::TheSelectedSingerCannotApplyThis));
-    if (step != 0) return nudge(controller, *index, step);
+    if (step != 0) return nudgeExpressionKnob(controller, *index, step);
     if (action == SemanticAction::Activate)
       return controller.openExpressionLane(ui::expressionChannelAt(*index));
     return unsupported();
@@ -1628,7 +1580,7 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
   if (id == "shell.tune.graph") {
     const auto active = activeChannel(controller);
     if (!active || step == 0) return unsupported();
-    return nudge(controller, *active, step);
+    return nudgeExpressionKnob(controller, *active, step);
   }
   if (id.starts_with(kPitchPointPrefix)) {
     const auto digits = id.substr(kPitchPointPrefix.size());
