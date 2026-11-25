@@ -13,7 +13,7 @@ This pass retired 537 tracked files, including 284 Markdown documents. The last 
 To list retired paths or read a specific file with its original content:
 
 ```sh
-git show --format= --name-only --diff-filter=D ':/^Retire superseded documentation and preserve referenced evidence$' -- docs
+git show --format= --name-only --diff-filter=D 51ac8bd9 -- docs
 git show 9b5da0c7:docs/implementation/FULL_SCOPE_BETA_EXECUTION.md
 git log -p -- docs/plans/FUNCTIONAL_READINESS.md
 ```
