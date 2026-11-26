@@ -2,6 +2,8 @@
 
 This ledger records implementation evidence for [the approved plan](../plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md). It does not replace the plan or authorize release. The complete R1–R20/V01–V18 scope remains mandatory.
 
+2026-11-26 — Rechecked progress at `a062db2e` on macOS arm64 with existing local CoreAudio changes. The Release build passed all 241 CTest entries in 297.57 seconds. The installed PJS singer reproduced the 30-second reference WAV byte for byte. The same export with an empty bank directory reported the missing singer and created no master. The production bank has 12 blocked categories, Usable Alpha has 0/20 recorded passes and External Beta has 0/9 requirements evidenced. [Current progress and qualification checks](../STATUS.md)
+
 2026-11-25 — Retired 537 superseded documentation and evidence files. All are recoverable from `9b5da0c7`. The issue register preserves each issue ID and outstanding action. The documentation index identifies three older unavailable targets in the hash-bound contract. The integrating checkout passed the Release rebuild and all 241 CTest entries in 239.56 seconds. [Recovery instructions](../history/RETIRED_DOCUMENTS.md)
 
 2026-11-25 — Documentation refresh against `38238dad`. The main status, design, development priorities and first-run instructions now distinguish the working Cerulean editor and PJS engineering bank from the outstanding listener, production bank and host decisions. Alpha record validation passed, with 0/20 recorded. The voicebank gate returned 52 errors and G2–G5 returned blocked. Earlier scheduled scans are available in Git history.

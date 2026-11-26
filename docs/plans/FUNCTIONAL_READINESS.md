@@ -4,7 +4,7 @@
 
 Last full scan: **2026-11-25 09:55 KST**, dedicated clone at `origin/master` `27c338f3`, clean tree before scan. Fresh build/test results are in the latest direction-log entry; earlier measurements below are retained. Only the previous scan's page update landed since `f1393319`; no launch-trigger path changed.
 
-Integration update, 25 November at `38238dad`. The shared standalone and plug-in editor now defaults to Cerulean. The main Release configuration passed 241/241 tests, including localized expression editing. Its populated standalone and embedded plug-in captures matched across the painter refactor. [Execution evidence](../implementation/FULL_SCOPE_BETA_EXECUTION.md)
+Integration check, 26 November, `a062db2e`. F0 and F1 meet their stated criteria. F2 is the first unmet step on a clean install. A CLI export with an empty voicebank directory failed before creating a master. Using the installed PJS engineering bank, the same score produced a 30-second WAV identical to the October reference. The owner can compare takes 1b and 2b today. The observation kit verified 95 files and the seven human steps are still unobserved. [Current gate counts and render digest](../STATUS.md) · [Audition guide](../reviews/PRODUCT_VOICE_AND_PLUGIN_REVIEW_2026-11-25.md)
 
 ## 1. Verdict
 
@@ -49,7 +49,7 @@ The procedural path makes sound, but its quality is unqualified: the dry procedu
 
 **Save, reopen, recover, relink, export.** Implemented and tested with fixture banks: project writer v21, autosave recovery, exact ID/version/hash relink, transactional master and stem export with receipts. The PJS result in section 2 also exercises installed-bank master export. An unaided owner journey remains unrecorded.
 
-**Use it in a DAW.** CLAP player and editor load only in `seam_clap_host`. VST3 and AUv2 have no validator or host run.
+**Use it in a DAW.** The first-party CLAP harnesses exercise the render player and embedded editor. Qualification across the nine commercial host tuples, including VST3 and AUv2, remains open.
 
 **Give it to someone else.** Not possible yet: no signing identity, no notarization, no clean-machine install, no released bank.
 

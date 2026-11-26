@@ -298,7 +298,7 @@ Keep the hygiene rules in [AGENTS.md](../../AGENTS.md): a full dependent rebuild
 
 ## 10. Reporting progress honestly
 
-Report counts against each gate's own denominator: UA *x*/20, bank-gate categories *y*/12, EB *z*/8 for External Beta 1. Do not compute a weighted overall percentage. Earlier weighted indices (54–56%) had judgment-based weights and denominators that do not match these gates, and they invite the wrong conclusion. Report a milestone as complete only when its exit check passes, never by summing partial work.
+Use the current contracts for each count. Usable Alpha has 20 requirements, the production bank has 12 categories and External Beta has nine requirements. The eight-row macOS Beta is a proposal under D6. Report it as a gate only if an approved amendment changes the contract. The [functional ladder](FUNCTIONAL_READINESS.md#2-functional-ladder) measures user outcomes by counting fully met steps. The project has no validated weighting for the percentage of engineering effort complete.
 
 ---
 
